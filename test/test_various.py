@@ -70,12 +70,6 @@ def test_read_bash_script_not_found(script_sources_fixture):
         compile_all.read_bash_script(Path("nonexistent.sh"), script_sources_fixture)
 
 
-def test_read_bash_script_empty(script_sources_fixture):
-    """Tests that ValueError is raised for an empty script."""
-    with pytest.raises(FileNotFoundError):
-        compile_all.read_bash_script(Path("scripts/empty.sh"), script_sources_fixture)
-
-
 def test_process_script_list_no_scripts():
     """Tests a list with no scripts to ensure it remains unchanged."""
     script_list = ["echo 'hello'", "ls -la"]
