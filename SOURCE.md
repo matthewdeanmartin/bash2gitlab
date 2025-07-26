@@ -1,0 +1,644 @@
+## Tree for bash2gitlab
+```
+├── compile_all.py
+├── logging_config.py
+├── py.typed
+├── __about__.py
+└── __main__.py
+```
+
+## File: compile_all.py
+```python
+from __future__ import annotations
+
+import io
+import logging
+import re
+import shlex
+import shutil
+from pathlib import Path
+from typing import Any, Union, cast
+
+from ruamel.yaml import YAML, CommentedMap
+from ruamel.yaml.scalarstring import LiteralScalarString
+
+logger = logging.getLogger(__name__)
+
+BANNER = """
+# DO NOT EDIT
+# This is a compiled file, compiled with bash2gitlab
+# Recompile instead of editing this file.
+
+"""
+
+
+def parse_env_file(file_content: str) -> dict[str, str]:
+    """
+    Parses a .env-style file content into a dictionary.
+    Handles lines like 'KEY=VALUE' and 'export KEY=VALUE'.
+
+    Args:
+        file_content (str): The content of the variables file.
+
+    Returns:
+        Dict[str, str]: A dictionary of the parsed variables.
+    """
+    variables = {}
+    logger.debug("Parsing global variables file.")
+    for line in file_content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        # Regex to handle 'export KEY=VALUE', 'KEY=VALUE', etc.
+        match = re.match(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$", line)
+        if match:
+            key = match.group("key")
+            value = match.group("value").strip()
+            # Remove matching quotes from the value
+            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                value = value[1:-1]
+            variables[key] = value
+            logger.debug(f"Found global variable: {key}")
+    return variables
+
+
+def extract_script_path(command_line: str) -> str | None:
+    """
+    Extracts the first shell script path from a shell command line.
+
+    Args:
+        command_line (str): A shell command line.
+
+    Returns:
+        Optional[str]: The script path if the line is a script invocation; otherwise, None.
+    """
+    try:
+        tokens: list[str] = shlex.split(command_line)
+    except ValueError:
+        # Malformed shell syntax
+        return None
+
+    executors = {"bash", "sh", "source"}
+
+    parts = 0
+    path_found = None
+    for i, token in enumerate(tokens):
+        path = Path(token)
+        if path.suffix == ".sh":
+            # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
+            if i > 0 and tokens[i - 1] in executors:
+                path_found = str(path).replace("\\", "/")
+            else:
+                path_found = str(path).replace("\\", "/")
+            parts += 1
+        elif not token.isspace() and token not in executors:
+            parts += 1
+
+    if path_found and parts == 1:
+        return path_found
+    return None
+
+
+def read_bash_script(path: Path, script_sources: dict[str, str]) -> str:
+    """Reads a bash script's content from the pre-collected source map and strips the shebang if present."""
+    if str(path) not in script_sources:
+        raise FileNotFoundError(f"Script not found in source map: {path}")
+    logger.debug(f"Reading script from source map: {path}")
+    content = script_sources[str(path)].strip()
+    if not content:
+        raise ValueError(f"Script is empty: {path}")
+
+    lines = content.splitlines()
+    if lines and lines[0].startswith("#!"):
+        logger.debug(f"Stripping shebang from script: {lines[0]}")
+        lines = lines[1:]
+    return "\n".join(lines)
+
+
+def process_script_list(
+    script_list: Union[list[str], str], scripts_root: Path, script_sources: dict[str, str]
+) -> Union[list[str], LiteralScalarString]:
+    """
+    Processes a list of script lines, inlining any shell script references.
+    Returns a new list of lines or a single literal scalar string for long scripts.
+    """
+    if not isinstance(script_list, list):
+        # Return as-is if the script is already a single scalar string.
+        return cast(Any, script_list)
+
+    # First pass: check for any long scripts. If one is found, it takes over the whole block.
+    for line in script_list:
+        script_path_str = extract_script_path(line) if isinstance(line, str) else None
+        if script_path_str:
+            rel_path = script_path_str.strip().lstrip("./")
+            script_path = scripts_root / rel_path
+            bash_code = read_bash_script(script_path, script_sources)
+            # If a script is long, we replace the entire block for clarity.
+            if len(bash_code.splitlines()) > 3:
+                logger.info(f"Inlining long script '{script_path}' as a single block.")
+                return LiteralScalarString(bash_code)
+
+    # Second pass: if no long scripts were found, inline all scripts line-by-line.
+    inlined_lines: list[str] = []
+    for line in script_list:
+        script_path_str = extract_script_path(line) if isinstance(line, str) else None
+        if script_path_str:
+            rel_path = script_path_str.strip().lstrip("./")
+            script_path = scripts_root / rel_path
+            bash_code = read_bash_script(script_path, script_sources)
+            bash_lines = bash_code.splitlines()
+            logger.info(f"Inlining short script '{script_path}' ({len(bash_lines)} lines).")
+            inlined_lines.extend(bash_lines)
+        else:
+            inlined_lines.append(line)
+
+    return inlined_lines
+
+
+def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, str]) -> int:
+    """Processes a single job definition to inline scripts."""
+    found = 0
+    for script_key in ["script", "before_script", "after_script"]:
+        if script_key in job_data:
+            result = process_script_list(job_data[script_key], scripts_root, script_sources)
+            if result != job_data[script_key]:
+                job_data[script_key] = result
+                found += 1
+    return found
+
+
+def inline_gitlab_scripts(
+    gitlab_ci_yaml: str,
+    scripts_root: Path,
+    script_sources: dict[str, str],
+    global_vars: dict[str, str],
+) -> tuple[int, str]:
+    """
+    Loads a GitLab CI YAML file, inlines scripts, merges global variables,
+    reorders top-level keys, and returns the result as a string.
+    """
+    inlined_count = 0
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    data = yaml.load(io.StringIO(gitlab_ci_yaml))
+
+    # Merge global variables if provided
+    if global_vars:
+        logger.info("Merging global variables into the YAML configuration.")
+        existing_vars = data.get("variables", {})
+        merged_vars = global_vars.copy()
+        # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
+        merged_vars.update(existing_vars)
+        data["variables"] = merged_vars
+        inlined_count += 1
+
+    for name in ["after_script", "before_script"]:
+        if name in data:
+            logger.info(f"Processing top-level '{name}' section.")
+            result = process_script_list(data[name], scripts_root, script_sources)
+            if result != data[name]:
+                data[name] = result
+                inlined_count += 1
+
+    # Process all jobs
+    for job_name, job_data in data.items():
+        # A simple heuristic for a "job" is a dictionary with a 'script' key.
+        if isinstance(job_data, dict) and "script" in job_data:
+            logger.info(f"Processing job: {job_name}")
+            inlined_count += process_job(job_data, scripts_root, script_sources)
+
+    # --- Reorder top-level keys for consistent output ---
+    logger.info("Reordering top-level keys in the final YAML.")
+    ordered_data = CommentedMap()
+    key_order = ["include", "variables", "stages"]
+
+    # Add specified keys first, in the desired order
+    for key in key_order:
+        if key in data:
+            ordered_data[key] = data.pop(key)
+
+    # Add the rest of the keys (jobs, etc.) in their original relative order
+    for key, value in data.items():
+        ordered_data[key] = value
+
+    out_stream = io.StringIO()
+    yaml.dump(ordered_data, out_stream)  # Dump the reordered data
+    return inlined_count, out_stream.getvalue()
+
+
+def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
+    """Recursively finds all .sh files and reads them into a dictionary."""
+    if not scripts_dir.is_dir():
+        raise FileNotFoundError(f"Scripts directory not found: {scripts_dir}")
+
+    script_sources = {}
+    for script_file in scripts_dir.glob("**/*.sh"):
+        content = script_file.read_text(encoding="utf-8").strip()
+        if not content:
+            logger.warning(f"Script is empty and will be ignored: {script_file}")
+            continue
+        script_sources[str(script_file)] = content
+
+    if not script_sources:
+        raise RuntimeError(f"No non-empty scripts found in '{scripts_dir}'.")
+
+    return script_sources
+
+
+def process_uncompiled_directory(
+    uncompiled_path: Path,
+    output_path: Path,
+    scripts_path: Path,
+    templates_dir: Path,
+    output_templates_dir: Path,
+    dry_run: bool = False,
+) -> int:
+    """
+    Main function to process a directory of uncompiled GitLab CI files.
+    """
+    inlined_count = 0
+    # Safely clean up previous outputs
+    logger.info(f"Cleaning previous output in '{output_path}' and '{output_templates_dir}'")
+    for extension in ["yml", "yaml"]:
+        if (output_path / f".gitlab-ci.{extension}").exists():
+            (output_path / f".gitlab-ci.{extension}").unlink()
+    if output_templates_dir != uncompiled_path and output_templates_dir.exists() and not dry_run:
+        shutil.rmtree(output_templates_dir)
+
+    if not dry_run:
+        output_templates_dir.mkdir(parents=True, exist_ok=True)
+
+    script_sources = collect_script_sources(scripts_path)
+    written_files = 0
+
+    # Load global variables from the special file, if it exists
+    global_vars = {}
+    global_vars_path = uncompiled_path / "global_variables.sh"
+    if global_vars_path.is_file():
+        logger.info(f"Found and loading variables from {global_vars_path}")
+        content = global_vars_path.read_text(encoding="utf-8")
+        global_vars = parse_env_file(content)
+        inlined_count += 1
+
+    # Process root .gitlab-ci.yml
+    root_yaml_extension = "yml"
+    root_yaml = uncompiled_path / f".gitlab-ci.{root_yaml_extension}"
+    if not root_yaml.exists():
+        root_yaml_extension = "yaml"
+        root_yaml = uncompiled_path / ".gitlab-ci.yaml"
+
+    output_root_yaml: Path | None = None
+    if root_yaml.is_file():
+        logger.info(f"Processing root file: {root_yaml}")
+        raw_text = root_yaml.read_text(encoding="utf-8")
+        inlined_for_file, compiled = inline_gitlab_scripts(
+            raw_text, scripts_path, script_sources, global_vars  # Pass parsed variables
+        )
+        inlined_count += inlined_for_file
+        output_root_yaml = output_path / f".gitlab-ci.{root_yaml_extension}"
+        if not dry_run:
+            if inlined_for_file:
+                output_root_yaml.write_text(BANNER + compiled, encoding="utf-8")
+            else:
+                output_root_yaml.write_text(raw_text, encoding="utf-8")
+
+        written_files += 1
+
+    # Process templates/*.yml and *.yaml
+    if templates_dir.is_dir():
+        template_files = list(templates_dir.glob("*.yml")) + list(templates_dir.glob("*.yaml"))
+        if not template_files:
+            logger.warning(f"No template YAML files found in {templates_dir}")
+
+        for template_path in template_files:
+            output_to_write = output_templates_dir / template_path.name
+            if output_root_yaml != output_to_write:
+                logger.info(f"Processing template file: {template_path}")
+                raw_text = template_path.read_text(encoding="utf-8")
+                inlined_count, compiled = inline_gitlab_scripts(
+                    raw_text,
+                    scripts_path,
+                    script_sources,
+                    {},  # Do not pass global variables to templates
+                )
+
+                if not dry_run:
+                    if inlined_count > 0:
+                        # inlines happened
+                        output_to_write.write_text(BANNER + compiled, encoding="utf-8")
+                    else:
+                        # no change
+                        output_to_write.write_text(raw_text, encoding="utf-8")
+                written_files += 1
+
+    if written_files == 0:
+        raise RuntimeError("No output files were written. Check input paths and file names.")
+    else:
+        logger.info(f"Successfully processed and wrote {written_files} file(s).")
+
+    return inlined_count
+
+
+# --- Main Execution Block ---
+
+if __name__ == "__main__":
+
+    def run() -> None:
+        # Define project structure paths
+        uncompiled_root = Path("uncompiled")
+        output_root = Path(".")  # Output to the current directory
+        scripts_dir = uncompiled_root / "scripts"
+        templates_input_dir = uncompiled_root / "templates"
+        templates_output_dir = output_root / "templates"
+
+        try:
+            process_uncompiled_directory(
+                uncompiled_root, output_root, scripts_dir, templates_input_dir, templates_output_dir
+            )
+            logger.info("✅ GitLab CI processing complete.")
+        except (FileNotFoundError, RuntimeError, ValueError) as e:
+            logger.error(f"❌ An error occurred: {e}")
+
+    run()
+```
+## File: logging_config.py
+```python
+"""
+Logging configuration.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+try:
+    import colorlog  # noqa
+
+    # This is only here so that I can see if colorlog is installed
+    # and to keep autofixers from removing an "unused import"
+    if False:  # pylint: disable=using-constant-test
+        assert colorlog  # noqa # nosec
+    colorlog_available = True
+except ImportError:  # no qa
+    colorlog_available = False
+
+
+def generate_config(level: str = "DEBUG") -> dict[str, Any]:
+    """
+    Generate a logging configuration.
+    Args:
+        level: The logging level.
+
+    Returns:
+        dict: The logging configuration.
+    """
+    config: dict[str, Any] = {
+        "version": 1,
+        "disable_existing_loggers": True,
+        "formatters": {
+            "standard": {"format": "[%(levelname)s] %(name)s: %(message)s"},
+            "colored": {
+                "()": "colorlog.ColoredFormatter",
+                "format": "%(log_color)s%(levelname)-8s%(reset)s %(green)s%(message)s",
+            },
+        },
+        "handlers": {
+            "default": {
+                "level": level,
+                "formatter": "colored",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",  # Default is stderr
+            },
+        },
+        "loggers": {
+            "bash2gitlab": {
+                "handlers": ["default"],
+                "level": level,
+                "propagate": False,
+            }
+        },
+    }
+    if not colorlog_available:
+        del config["formatters"]["colored"]
+        config["handlers"]["default"]["formatter"] = "standard"
+
+    if os.environ.get("NO_COLOR") or os.environ.get("CI"):
+        config["handlers"]["default"]["formatter"] = "standard"
+
+    return config
+```
+## File: py.typed
+```
+# when type checking dependents, tell type checkers to use this package's types
+```
+## File: __about__.py
+```python
+"""Metadata for bash2gitlab."""
+
+__all__ = [
+    "__title__",
+    "__version__",
+    "__description__",
+    "__readme__",
+    "__keywords__",
+    "__license__",
+    "__requires_python__",
+    "__status__",
+]
+
+__title__ = "bash2gitlab"
+__version__ = "0.1.0"
+__description__ = "Compile bash to gitlab pipeline yaml"
+__readme__ = "README.md"
+__keywords__ = ["bash", "gitlab"]
+__license__ = "MIT"
+__requires_python__ = ">=3.8"
+__status__ = "4 - Beta"
+```
+## File: __main__.py
+```python
+"""
+
+❯ bash2gitlab compile --help
+usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
+                           [--templates-out TEMPLATES_OUT] [--format] [-v]
+
+options:
+  -h, --help            show this help message and exit
+  --in INPUT_DIR        Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.
+  --out OUTPUT_DIR      Output directory for the compiled GitLab CI files.
+  --scripts SCRIPTS_DIR
+                        Directory containing bash scripts to inline. (Default: <in>)
+  --templates-in TEMPLATES_IN
+                        Input directory for CI templates. (Default: <in>)
+  --templates-out TEMPLATES_OUT
+                        Output directory for compiled CI templates. (Default: <out>)
+  --format              Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.
+  -v, --verbose         Enable verbose (DEBUG) logging output.
+
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import logging.config
+import subprocess  # nosec
+import sys
+from pathlib import Path
+
+# --- Project Imports ---
+# Make sure the project is installed or the path is correctly set for these imports to work
+from bash2gitlab import __about__
+from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.compile_all import process_uncompiled_directory
+from bash2gitlab.logging_config import generate_config
+
+
+def run_formatter(output_dir: Path, templates_output_dir: Path):
+    """
+    Runs yamlfix on the output directories.
+
+    Args:
+        output_dir (Path): The main output directory.
+        templates_output_dir (Path): The templates output directory.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        # Check if yamlfix is installed
+        subprocess.run(["yamlfix", "--version"], check=True, capture_output=True)  # nosec
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.error(
+            "❌ 'yamlfix' is not installed or not in PATH. Please install it to use the --format option (`pip install yamlfix`)."
+        )
+        sys.exit(1)
+
+    targets = []
+    if output_dir.is_dir():
+        targets.append(str(output_dir))
+    if templates_output_dir.is_dir():
+        targets.append(str(templates_output_dir))
+
+    if not targets:
+        logger.warning("No output directories found to format.")
+        return
+
+    logger.info(f"Running yamlfix on: {', '.join(targets)}")
+    try:
+        subprocess.run(["yamlfix", *targets], check=True, capture_output=True)  # nosec
+        logger.info("✅ Formatting complete.")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"❌ Error running yamlfix: {e.stderr.decode()}")
+        sys.exit(1)
+
+
+def compile_handler(args: argparse.Namespace):
+    """Handler for the 'compile' command."""
+    logger = logging.getLogger(__name__)
+    logger.info("Starting bash2gitlab compiler...")
+
+    # Resolve paths, using sensible defaults if optional paths are not provided
+    in_dir = Path(args.input_dir).resolve()
+    out_dir = Path(args.output_dir).resolve()
+    scripts_dir = Path(args.scripts_dir).resolve() if args.scripts_dir else in_dir
+    templates_in_dir = Path(args.templates_in).resolve() if args.templates_in else in_dir
+    templates_out_dir = Path(args.templates_out).resolve() if args.templates_out else out_dir
+    dry_run = bool(args.dry_run)
+
+    try:
+        process_uncompiled_directory(
+            uncompiled_path=in_dir,
+            output_path=out_dir,
+            scripts_path=scripts_dir,
+            templates_dir=templates_in_dir,
+            output_templates_dir=templates_out_dir,
+            dry_run=dry_run,
+        )
+
+        if args.format:
+            run_formatter(out_dir, templates_out_dir)
+
+        logger.info("✅ GitLab CI processing complete.")
+
+    except (FileNotFoundError, RuntimeError, ValueError) as e:
+        logger.error(f"❌ An error occurred: {e}")
+        sys.exit(1)
+
+
+def main() -> int:
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(
+        prog=__about__.__title__,
+        description=root_doc,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # --- Compile Command ---
+    compile_parser = subparsers.add_parser(
+        "compile", help="Compile an 'uncompiled' directory into a standard GitLab CI structure."
+    )
+    compile_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=True,
+        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
+    )
+    compile_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=True,
+        help="Output directory for the compiled GitLab CI files.",
+    )
+    compile_parser.add_argument(
+        "--scripts",
+        dest="scripts_dir",
+        help="Directory containing bash scripts to inline. (Default: <in>)",
+    )
+    compile_parser.add_argument(
+        "--templates-in",
+        help="Input directory for CI templates. (Default: <in>)",
+    )
+    compile_parser.add_argument(
+        "--templates-out",
+        help="Output directory for compiled CI templates. (Default: <out>)",
+    )
+    compile_parser.add_argument(
+        "--format",
+        action="store_true",
+        help="Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.",
+    )
+
+    compile_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the compilation process without writing any files.",
+    )
+
+    compile_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    compile_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    compile_parser.set_defaults(func=compile_handler)
+
+    args = parser.parse_args()
+
+    # --- Setup Logging ---
+    if args.verbose:
+        log_level = "DEBUG"
+    elif args.quiet:
+        log_level = "CRITICAL"
+    else:
+        log_level = "INFO"
+    logging.config.dictConfig(generate_config(level=log_level))
+
+    args.func(args)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
