@@ -1,0 +1,5 @@
+test:
+  stage: test
+  image: gcc:latest
+  script:
+    - ./test.sh

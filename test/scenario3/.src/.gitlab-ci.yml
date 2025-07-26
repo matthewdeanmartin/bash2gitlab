@@ -1,0 +1,36 @@
+stages:
+  - format
+  - lint
+  - test
+  - package
+
+variables:
+  BASH_ENV: .bash_env
+
+before_script:
+  - before_script.sh
+
+format:
+  stage: format
+  script:
+    - format.sh
+
+lint:
+  stage: lint
+  script:
+    - lint.sh
+
+test:
+  stage: test
+  image: bats/bats:latest
+  script:
+    - test.sh
+
+package:
+  stage: package
+  script:
+    - package.sh
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week

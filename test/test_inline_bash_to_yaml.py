@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from bash2gitlab.inline_bash_to_yaml import inline_gitlab_scripts
 
 
@@ -12,12 +14,12 @@ def test_yaml_it():
         - ./build.sh
     """
 
-    bash_scripts = {
-        "./build.sh": "make build"
-    }
+    bash_scripts = {"./build.sh": "make build"}
 
     result = inline_gitlab_scripts(input_yaml, script_sources=bash_scripts)
-    assert result.replace(" ","") =="""\
+    assert (
+        result.replace(" ", "")
+        == """\
     stages:
       - build
     
@@ -25,4 +27,7 @@ def test_yaml_it():
       stage: build
       script:
         - make build
-    """.replace(" ","")
+    """.replace(
+            " ", ""
+        )
+    )

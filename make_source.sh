@@ -1,0 +1,1 @@
+git2md bash2gitlab --ignore __init__.py __pycache__ --output SOURCE.md

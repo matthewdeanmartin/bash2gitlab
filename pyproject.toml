@@ -1,7 +1,7 @@
 [project]
 name = "bash2gitlab"
 version = "0.1.0"
-description = "Compile bash to yaml"
+description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
 keywords = ["bash", "gitlab"]
@@ -60,8 +60,7 @@ packages = [
 
 [dependency-groups]
 dev = [
-
-
+    "git2md; python_version >= '3.10'",
     "pyclean; python_version >= '3.12'",
     "strip-docs>=1.0; python_version >= '3.12'",
 

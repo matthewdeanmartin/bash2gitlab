@@ -1,0 +1,1 @@
+find . -regex '.*\.\(cpp\|h\|hpp\|cc\)' -exec clang-format --dry-run --Werror {} +

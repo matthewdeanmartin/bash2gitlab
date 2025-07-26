@@ -1,0 +1,31 @@
+include:
+  file: unit-tests.yml
+
+stages:
+  - format
+  - lint
+  - build
+  - test
+
+format:
+  stage: format
+  image: gcc:latest
+  before_script:
+    - ./install_tools.sh
+  script:
+    - ./format.sh
+  allow_failure: false
+
+lint:
+  stage: lint
+  image: gcc:latest
+  before_script:
+    - ./install_tools.sh
+  script:
+    - ./lint.sh
+
+build:
+  stage: build
+  image: gcc:latest
+  script:
+    - ./build.sh

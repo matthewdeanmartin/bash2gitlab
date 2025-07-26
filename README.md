@@ -18,5 +18,13 @@ Do you want to import the template from the centralized repo and clone the centr
 That requires additional permissions that a simple yaml import doesn't and clutters the file system.
 
 ## Name
-I think most of the time people put bash into these templates, but really the technique should work with any
-script language, sh, zsh, fish, etc.
+Gitlab runners expect bash, sh or powershell. To use another shell, you have to use bash to execute a script in the other
+shell.
+
+## Special files
+ 
+- global_variables.sh
+
+## Out of scope
+This doesn't inline include templates, only references to `.sh` files.
+

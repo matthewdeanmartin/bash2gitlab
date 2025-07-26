@@ -1,11 +1,13 @@
+from __future__ import annotations
+
+import io
+from pathlib import Path
+
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import LiteralScalarString
-from pathlib import Path
-from typing import Optional, Dict, Union
-import io
 
 
-def read_bash_script(path: str, script_sources: Optional[Dict[str, str]]) -> str:
+def read_bash_script(path: str, script_sources: dict[str, str] | None) -> str:
     """Reads bash script from memory or filesystem."""
     if script_sources and path in script_sources:
         return script_sources[path].strip()
@@ -15,7 +17,7 @@ def read_bash_script(path: str, script_sources: Optional[Dict[str, str]]) -> str
 
 def inline_gitlab_scripts(
     gitlab_ci_yaml: str,
-    script_sources: Optional[Dict[str, str]] = None,
+    script_sources: dict[str, str] | None = None,
 ) -> str:
     """
     Inline .sh script references in GitLab CI YAML into the `script` field.
@@ -31,7 +33,7 @@ def inline_gitlab_scripts(
     yaml.preserve_quotes = True
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
-    for job_name, job_data in data.items():
+    for _job_name, job_data in data.items():
         if not isinstance(job_data, dict) or "script" not in job_data:
             continue
 
@@ -40,7 +42,7 @@ def inline_gitlab_scripts(
         if not isinstance(original_script, list):
             continue  # Skip if script isn't a list
 
-        new_script: Union[list, LiteralScalarString]
+        # new_script: Union[list, LiteralScalarString]
         inlined_lines = []
 
         for line in original_script:
