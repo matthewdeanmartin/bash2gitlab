@@ -1,0 +1,18 @@
+stages:
+- build
+
+build:job:
+  stage: build
+  script: |-
+    # comments
+    echo "hello word"
+
+    # comments
+
+    # comments
+
+
+    # comments
+
+
+    # comments

@@ -1,0 +1,3 @@
+job:
+  script:
+    - ./scripts/test.sh
