@@ -11,12 +11,14 @@ from typing import Any, Union, cast
 from ruamel.yaml import YAML, CommentedMap
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-# --- Basic Setup ---
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+BANNER = """
+# DO NOT EDIT
+# This is a compiled file, compiled with bash2gitlab
+# Recompile instead of editing this file.
 
-# --- Core Logic Functions ---
+"""
 
 
 def parse_env_file(file_content: str) -> dict[str, str]:
@@ -88,14 +90,19 @@ def extract_script_path(command_line: str) -> str | None:
 
 
 def read_bash_script(path: Path, script_sources: dict[str, str]) -> str:
-    """Reads a bash script's content from the pre-collected source map."""
+    """Reads a bash script's content from the pre-collected source map and strips the shebang if present."""
     if str(path) not in script_sources:
         raise FileNotFoundError(f"Script not found in source map: {path}")
     logger.debug(f"Reading script from source map: {path}")
     content = script_sources[str(path)].strip()
     if not content:
         raise ValueError(f"Script is empty: {path}")
-    return content
+
+    lines = content.splitlines()
+    if lines and lines[0].startswith("#!"):
+        logger.debug(f"Stripping shebang from script: {lines[0]}")
+        lines = lines[1:]
+    return "\n".join(lines)
 
 
 def process_script_list(
@@ -138,11 +145,16 @@ def process_script_list(
     return inlined_lines
 
 
-def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, str]):
+def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, str]) -> int:
     """Processes a single job definition to inline scripts."""
+    found = 0
     for script_key in ["script", "before_script", "after_script"]:
         if script_key in job_data:
-            job_data[script_key] = process_script_list(job_data[script_key], scripts_root, script_sources)
+            result = process_script_list(job_data[script_key], scripts_root, script_sources)
+            if result != job_data[script_key]:
+                job_data[script_key] = result
+                found += 1
+    return found
 
 
 def inline_gitlab_scripts(
@@ -150,11 +162,12 @@ def inline_gitlab_scripts(
     scripts_root: Path,
     script_sources: dict[str, str],
     global_vars: dict[str, str],
-) -> str:
+) -> tuple[int, str]:
     """
     Loads a GitLab CI YAML file, inlines scripts, merges global variables,
     reorders top-level keys, and returns the result as a string.
     """
+    inlined_count = 0
     yaml = YAML()
     yaml.preserve_quotes = True
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
@@ -167,22 +180,22 @@ def inline_gitlab_scripts(
         # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
         merged_vars.update(existing_vars)
         data["variables"] = merged_vars
+        inlined_count += 1
 
-    # Process top-level before_script
-    if "before_script" in data:
-        logger.info("Processing top-level 'before_script' section.")
-        data["before_script"] = process_script_list(data["before_script"], scripts_root, script_sources)
-
-    if "after_script" in data:
-        logger.info("Processing top-level 'after_script' section.")
-        data["after_script"] = process_script_list(data["after_script"], scripts_root, script_sources)
+    for name in ["after_script", "before_script"]:
+        if name in data:
+            logger.info(f"Processing top-level '{name}' section.")
+            result = process_script_list(data[name], scripts_root, script_sources)
+            if result != data[name]:
+                data[name] = result
+                inlined_count += 1
 
     # Process all jobs
     for job_name, job_data in data.items():
         # A simple heuristic for a "job" is a dictionary with a 'script' key.
         if isinstance(job_data, dict) and "script" in job_data:
             logger.info(f"Processing job: {job_name}")
-            process_job(job_data, scripts_root, script_sources)
+            inlined_count += process_job(job_data, scripts_root, script_sources)
 
     # --- Reorder top-level keys for consistent output ---
     logger.info("Reordering top-level keys in the final YAML.")
@@ -200,7 +213,7 @@ def inline_gitlab_scripts(
 
     out_stream = io.StringIO()
     yaml.dump(ordered_data, out_stream)  # Dump the reordered data
-    return out_stream.getvalue()
+    return inlined_count, out_stream.getvalue()
 
 
 def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
@@ -228,19 +241,22 @@ def process_uncompiled_directory(
     scripts_path: Path,
     templates_dir: Path,
     output_templates_dir: Path,
-):
+    dry_run: bool = False,
+) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
     """
+    inlined_count = 0
     # Safely clean up previous outputs
     logger.info(f"Cleaning previous output in '{output_path}' and '{output_templates_dir}'")
     for extension in ["yml", "yaml"]:
         if (output_path / f".gitlab-ci.{extension}").exists():
             (output_path / f".gitlab-ci.{extension}").unlink()
-    if output_templates_dir.exists():
+    if output_templates_dir != uncompiled_path and output_templates_dir.exists() and not dry_run:
         shutil.rmtree(output_templates_dir)
 
-    output_templates_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        output_templates_dir.mkdir(parents=True, exist_ok=True)
 
     script_sources = collect_script_sources(scripts_path)
     written_files = 0
@@ -252,6 +268,7 @@ def process_uncompiled_directory(
         logger.info(f"Found and loading variables from {global_vars_path}")
         content = global_vars_path.read_text(encoding="utf-8")
         global_vars = parse_env_file(content)
+        inlined_count += 1
 
     # Process root .gitlab-ci.yml
     root_yaml_extension = "yml"
@@ -263,11 +280,17 @@ def process_uncompiled_directory(
     output_root_yaml: Path | None = None
     if root_yaml.is_file():
         logger.info(f"Processing root file: {root_yaml}")
-        compiled = inline_gitlab_scripts(
-            root_yaml.read_text(encoding="utf-8"), scripts_path, script_sources, global_vars  # Pass parsed variables
+        raw_text = root_yaml.read_text(encoding="utf-8")
+        inlined_for_file, compiled = inline_gitlab_scripts(
+            raw_text, scripts_path, script_sources, global_vars  # Pass parsed variables
         )
+        inlined_count += inlined_for_file
         output_root_yaml = output_path / f".gitlab-ci.{root_yaml_extension}"
-        output_root_yaml.write_text(compiled, encoding="utf-8")
+        if not dry_run:
+            if inlined_for_file:
+                output_root_yaml.write_text(BANNER + compiled, encoding="utf-8")
+            else:
+                output_root_yaml.write_text(raw_text, encoding="utf-8")
 
         written_files += 1
 
@@ -281,14 +304,21 @@ def process_uncompiled_directory(
             output_to_write = output_templates_dir / template_path.name
             if output_root_yaml != output_to_write:
                 logger.info(f"Processing template file: {template_path}")
-                compiled = inline_gitlab_scripts(
-                    template_path.read_text(encoding="utf-8"),
+                raw_text = template_path.read_text(encoding="utf-8")
+                inlined_count, compiled = inline_gitlab_scripts(
+                    raw_text,
                     scripts_path,
                     script_sources,
                     {},  # Do not pass global variables to templates
                 )
 
-                output_to_write.write_text(compiled, encoding="utf-8")
+                if not dry_run:
+                    if inlined_count > 0:
+                        # inlines happened
+                        output_to_write.write_text(BANNER + compiled, encoding="utf-8")
+                    else:
+                        # no change
+                        output_to_write.write_text(raw_text, encoding="utf-8")
                 written_files += 1
 
     if written_files == 0:
@@ -296,21 +326,27 @@ def process_uncompiled_directory(
     else:
         logger.info(f"Successfully processed and wrote {written_files} file(s).")
 
+    return inlined_count
+
 
 # --- Main Execution Block ---
 
 if __name__ == "__main__":
-    # Define project structure paths
-    uncompiled_root = Path("uncompiled")
-    output_root = Path(".")  # Output to the current directory
-    scripts_dir = uncompiled_root / "scripts"
-    templates_input_dir = uncompiled_root / "templates"
-    templates_output_dir = output_root / "templates"
 
-    try:
-        process_uncompiled_directory(
-            uncompiled_root, output_root, scripts_dir, templates_input_dir, templates_output_dir
-        )
-        logger.info("\n✅ GitLab CI processing complete.")
-    except (FileNotFoundError, RuntimeError, ValueError) as e:
-        logger.error(f"\n❌ An error occurred: {e}")
+    def run() -> None:
+        # Define project structure paths
+        uncompiled_root = Path("uncompiled")
+        output_root = Path(".")  # Output to the current directory
+        scripts_dir = uncompiled_root / "scripts"
+        templates_input_dir = uncompiled_root / "templates"
+        templates_output_dir = output_root / "templates"
+
+        try:
+            process_uncompiled_directory(
+                uncompiled_root, output_root, scripts_dir, templates_input_dir, templates_output_dir
+            )
+            logger.info("✅ GitLab CI processing complete.")
+        except (FileNotFoundError, RuntimeError, ValueError) as e:
+            logger.error(f"❌ An error occurred: {e}")
+
+    run()

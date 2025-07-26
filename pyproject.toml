@@ -9,6 +9,8 @@ license = "MIT"
 requires-python = ">=3.8"
 dependencies = [
     "ruamel.yaml",
+    "yamlfix",
+    "colorlog"
     # backwards compatibility
 #    "toml; python_version < '3.11'",
 #    "importlib-resources; python_version < '3.9'",
@@ -60,6 +62,7 @@ packages = [
 
 [dependency-groups]
 dev = [
+
     "git2md; python_version >= '3.10'",
     "pyclean; python_version >= '3.12'",
     "strip-docs>=1.0; python_version >= '3.12'",

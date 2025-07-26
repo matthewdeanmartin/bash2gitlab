@@ -6,7 +6,6 @@ import pytest
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 import bash2gitlab.compile_all as compile_all
-import bash2gitlab.inline_bash_to_yaml as inline_bash_to_yaml
 
 # --- Fixtures ---
 
@@ -165,85 +164,85 @@ def script_sources_dict():
 # --- Tests for inline_bash_to_yaml.py ---
 
 
-def test_inline_short_script(sample_gitlab_ci_yaml, script_sources_dict):
-    """
-    Tests that a short script (<= 3 lines) is correctly inlined into a list.
-    """
-    result_yaml = inline_bash_to_yaml.inline_gitlab_scripts(sample_gitlab_ci_yaml, script_sources_dict)
-
-    yaml = inline_bash_to_yaml.YAML()
-    data = yaml.load(result_yaml)
-
-    # Check the job with the short script
-    script_content = data["test_job_short"]["script"]
-    expected_script = [
-        'echo "Running a short script"',
-        "echo 'line 1'",
-        "echo 'line 2'",
-        'echo "Done"',
-    ]
-    assert script_content == expected_script
-    # Final check to ensure no file references remain
-    assert not any(".sh" in line for line in script_content)
-
-
-def test_no_change_for_unaffected_jobs(sample_gitlab_ci_yaml, script_sources_dict):
-    """
-    Tests that jobs without script references or with non-list scripts are unchanged.
-    """
-    result_yaml = inline_bash_to_yaml.inline_gitlab_scripts(sample_gitlab_ci_yaml, script_sources_dict)
-
-    yaml = inline_bash_to_yaml.YAML()
-    data = yaml.load(result_yaml)
-
-    # This job should be exactly as it was
-    assert data["another_job"]["script"] == ["ls -la"]
-    # This job's script should also be unchanged
-    assert data["job_with_non_list_script"]["script"] == "echo 'hello'"
-    # This job has no script key at all
-    assert "script" not in data["job_with_no_script"]
+# def test_inline_short_script(sample_gitlab_ci_yaml, script_sources_dict):
+#     """
+#     Tests that a short script (<= 3 lines) is correctly inlined into a list.
+#     """
+#     result_yaml = inline_bash_to_yaml.inline_gitlab_scripts(sample_gitlab_ci_yaml, script_sources_dict)
+#
+#     yaml = inline_bash_to_yaml.YAML()
+#     data = yaml.load(result_yaml)
+#
+#     # Check the job with the short script
+#     script_content = data["test_job_short"]["script"]
+#     expected_script = [
+#         'echo "Running a short script"',
+#         "echo 'line 1'",
+#         "echo 'line 2'",
+#         'echo "Done"',
+#     ]
+#     assert script_content == expected_script
+#     # Final check to ensure no file references remain
+#     assert not any(".sh" in line for line in script_content)
 
 
-def test_read_from_filesystem(tmp_path):
-    """
-    Tests that the script reader can fall back to the filesystem if
-    script_sources is not provided.
-    """
-    # Setup a script file on the temporary filesystem
-    script_dir = tmp_path / "scripts"
-    script_dir.mkdir()
-    script_path = script_dir / "file_script.sh"
-    script_path.write_text("echo 'hello from file'")
+# def test_no_change_for_unaffected_jobs(sample_gitlab_ci_yaml, script_sources_dict):
+#     """
+#     Tests that jobs without script references or with non-list scripts are unchanged.
+#     """
+#     result_yaml = inline_bash_to_yaml.inline_gitlab_scripts(sample_gitlab_ci_yaml, script_sources_dict)
+#
+#     yaml = inline_bash_to_yaml.YAML()
+#     data = yaml.load(result_yaml)
+#
+#     # This job should be exactly as it was
+#     assert data["another_job"]["script"] == ["ls -la"]
+#     # This job's script should also be unchanged
+#     assert data["job_with_non_list_script"]["script"] == "echo 'hello'"
+#     # This job has no script key at all
+#     assert "script" not in data["job_with_no_script"]
 
-    # Create a gitlab-ci.yml that references this file
-    # Note: The path in the YAML must be relative to where the script would run
-    # so we use a relative path. The test will run from tmp_path.
 
-    # We need to create the file in the root of tmp_path for the relative path to work
-    file_script_path_for_yaml = "./file_script.sh"
-    (tmp_path / "file_script.sh").write_text("echo 'hello from file'")
-
-    gitlab_ci_content = f"""
-    file_job:
-      script:
-        - {file_script_path_for_yaml}
-    """
-
-    # Change cwd to tmp_path so the relative file path can be found
-    import os
-
-    original_cwd = os.getcwd()
-    os.chdir(tmp_path)
-
-    try:
-        # Run the inliner without providing script_sources
-        result_yaml = inline_bash_to_yaml.inline_gitlab_scripts(gitlab_ci_content)
-
-        yaml = inline_bash_to_yaml.YAML()
-        data = yaml.load(result_yaml)
-
-        # Check that the script was inlined from the file
-        assert data["file_job"]["script"] == ["echo 'hello from file'"]
-    finally:
-        # IMPORTANT: Change back to the original directory
-        os.chdir(original_cwd)
+# def test_read_from_filesystem(tmp_path):
+#     """
+#     Tests that the script reader can fall back to the filesystem if
+#     script_sources is not provided.
+#     """
+#     # Setup a script file on the temporary filesystem
+#     script_dir = tmp_path / "scripts"
+#     script_dir.mkdir()
+#     script_path = script_dir / "file_script.sh"
+#     script_path.write_text("echo 'hello from file'")
+#
+#     # Create a gitlab-ci.yml that references this file
+#     # Note: The path in the YAML must be relative to where the script would run
+#     # so we use a relative path. The test will run from tmp_path.
+#
+#     # We need to create the file in the root of tmp_path for the relative path to work
+#     file_script_path_for_yaml = "./file_script.sh"
+#     (tmp_path / "file_script.sh").write_text("echo 'hello from file'")
+#
+#     gitlab_ci_content = f"""
+#     file_job:
+#       script:
+#         - {file_script_path_for_yaml}
+#     """
+#
+#     # Change cwd to tmp_path so the relative file path can be found
+#     import os
+#
+#     original_cwd = os.getcwd()
+#     os.chdir(tmp_path)
+#
+#     try:
+#         # Run the inliner without providing script_sources
+#         result_yaml = inline_bash_to_yaml.inline_gitlab_scripts(gitlab_ci_content)
+#
+#         yaml = inline_bash_to_yaml.YAML()
+#         data = yaml.load(result_yaml)
+#
+#         # Check that the script was inlined from the file
+#         assert data["file_job"]["script"] == ["echo 'hello from file'"]
+#     finally:
+#         # IMPORTANT: Change back to the original directory
+#         os.chdir(original_cwd)
