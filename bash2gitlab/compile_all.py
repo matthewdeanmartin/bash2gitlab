@@ -13,8 +13,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 logger = logging.getLogger(__name__)
 
-BANNER = """
-# DO NOT EDIT
+BANNER = """# DO NOT EDIT
 # This is a compiled file, compiled with bash2gitlab
 # Recompile instead of editing this file.
 
@@ -254,6 +253,16 @@ def process_uncompiled_directory(
 ) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
+
+    Args:
+        uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
+        output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
+        scripts_path (Path): Optionally put all bash files into a script folder.
+        templates_dir (Path): Optionally put all yaml files into a template folder.
+        dry_run (bool): If True, simulate the process without writing any files.
+
+    Returns:
+        - The total number of jobs processed.
     """
     inlined_count = 0
     # Safely clean up previous outputs

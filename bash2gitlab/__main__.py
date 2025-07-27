@@ -34,6 +34,7 @@ from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.logging_config import generate_config
+from bash2gitlab.shred_all import shred_gitlab_ci
 
 
 def run_formatter(output_dir: Path, templates_output_dir: Path):
@@ -120,7 +121,7 @@ def main() -> int:
 
     # --- Compile Command ---
     compile_parser = subparsers.add_parser(
-        "compile", help="Compile an 'uncompiled' directory into a standard GitLab CI structure."
+        "compile", help="Compile an uncompiled directory into a standard GitLab CI structure."
     )
     compile_parser.add_argument(
         "--in",
@@ -163,6 +164,36 @@ def main() -> int:
     compile_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     compile_parser.set_defaults(func=compile_handler)
 
+    # --- Shred Command (add this section) ---
+    shred_parser = subparsers.add_parser(
+        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
+    )
+    shred_parser.add_argument(
+        "--in",
+        dest="input_file",
+        required=True,
+        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
+    )
+    shred_parser.add_argument(
+        "--out",
+        dest="output_file",
+        required=True,
+        help="Output path for the modified GitLab CI file.",
+    )
+    shred_parser.add_argument(
+        "--scripts-out",
+        required=False,
+        help="Output directory to save the shredded .sh script files.",
+    )
+    shred_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the shredding process without writing any files.",
+    )
+    shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    shred_parser.set_defaults(func=shred_handler)
+
     args = parser.parse_args()
 
     # --- Setup Logging ---
@@ -177,6 +208,41 @@ def main() -> int:
     args.func(args)
     return 0
 
+def shred_handler(args: argparse.Namespace):
+    """Handler for the 'shred' command."""
+    logger = logging.getLogger(__name__)
+    logger.info("Starting bash2gitlab shredder...")
+
+    # Resolve the file and directory paths
+    in_file = Path(args.input_file).resolve()
+    out_file = Path(args.output_file).resolve()
+    if args.scripts_out:
+        scripts_out_dir = Path(args.scripts_out).resolve()
+    else:
+        if out_file.is_file():
+            scripts_out_dir = out_file.parent
+        else:
+            scripts_out_dir = out_file
+    dry_run = bool(args.dry_run)
+
+    try:
+        jobs, scripts = shred_gitlab_ci(
+            input_yaml_path=in_file,
+            output_yaml_path=out_file,
+            scripts_output_path=scripts_out_dir,
+            dry_run=dry_run,
+        )
+
+        if dry_run:
+            logger.info(f"DRY RUN: Would have processed {jobs} jobs and created {scripts} script(s).")
+        else:
+            logger.info(f"✅ Successfully processed {jobs} jobs and created {scripts} script(s).")
+            logger.info(f"Modified YAML written to: {out_file}")
+            logger.info(f"Scripts shredded to: {scripts_out_dir}")
+
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -51,24 +51,13 @@ pip install bash2gitlab
 ```
 
 ## Usage
+See examples in repo.
 
 ```bash
-❯ bash2gitlab compile --help
-usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
-                           [--templates-out TEMPLATES_OUT] [--format] [-v]
-
-options:
-  -h, --help            show this help message and exit
-  --in INPUT_DIR        Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.
-  --out OUTPUT_DIR      Output directory for the compiled GitLab CI files.
-  --scripts SCRIPTS_DIR
-                        Directory containing bash scripts to inline. (Default: <in>)
-  --templates-in TEMPLATES_IN
-                        Input directory for CI templates. (Default: <in>)
-  --templates-out TEMPLATES_OUT
-                        Output directory for compiled CI templates. (Default: <out>)
-  --format              Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.
-  -v, --verbose         Enable verbose (DEBUG) logging output.
+# compiling
+bash2gitlab compile --in src --out out --format
+# shredding
+bash2gitlab shred --in original/.gitlab-ci.yml --out src
 ```
 
 ## Name

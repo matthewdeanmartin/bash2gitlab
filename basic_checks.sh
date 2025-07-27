@@ -1,3 +1,4 @@
+#! /bin/bash
 set -eou pipefail
 echo "help..."
 bash2gitlab --help
