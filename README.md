@@ -1,9 +1,28 @@
 # bash2gitlab
 Compile bash to yaml pipelines to get IDE support for bash and import bash from template repos
 
-`build.sh + template.yml = template.compiled.yml`
+For example
 
-And now you can import both the bash and template from template.compiled.yml. 
+.gitlab-ci.yml
+```yaml
+job:
+    script:
+        - ./script.sh.
+```
+
+script.sh
+```bash
+make build
+```
+
+compiles to
+
+.gitlab-ci.yml
+```yaml
+job:
+    script:
+        - make build
+```
 
 ## Scenario
 Your .gitlab-ci.yml pipelines are more bash than yaml. 1000s of lines of bash. But your IDE doesn't recognize
