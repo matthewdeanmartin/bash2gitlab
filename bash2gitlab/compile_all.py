@@ -160,9 +160,10 @@ def inline_gitlab_scripts(
     scripts_root: Path,
     script_sources: dict[str, str],
     global_vars: dict[str, str],
+    uncompiled_path: Path,  # Path to look for job_name_variables.sh files
 ) -> tuple[int, str]:
     """
-    Loads a GitLab CI YAML file, inlines scripts, merges global variables,
+    Loads a GitLab CI YAML file, inlines scripts, merges global and job-specific variables,
     reorders top-level keys, and returns the result as a string.
     """
     inlined_count = 0
@@ -190,20 +191,40 @@ def inline_gitlab_scripts(
 
     # Process all jobs
     for job_name, job_data in data.items():
-        # A simple heuristic for a "job" is a dictionary with a 'script' key.
-        if isinstance(job_data, dict) and "script" in job_data:
-            logger.info(f"Processing job: {job_name}")
-            inlined_count += process_job(job_data, scripts_root, script_sources)
-        if isinstance(job_data, dict) and "hooks" in job_data:
-            if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
-                logger.info(f"Processing pre_get_sources_script: {job_name}")
-                inlined_count += process_job(job_data["hooks"], scripts_root, script_sources)
-        if isinstance(job_data, dict) and "run" in job_data:
-            if isinstance(job_data["run"], list):
-                for item in job_data["run"]:
-                    if isinstance(item, dict) and "script" in item:
-                        logger.info(f"Processing run/script: {job_name}")
-                        inlined_count += process_job(item, scripts_root, script_sources)
+        if isinstance(job_data, dict):
+            # FIX: Look for and process job-specific variables file
+            safe_job_name = job_name.replace(":", "_")
+            job_vars_filename = f"{safe_job_name}_variables.sh"
+            job_vars_path = uncompiled_path / job_vars_filename
+
+            if job_vars_path.is_file():
+                logger.info(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
+                content = job_vars_path.read_text(encoding="utf-8")
+                job_specific_vars = parse_env_file(content)
+
+                if job_specific_vars:
+                    existing_job_vars = job_data.get("variables", CommentedMap())
+                    # Start with variables from the .sh file
+                    merged_job_vars = CommentedMap(job_specific_vars.items())
+                    # Update with variables from the YAML, so they take precedence
+                    merged_job_vars.update(existing_job_vars)
+                    job_data["variables"] = merged_job_vars
+                    inlined_count += 1
+
+            # A simple heuristic for a "job" is a dictionary with a 'script' key.
+            if "script" in job_data:
+                logger.info(f"Processing job: {job_name}")
+                inlined_count += process_job(job_data, scripts_root, script_sources)
+            if "hooks" in job_data:
+                if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
+                    logger.info(f"Processing pre_get_sources_script: {job_name}")
+                    inlined_count += process_job(job_data["hooks"], scripts_root, script_sources)
+            if "run" in job_data:
+                if isinstance(job_data["run"], list):
+                    for item in job_data["run"]:
+                        if isinstance(item, dict) and "script" in item:
+                            logger.info(f"Processing run/script: {job_name}")
+                            inlined_count += process_job(item, scripts_root, script_sources)
 
     # --- Reorder top-level keys for consistent output ---
     logger.info("Reordering top-level keys in the final YAML.")
@@ -301,7 +322,11 @@ def process_uncompiled_directory(
         logger.info(f"Processing root file: {root_yaml}")
         raw_text = root_yaml.read_text(encoding="utf-8")
         inlined_for_file, compiled = inline_gitlab_scripts(
-            raw_text, scripts_path, script_sources, global_vars  # Pass parsed variables
+            raw_text,
+            scripts_path,
+            script_sources,
+            global_vars,
+            uncompiled_path,  # Pass the path for finding job-specific vars
         )
         inlined_count += inlined_for_file
         output_root_yaml = output_path / f".gitlab-ci.{root_yaml_extension}"
@@ -324,15 +349,17 @@ def process_uncompiled_directory(
             if output_root_yaml != output_to_write:
                 logger.info(f"Processing template file: {template_path}")
                 raw_text = template_path.read_text(encoding="utf-8")
-                inlined_count, compiled = inline_gitlab_scripts(
+                inlined_for_file, compiled = inline_gitlab_scripts(
                     raw_text,
                     scripts_path,
                     script_sources,
                     {},  # Do not pass global variables to templates
+                    uncompiled_path,  # Pass the path for finding job-specific vars
                 )
+                inlined_count += inlined_for_file
 
                 if not dry_run:
-                    if inlined_count > 0:
+                    if inlined_for_file > 0:
                         # inlines happened
                         output_to_write.write_text(BANNER + compiled, encoding="utf-8")
                     else:

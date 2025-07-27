@@ -4,7 +4,7 @@ Almost all prior art that I could find relates to just living with all your bash
 
 I think this is painful because
 
-- you must take yaml-escape your bash
+- you must yaml-escape your bash
 - bash tooling doesn't support it
 - any tool that does support bash-in-yaml needs to support it for many different CI syntaxes.
 

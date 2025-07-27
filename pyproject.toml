@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.3.0"
+version = "0.4.0"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -11,6 +11,7 @@ dependencies = [
     "ruamel.yaml",
     "yamlfix",
     "colorlog",
+    "watchdog>=3.0.0",
     # backwards compatibility
     "toml; python_version < '3.11'",
     # yamlfix

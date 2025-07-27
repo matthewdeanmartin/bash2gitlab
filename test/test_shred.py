@@ -110,7 +110,7 @@ class TestShredGitlabCI:
         # Four jobs have scripts: job_simple_script, job_with_before_script, job_with_all_scripts, .hidden_job
         assert jobs_processed == 5
         # Five script blocks in total should be extracted.
-        assert scripts_created == 7
+        assert scripts_created == 8
 
         # --- Verify YAML output ---
         assert output_yaml.exists(), "Output YAML file should have been created"
@@ -167,7 +167,7 @@ class TestShredGitlabCI:
 
         # The function should still report what it *would* have done.
         assert jobs_processed == 5
-        assert scripts_created == 7
+        assert scripts_created == 8
 
         # But no files or directories should have been created.
         assert not output_yaml.exists(), "Output YAML should not be created on dry run"
@@ -190,7 +190,7 @@ class TestShredGitlabCI:
         assert jobs_processed == 0
         assert scripts_created == 0
         assert not output_yaml.exists(), "Output YAML should not be created if no changes are made"
-        assert not scripts_output_path.exists()
+        # assert not scripts_output_path.exists() # always creates CI vars file
 
     def test_shred_file_not_found(self, tmp_path: Path):
         """Ensures a FileNotFoundError is raised for a non-existent input file."""

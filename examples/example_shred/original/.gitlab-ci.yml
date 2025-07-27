@@ -19,6 +19,9 @@ variables:
 # --- Build Stage ---
 # This job compiles the GnuCOBOL source code into an executable file.
 build_cobol_program:
+  variables:
+    FIZZ: BUZZ
+    FOO: BAR
   stage: build
   script:
     # The -x flag creates an executable.

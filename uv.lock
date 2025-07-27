@@ -388,13 +388,15 @@ wheels = [
 
 [[package]]
 name = "bash2gitlab"
-version = "0.3.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "colorlog" },
     { name = "pydantic", version = "2.12.0a1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "ruamel-yaml" },
     { name = "toml", marker = "python_full_version < '3.11'" },
+    { name = "watchdog", version = "4.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "watchdog", version = "6.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "yamlfix", version = "1.16.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9.1'" },
     { name = "yamlfix", version = "1.17.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9.1'" },
 ]
@@ -449,6 +451,7 @@ requires-dist = [
     { name = "pydantic", marker = "python_full_version >= '3.14'", specifier = ">=2.12.0a1" },
     { name = "ruamel-yaml" },
     { name = "toml", marker = "python_full_version < '3.11'" },
+    { name = "watchdog", specifier = ">=3.0.0" },
     { name = "yamlfix" },
 ]
 

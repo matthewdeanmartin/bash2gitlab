@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.4.0] - 2025-07-27
+
+- Watch mode (--watch) to recompile on file changes
+- Shred supports job-level variables
+- Shred automatically includes if-block to include job level and global variables.
+- Shred generates mock CI variables file
+- init command to generate config file
+
 ## [0.3.0] - 2025-07-27
 
 ### Added

@@ -24,60 +24,24 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.config
-import subprocess  # nosec
 import sys
 from pathlib import Path
 
-# --- Project Imports ---
-# Make sure the project is installed or the path is correctly set for these imports to work
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
+from bash2gitlab.init_project import init_handler
 from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
+from bash2gitlab.tool_yamlfix import run_formatter
+from bash2gitlab.watch_files import start_watch
 
-
-def run_formatter(output_dir: Path, templates_output_dir: Path):
-    """
-    Runs yamlfix on the output directories.
-
-    Args:
-        output_dir (Path): The main output directory.
-        templates_output_dir (Path): The templates output directory.
-    """
-    logger = logging.getLogger(__name__)
-    try:
-        # Check if yamlfix is installed
-        subprocess.run(["yamlfix", "--version"], check=True, capture_output=True)  # nosec
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        logger.error(
-            "❌ 'yamlfix' is not installed or not in PATH. Please install it to use the --format option (`pip install yamlfix`)."
-        )
-        sys.exit(1)
-
-    targets = []
-    if output_dir.is_dir():
-        targets.append(str(output_dir))
-    if templates_output_dir.is_dir():
-        targets.append(str(templates_output_dir))
-
-    if not targets:
-        logger.warning("No output directories found to format.")
-        return
-
-    logger.info(f"Running yamlfix on: {', '.join(targets)}")
-    try:
-        subprocess.run(["yamlfix", *targets], check=True, capture_output=True)  # nosec
-        logger.info("✅ Formatting complete.")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"❌ Error running yamlfix: {e.stderr.decode()}")
-        sys.exit(1)
+logger = logging.getLogger(__name__)
 
 
 def compile_handler(args: argparse.Namespace):
     """Handler for the 'compile' command."""
-    logger = logging.getLogger(__name__)
     logger.info("Starting bash2gitlab compiler...")
 
     # Resolve paths, using sensible defaults if optional paths are not provided
@@ -87,6 +51,18 @@ def compile_handler(args: argparse.Namespace):
     templates_in_dir = Path(args.templates_in).resolve() if args.templates_in else in_dir
     templates_out_dir = Path(args.templates_out).resolve() if args.templates_out else out_dir
     dry_run = bool(args.dry_run)
+
+    if args.watch:
+        start_watch(
+            uncompiled_path=in_dir,
+            output_path=out_dir,
+            scripts_path=scripts_dir,
+            templates_dir=templates_in_dir,
+            output_templates_dir=templates_out_dir,
+            dry_run=dry_run,
+            format_output=args.format,
+        )
+        return
 
     try:
         process_uncompiled_directory(
@@ -110,7 +86,6 @@ def compile_handler(args: argparse.Namespace):
 
 def shred_handler(args: argparse.Namespace):
     """Handler for the 'shred' command."""
-    logger = logging.getLogger(__name__)
     logger.info("Starting bash2gitlab shredder...")
 
     # Resolve the file and directory paths
@@ -223,9 +198,39 @@ def main() -> int:
         action="store_true",
         help="Simulate the shredding process without writing any files.",
     )
+    compile_parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch source directories and auto-recompile on changes.",
+    )
     shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
+
+    # Init Parser
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Initialize a new bash2gitlab project and config file.",
+    )
+    init_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="The directory to initialize the project in. Defaults to the current directory.",
+    )
+    init_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the initialization process without creating the config file.",
+    )
+    init_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose (DEBUG) logging output.",
+    )
+    init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    init_parser.set_defaults(func=init_handler)
 
     args = parser.parse_args()
 
@@ -255,7 +260,8 @@ def main() -> int:
     # Merge boolean flags
     args.verbose = args.verbose or config.verbose or False
     args.quiet = args.quiet or config.quiet or False
-    args.format = args.format or config.format or False
+    if hasattr(args, "format"):
+        args.format = args.format or config.format or False
     args.dry_run = args.dry_run or config.dry_run or False
 
     # --- Setup Logging ---

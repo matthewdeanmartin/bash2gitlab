@@ -8,7 +8,7 @@ variables:
 stages:
   - build
   - test
-# Use a Docker image that has GnuCOBOL pre-installed.
+# Use a Docker image that has GnuCOBOL pre-installed. Z
 # You can find various images on Docker Hub or create your own.
 default:
   image: hurriedreformist/gnucobol:latest

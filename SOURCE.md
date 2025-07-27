@@ -3,9 +3,13 @@
 ├── CHANGELOG.md
 ├── compile_all.py
 ├── config.py
+├── init_project.py
 ├── logging_config.py
+├── mock_ci_vars.py
 ├── py.typed
 ├── shred_all.py
+├── tool_yamlfix.py
+├── watch_files.py
 ├── __about__.py
 └── __main__.py
 ```
@@ -206,9 +210,10 @@ def inline_gitlab_scripts(
     scripts_root: Path,
     script_sources: dict[str, str],
     global_vars: dict[str, str],
+    uncompiled_path: Path,  # Path to look for job_name_variables.sh files
 ) -> tuple[int, str]:
     """
-    Loads a GitLab CI YAML file, inlines scripts, merges global variables,
+    Loads a GitLab CI YAML file, inlines scripts, merges global and job-specific variables,
     reorders top-level keys, and returns the result as a string.
     """
     inlined_count = 0
@@ -236,20 +241,40 @@ def inline_gitlab_scripts(
 
     # Process all jobs
     for job_name, job_data in data.items():
-        # A simple heuristic for a "job" is a dictionary with a 'script' key.
-        if isinstance(job_data, dict) and "script" in job_data:
-            logger.info(f"Processing job: {job_name}")
-            inlined_count += process_job(job_data, scripts_root, script_sources)
-        if isinstance(job_data, dict) and "hooks" in job_data:
-            if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
-                logger.info(f"Processing pre_get_sources_script: {job_name}")
-                inlined_count += process_job(job_data["hooks"], scripts_root, script_sources)
-        if isinstance(job_data, dict) and "run" in job_data:
-            if isinstance(job_data["run"], list):
-                for item in job_data["run"]:
-                    if isinstance(item, dict) and "script" in item:
-                        logger.info(f"Processing run/script: {job_name}")
-                        inlined_count += process_job(item, scripts_root, script_sources)
+        if isinstance(job_data, dict):
+            # FIX: Look for and process job-specific variables file
+            safe_job_name = job_name.replace(":", "_")
+            job_vars_filename = f"{safe_job_name}_variables.sh"
+            job_vars_path = uncompiled_path / job_vars_filename
+
+            if job_vars_path.is_file():
+                logger.info(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
+                content = job_vars_path.read_text(encoding="utf-8")
+                job_specific_vars = parse_env_file(content)
+
+                if job_specific_vars:
+                    existing_job_vars = job_data.get("variables", CommentedMap())
+                    # Start with variables from the .sh file
+                    merged_job_vars = CommentedMap(job_specific_vars.items())
+                    # Update with variables from the YAML, so they take precedence
+                    merged_job_vars.update(existing_job_vars)
+                    job_data["variables"] = merged_job_vars
+                    inlined_count += 1
+
+            # A simple heuristic for a "job" is a dictionary with a 'script' key.
+            if "script" in job_data:
+                logger.info(f"Processing job: {job_name}")
+                inlined_count += process_job(job_data, scripts_root, script_sources)
+            if "hooks" in job_data:
+                if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
+                    logger.info(f"Processing pre_get_sources_script: {job_name}")
+                    inlined_count += process_job(job_data["hooks"], scripts_root, script_sources)
+            if "run" in job_data:
+                if isinstance(job_data["run"], list):
+                    for item in job_data["run"]:
+                        if isinstance(item, dict) and "script" in item:
+                            logger.info(f"Processing run/script: {job_name}")
+                            inlined_count += process_job(item, scripts_root, script_sources)
 
     # --- Reorder top-level keys for consistent output ---
     logger.info("Reordering top-level keys in the final YAML.")
@@ -347,7 +372,11 @@ def process_uncompiled_directory(
         logger.info(f"Processing root file: {root_yaml}")
         raw_text = root_yaml.read_text(encoding="utf-8")
         inlined_for_file, compiled = inline_gitlab_scripts(
-            raw_text, scripts_path, script_sources, global_vars  # Pass parsed variables
+            raw_text,
+            scripts_path,
+            script_sources,
+            global_vars,
+            uncompiled_path,  # Pass the path for finding job-specific vars
         )
         inlined_count += inlined_for_file
         output_root_yaml = output_path / f".gitlab-ci.{root_yaml_extension}"
@@ -370,15 +399,17 @@ def process_uncompiled_directory(
             if output_root_yaml != output_to_write:
                 logger.info(f"Processing template file: {template_path}")
                 raw_text = template_path.read_text(encoding="utf-8")
-                inlined_count, compiled = inline_gitlab_scripts(
+                inlined_for_file, compiled = inline_gitlab_scripts(
                     raw_text,
                     scripts_path,
                     script_sources,
                     {},  # Do not pass global variables to templates
+                    uncompiled_path,  # Pass the path for finding job-specific vars
                 )
+                inlined_count += inlined_for_file
 
                 if not dry_run:
-                    if inlined_count > 0:
+                    if inlined_for_file > 0:
                         # inlines happened
                         output_to_write.write_text(BANNER + compiled, encoding="utf-8")
                     else:
@@ -577,6 +608,133 @@ def _reset_for_testing(config_path_override: Path | None = None):
     global config
     config = _Config(config_path_override=config_path_override)
 ```
+## File: init_project.py
+```python
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Default directory structure configuration
+DEFAULT_CONFIG = {
+    "input_dir": "src",
+    "output_dir": "out",
+    "scripts_dir": "scripts",
+    "templates_in": "templates",
+    "templates_out": "out/templates",
+}
+
+# Default settings for boolean flags
+DEFAULT_FLAGS = {
+    "format": False,
+    "verbose": False,
+    "quiet": False,
+}
+
+# Template for the bash2gitlab.toml file
+TOML_TEMPLATE = """# Configuration for bash2gitlab
+# This file was generated by the 'bash2gitlab init' command.
+
+# Directory settings
+input_dir = "{input_dir}"
+output_dir = "{output_dir}"
+scripts_dir = "{scripts_dir}"
+templates_in = "{templates_in}"
+templates_out = "{templates_out}"
+
+# Command-line flag defaults
+format = {format}
+verbose = {verbose}
+quiet = {quiet}
+"""
+
+
+def get_str_input(prompt: str, default: str) -> str:
+    """Prompts the user for string input with a default value."""
+    prompt_with_default = f"{prompt} (default: {default}): "
+    return input(prompt_with_default).strip() or default
+
+
+def get_bool_input(prompt: str, default: bool) -> bool:
+    """Prompts the user for boolean (y/n) input with a default."""
+    default_str = "y" if default else "n"
+    prompt_with_default = f"{prompt} (y/n, default: {default_str}): "
+    response = input(prompt_with_default).strip().lower()
+    if not response:
+        return default
+    return response in ["y", "yes"]
+
+
+def prompt_for_config() -> dict[str, Any]:
+    """
+    Interactively prompts the user for project configuration details.
+    This function is separate from file I/O to be easily testable.
+    """
+    print("Initializing a new bash2gitlab project.")
+    print("Please confirm the directory structure (press Enter to accept defaults).")
+    config: dict[str, Any] = {}
+    for key, value in DEFAULT_CONFIG.items():
+        user_value = get_str_input(f"  -> {key}", value)
+        config[key] = user_value
+
+    print("\nConfigure default behavior (press Enter to accept defaults).")
+    for key, flag_value in DEFAULT_FLAGS.items():
+        flag_user_value = get_bool_input(f"  -> Always use --{key}?", flag_value)
+        config[key] = flag_user_value
+
+    return config
+
+
+def create_config_file(base_path: Path, config: dict[str, Any], dry_run: bool = False):
+    """
+    Creates the config file for a new project.
+    This function performs all file system operations.
+    """
+    config_file_path = base_path / "bash2gitlab.toml"
+
+    logger.info("\nThe following file will be created:")
+    print(f"  - {config_file_path}")
+
+    if dry_run:
+        logger.warning("\nDRY RUN: No file will be created.")
+        return
+
+    # Write the config file
+    # Lowercase boolean values for TOML compatibility
+    formatted_config = config.copy()
+    for key, value in formatted_config.items():
+        if isinstance(value, bool):
+            formatted_config[key] = str(value).lower()
+
+    toml_content = TOML_TEMPLATE.format(**formatted_config)
+    config_file_path.write_text(toml_content, encoding="utf-8")
+
+    logger.info("\n✅ Project initialization complete.")
+
+
+def init_handler(args: Any):
+    """Handles the `init` command logic."""
+    logger.info("Starting interactive project initializer...")
+    base_path = Path(args.directory).resolve()
+
+    if not base_path.exists():
+        base_path.mkdir(parents=True)
+        logger.info(f"Created project directory: {base_path}")
+    elif (base_path / "bash2gitlab.toml").exists():
+        logger.error(f"A 'bash2gitlab.toml' file already exists in '{base_path}'. Aborting.")
+        return 1
+
+    try:
+        user_config = prompt_for_config()
+        create_config_file(base_path, user_config, args.dry_run)
+    except (KeyboardInterrupt, EOFError):
+        logger.warning("\nInitialization cancelled by user.")
+        return 1
+    return 0
+```
 ## File: logging_config.py
 ```python
 """
@@ -644,6 +802,82 @@ def generate_config(level: str = "DEBUG") -> dict[str, Any]:
 
     return config
 ```
+## File: mock_ci_vars.py
+```python
+from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def generate_mock_ci_variables_script(output_path: str = "mock_ci_variables.sh") -> None:
+    """Generate a shell script exporting mock GitLab CI/CD variables."""
+    ci_vars: dict[str, str] = {
+        "CI": "false",
+        "GITLAB_CI": "false",
+        "CI_API_V4_URL": "https://gitlab.example.com/api/v4",
+        "CI_API_GRAPHQL_URL": "https://gitlab.example.com/api/graphql",
+        "CI_PROJECT_ID": "1234",
+        "CI_PROJECT_NAME": "example-project",
+        "CI_PROJECT_PATH": "group/example-project",
+        "CI_PROJECT_NAMESPACE": "group",
+        "CI_PROJECT_ROOT_NAMESPACE": "group",
+        "CI_PROJECT_URL": "https://gitlab.example.com/group/example-project",
+        "CI_PROJECT_VISIBILITY": "private",
+        "CI_DEFAULT_BRANCH": "main",
+        "CI_COMMIT_SHA": "abcdef1234567890abcdef1234567890abcdef12",
+        "CI_COMMIT_SHORT_SHA": "abcdef12",
+        "CI_COMMIT_BRANCH": "feature-branch",
+        "CI_COMMIT_REF_NAME": "feature-branch",
+        "CI_COMMIT_REF_SLUG": "feature-branch",
+        "CI_COMMIT_BEFORE_SHA": "0000000000000000000000000000000000000000",
+        "CI_COMMIT_MESSAGE": "Add new CI feature",
+        "CI_COMMIT_TITLE": "Add new CI feature",
+        "CI_COMMIT_TIMESTAMP": "2025-07-27T12:00:00Z",
+        "CI_COMMIT_AUTHOR": "Test User <test@example.com>",
+        "CI_PIPELINE_ID": "5678",
+        "CI_PIPELINE_IID": "42",
+        "CI_PIPELINE_SOURCE": "push",
+        "CI_PIPELINE_URL": "https://gitlab.example.com/group/example-project/-/pipelines/5678",
+        "CI_PIPELINE_CREATED_AT": "2025-07-27T12:00:05Z",
+        "CI_JOB_ID": "91011",
+        "CI_JOB_NAME": "test-job",
+        "CI_JOB_STAGE": "test",
+        "CI_JOB_STATUS": "running",
+        "CI_JOB_TOKEN": "xyz-token",
+        "CI_JOB_URL": "https://gitlab.example.com/group/example-project/-/jobs/91011",
+        "CI_JOB_STARTED_AT": "2025-07-27T12:00:10Z",
+        "CI_PROJECT_DIR": "/builds/group/example-project",
+        "CI_BUILDS_DIR": "/builds",
+        "CI_RUNNER_ID": "55",
+        "CI_RUNNER_SHORT_TOKEN": "runner1234567890",
+        "CI_RUNNER_VERSION": "17.3.0",
+        "CI_SERVER_URL": "https://gitlab.example.com",
+        "CI_SERVER_HOST": "gitlab.example.com",
+        "CI_SERVER_PORT": "443",
+        "CI_SERVER_PROTOCOL": "https",
+        "CI_SERVER_NAME": "GitLab",
+        "CI_SERVER_VERSION": "17.2.1",
+        "CI_SERVER_VERSION_MAJOR": "17",
+        "CI_SERVER_VERSION_MINOR": "2",
+        "CI_SERVER_VERSION_PATCH": "1",
+        "CI_REPOSITORY_URL": "https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab.example.com/group/example-project.git",
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("#!/usr/bin/env bash\n")
+        f.write("# Auto-generated mock CI variables\n\n")
+        for key, val in ci_vars.items():
+            escaped = val.replace('"', '\\"')
+            f.write(f'export {key}="{escaped}"\n')
+
+    logger.info("Wrote %s with %d variables", output_path, len(ci_vars))
+
+
+if __name__ == "__main__":
+    generate_mock_ci_variables_script()
+```
 ## File: py.typed
 ```
 # when type checking dependents, tell type checkers to use this package's types
@@ -659,6 +893,8 @@ from pathlib import Path
 
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
+
+from bash2gitlab.mock_ci_vars import generate_mock_ci_variables_script
 
 logger = logging.getLogger(__name__)
 
@@ -687,15 +923,65 @@ def create_script_filename(job_name: str, script_key: str) -> str:
     return f"{sanitized_job_name}_{script_key}.sh"
 
 
+def shred_variables_block(
+    variables_data: dict,
+    base_name: str,
+    scripts_output_path: Path,
+    dry_run: bool = False,
+) -> str | None:
+    """
+    Extracts a variables block into a .sh file containing export statements.
+
+    Args:
+        variables_data (dict): The dictionary of variables.
+        base_name (str): The base for the filename (e.g., 'global' or a sanitized job name).
+        scripts_output_path (Path): The directory to save the new .sh file.
+        dry_run (bool): If True, don't write any files.
+
+    Returns:
+        str | None: The filename of the created variables script for sourcing, or None.
+    """
+    if not variables_data or not isinstance(variables_data, dict):
+        return None
+
+    variable_lines = []
+    for key, value in variables_data.items():
+        # Simple stringification for the value.
+        # Shell-safe escaping is complex; this handles basic cases by quoting.
+        value_str = str(value).replace('"', '\\"')
+        variable_lines.append(f'export {key}="{value_str}"')
+
+    if not variable_lines:
+        return None
+
+    # For global, filename is global_variables.sh. For jobs, it's job-name_variables.sh
+    script_filename = f"{base_name}_variables.sh"
+    script_filepath = scripts_output_path / script_filename
+    full_script_content = "\n".join(variable_lines) + "\n"
+
+    logger.info(f"Shredding variables for '{base_name}' to '{script_filepath}'")
+
+    if not dry_run:
+        script_filepath.parent.mkdir(parents=True, exist_ok=True)
+        script_filepath.write_text(full_script_content, encoding="utf-8")
+        # Make the script executable for consistency, though not strictly required for sourcing
+        script_filepath.chmod(0o755)
+
+    return script_filename
+
+
 def shred_script_block(
     script_content: list[str] | str,
     job_name: str,
     script_key: str,
     scripts_output_path: Path,
     dry_run: bool = False,
+    global_vars_filename: str | None = None,
+    job_vars_filename: str | None = None,
 ) -> tuple[str | None, str | None]:
     """
     Extracts a script block into a .sh file and returns the command to run it.
+    The generated script will source global and job-specific variable files if they exist.
 
     Args:
         script_content (Union[list[str], str]): The script content from the YAML.
@@ -703,6 +989,8 @@ def shred_script_block(
         script_key (str): The key of the script ('script', 'before_script', etc.).
         scripts_output_path (Path): The directory to save the new .sh file.
         dry_run (bool): If True, don't write any files.
+        global_vars_filename (str, optional): Filename of the global variables script.
+        job_vars_filename (str, optional): Filename of the job-specific variables script.
 
     Returns:
         A tuple containing:
@@ -743,14 +1031,27 @@ def shred_script_block(
     script_filepath = scripts_output_path / script_filename
     execution_command = f"./{script_filepath.relative_to(scripts_output_path.parent)}"
 
-    full_script_content = f"{SHEBANG}\n" + "\n".join(script_lines) + "\n"
+    # Build the header with conditional sourcing for local execution
+    header_parts = [SHEBANG]
+    sourcing_block = []
+    if global_vars_filename:
+        sourcing_block.append(f"  . ./{global_vars_filename}")
+    if job_vars_filename:
+        sourcing_block.append(f"  . ./{job_vars_filename}")
+
+    if sourcing_block:
+        header_parts.append('\nif [[ "${CI:-}" == "" ]]; then')
+        header_parts.extend(sourcing_block)
+        header_parts.append("fi")
+
+    script_header = "\n".join(header_parts)
+    full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
 
     logger.info(f"Shredding script from '{job_name}:{script_key}' to '{script_filepath}'")
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
         script_filepath.write_text(full_script_content, encoding="utf-8")
-        # Make the script executable
         script_filepath.chmod(0o755)
 
     return str(script_filepath), execution_command
@@ -761,25 +1062,47 @@ def process_shred_job(
     job_data: dict,
     scripts_output_path: Path,
     dry_run: bool = False,
+    global_vars_filename: str | None = None,
 ) -> int:
     """
-    Processes a single job definition to shred its script blocks.
+    Processes a single job definition to shred its script and variables blocks.
 
     Args:
         job_name (str): The name of the job.
         job_data (dict): The dictionary representing the job's configuration.
         scripts_output_path (Path): The directory to save shredded scripts.
         dry_run (bool): If True, simulate without writing files.
+        global_vars_filename (str, optional): Filename of the global variables script.
 
     Returns:
-        int: The number of script blocks shredded from this job.
+        int: The number of files (scripts and variables) shredded from this job.
     """
     shredded_count = 0
-    script_keys = ["script", "before_script", "after_script", "pre_get_sources_script"]
 
+    # Shred job-specific variables first
+    job_vars_filename = None
+    if "variables" in job_data and isinstance(job_data.get("variables"), dict):
+        sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
+        sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
+        job_vars_filename = shred_variables_block(
+            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run
+        )
+        if job_vars_filename:
+            shredded_count += 1
+
+    # Shred script blocks
+    script_keys = ["script", "before_script", "after_script", "pre_get_sources_script"]
     for key in script_keys:
         if key in job_data and job_data[key]:
-            _, command = shred_script_block(job_data[key], job_name, key, scripts_output_path, dry_run)
+            _, command = shred_script_block(
+                script_content=job_data[key],
+                job_name=job_name,
+                script_key=key,
+                scripts_output_path=scripts_output_path,
+                dry_run=dry_run,
+                global_vars_filename=global_vars_filename,
+                job_vars_filename=job_vars_filename,
+            )
             if command:
                 # Replace the script block with a single command to execute the new file
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
@@ -794,8 +1117,8 @@ def shred_gitlab_ci(
     dry_run: bool = False,
 ) -> tuple[int, int]:
     """
-    Loads a GitLab CI YAML file, shreds all script blocks into separate .sh files,
-    and saves the modified YAML.
+    Loads a GitLab CI YAML file, shreds all script and variable blocks into
+    separate .sh files, and saves the modified YAML.
 
     Args:
         input_yaml_path (Path): Path to the input .gitlab-ci.yml file.
@@ -806,7 +1129,7 @@ def shred_gitlab_ci(
     Returns:
         A tuple containing:
         - The total number of jobs processed.
-        - The total number of script files created.
+        - The total number of .sh files created (scripts and variables).
     """
     if not input_yaml_path.is_file():
         raise FileNotFoundError(f"Input YAML file not found: {input_yaml_path}")
@@ -821,7 +1144,15 @@ def shred_gitlab_ci(
     data = yaml.load(input_yaml_path)
 
     jobs_processed = 0
-    scripts_created = 0
+    total_files_created = 0
+
+    # First, process the top-level 'variables' block, if it exists.
+    global_vars_filename = None
+    if "variables" in data and isinstance(data.get("variables"), dict):
+        logger.info("Processing global variables block.")
+        global_vars_filename = shred_variables_block(data["variables"], "global", scripts_output_path, dry_run)
+        if global_vars_filename:
+            total_files_created += 1
 
     # Process all top-level keys that look like jobs
     for key, value in data.items():
@@ -829,19 +1160,203 @@ def shred_gitlab_ci(
         if isinstance(value, dict) and "script" in value:
             logger.debug(f"Processing job: {key}")
             jobs_processed += 1
-            scripts_created += process_shred_job(key, value, scripts_output_path, dry_run)
+            total_files_created += process_shred_job(key, value, scripts_output_path, dry_run, global_vars_filename)
 
-    if scripts_created > 0:
-        logger.info(f"Shredded {scripts_created} script(s) from {jobs_processed} job(s).")
+    if total_files_created > 0:
+        logger.info(f"Shredded {total_files_created} file(s) from {jobs_processed} job(s).")
         if not dry_run:
             logger.info(f"Writing modified YAML to: {output_yaml_path}")
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             with output_yaml_path.open("w", encoding="utf-8") as f:
                 yaml.dump(data, f)
     else:
-        logger.info("No script blocks found to shred.")
+        logger.info("No script or variable blocks found to shred.")
 
-    return jobs_processed, scripts_created
+    if not dry_run:
+        scripts_output_path.mkdir(exist_ok=True)
+        generate_mock_ci_variables_script(str(scripts_output_path / "mock_ci_variables.sh"))
+
+    return jobs_processed, total_files_created
+```
+## File: tool_yamlfix.py
+```python
+from __future__ import annotations
+
+import logging
+import subprocess  # nosec
+import sys
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# TODO: possibly switch to yamlfixer-opt-nc or prettier as yamlfix somewhat unsupported.
+
+
+def run_formatter(output_dir: Path, templates_output_dir: Path):
+    """
+    Runs yamlfix on the output directories.
+
+    Args:
+        output_dir (Path): The main output directory.
+        templates_output_dir (Path): The templates output directory.
+    """
+    try:
+        # Check if yamlfix is installed
+        subprocess.run(["yamlfix", "--version"], check=True, capture_output=True)  # nosec
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        logger.error(
+            "❌ 'yamlfix' is not installed or not in PATH. Please install it to use the --format option (`pip install yamlfix`)."
+        )
+        sys.exit(1)
+
+    targets = []
+    if output_dir.is_dir():
+        targets.append(str(output_dir))
+    if templates_output_dir.is_dir():
+        targets.append(str(templates_output_dir))
+
+    if not targets:
+        logger.warning("No output directories found to format.")
+        return
+
+    logger.info(f"Running yamlfix on: {', '.join(targets)}")
+    try:
+        subprocess.run(["yamlfix", *targets], check=True, capture_output=True)  # nosec
+        logger.info("✅ Formatting complete.")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"❌ Error running yamlfix: {e.stderr.decode()}")
+        sys.exit(1)
+```
+## File: watch_files.py
+```python
+"""
+Watch mode for bash2gitlab.
+
+Usage (internal):
+    from pathlib import Path
+    from bash2gitlab.watch import start_watch
+
+    start_watch(
+        uncompiled_path=Path("./ci"),
+        output_path=Path("./compiled"),
+        scripts_path=Path("./ci"),
+        templates_dir=Path("./ci/templates"),
+        output_templates_dir=Path("./compiled/templates"),
+        dry_run=False,
+        format_output=False,
+    )
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from pathlib import Path
+
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
+
+from bash2gitlab.compile_all import process_uncompiled_directory
+
+logger = logging.getLogger(__name__)
+
+
+class _RecompileHandler(FileSystemEventHandler):
+    """
+    Fire the compiler every time a *.yml, *.yaml or *.sh file changes.
+    """
+
+    def __init__(
+        self,
+        *,
+        uncompiled_path: Path,
+        output_path: Path,
+        scripts_path: Path,
+        templates_dir: Path,
+        output_templates_dir: Path,
+        dry_run: bool = False,
+        format_output: bool = False,
+    ) -> None:
+        super().__init__()
+        self._paths = {
+            "uncompiled_path": uncompiled_path,
+            "output_path": output_path,
+            "scripts_path": scripts_path,
+            "templates_dir": templates_dir,
+            "output_templates_dir": output_templates_dir,
+        }
+        self._flags = {"dry_run": dry_run, "format_output": format_output}
+        self._debounce: float = 0.5  # seconds
+        self._last_run = 0.0
+
+    def on_any_event(self, event: FileSystemEvent) -> None:
+        # Skip directories, temp files, and non-relevant extensions
+        if event.is_directory:
+            return
+        if event.src_path.endswith((".tmp", ".swp", "~")):  # type: ignore[arg-type]
+            return
+        if not event.src_path.endswith((".yml", ".yaml", ".sh")):  # type: ignore[arg-type]
+            return
+
+        now = time.monotonic()
+        if now - self._last_run < self._debounce:
+            return
+        self._last_run = now
+
+        logger.info("🔄 Source changed; recompiling…")
+        try:
+            format_output = self._flags["format_output"]
+            del self._flags["format_output"]
+            process_uncompiled_directory(**self._paths, **self._flags)  # type: ignore[arg-type]
+            # TODO: run formatter.
+            self._flags["format_output"] = format_output
+            logger.info("✅ Recompiled successfully.")
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("❌ Recompilation failed: %s", exc, exc_info=True)
+
+
+def start_watch(
+    *,
+    uncompiled_path: Path,
+    output_path: Path,
+    scripts_path: Path,
+    templates_dir: Path,
+    output_templates_dir: Path,
+    dry_run: bool = False,
+    format_output: bool = False,
+) -> None:
+    """
+    Start an in-process watchdog that recompiles whenever source files change.
+
+    Blocks forever (Ctrl-C to stop).
+    """
+    handler = _RecompileHandler(
+        uncompiled_path=uncompiled_path,
+        output_path=output_path,
+        scripts_path=scripts_path,
+        templates_dir=templates_dir,
+        output_templates_dir=output_templates_dir,
+        dry_run=dry_run,
+        format_output=format_output,
+    )
+
+    observer = Observer()
+    observer.schedule(handler, str(uncompiled_path), recursive=True)
+    if templates_dir != uncompiled_path:
+        observer.schedule(handler, str(templates_dir), recursive=True)
+    if scripts_path not in (uncompiled_path, templates_dir):
+        observer.schedule(handler, str(scripts_path), recursive=True)
+
+    try:
+        observer.start()
+        logger.info("👀 Watching for changes to *.yml, *.yaml, *.sh … (Ctrl-C to quit)")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("⏹  Stopping watcher.")
+    finally:
+        observer.stop()
+        observer.join()
 ```
 ## File: __about__.py
 ```python
@@ -859,7 +1374,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -895,60 +1410,24 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.config
-import subprocess  # nosec
 import sys
 from pathlib import Path
 
-# --- Project Imports ---
-# Make sure the project is installed or the path is correctly set for these imports to work
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
+from bash2gitlab.init_project import init_handler
 from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
+from bash2gitlab.tool_yamlfix import run_formatter
+from bash2gitlab.watch_files import start_watch
 
-
-def run_formatter(output_dir: Path, templates_output_dir: Path):
-    """
-    Runs yamlfix on the output directories.
-
-    Args:
-        output_dir (Path): The main output directory.
-        templates_output_dir (Path): The templates output directory.
-    """
-    logger = logging.getLogger(__name__)
-    try:
-        # Check if yamlfix is installed
-        subprocess.run(["yamlfix", "--version"], check=True, capture_output=True)  # nosec
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        logger.error(
-            "❌ 'yamlfix' is not installed or not in PATH. Please install it to use the --format option (`pip install yamlfix`)."
-        )
-        sys.exit(1)
-
-    targets = []
-    if output_dir.is_dir():
-        targets.append(str(output_dir))
-    if templates_output_dir.is_dir():
-        targets.append(str(templates_output_dir))
-
-    if not targets:
-        logger.warning("No output directories found to format.")
-        return
-
-    logger.info(f"Running yamlfix on: {', '.join(targets)}")
-    try:
-        subprocess.run(["yamlfix", *targets], check=True, capture_output=True)  # nosec
-        logger.info("✅ Formatting complete.")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"❌ Error running yamlfix: {e.stderr.decode()}")
-        sys.exit(1)
+logger = logging.getLogger(__name__)
 
 
 def compile_handler(args: argparse.Namespace):
     """Handler for the 'compile' command."""
-    logger = logging.getLogger(__name__)
     logger.info("Starting bash2gitlab compiler...")
 
     # Resolve paths, using sensible defaults if optional paths are not provided
@@ -958,6 +1437,18 @@ def compile_handler(args: argparse.Namespace):
     templates_in_dir = Path(args.templates_in).resolve() if args.templates_in else in_dir
     templates_out_dir = Path(args.templates_out).resolve() if args.templates_out else out_dir
     dry_run = bool(args.dry_run)
+
+    if args.watch:
+        start_watch(
+            uncompiled_path=in_dir,
+            output_path=out_dir,
+            scripts_path=scripts_dir,
+            templates_dir=templates_in_dir,
+            output_templates_dir=templates_out_dir,
+            dry_run=dry_run,
+            format_output=args.format,
+        )
+        return
 
     try:
         process_uncompiled_directory(
@@ -981,7 +1472,6 @@ def compile_handler(args: argparse.Namespace):
 
 def shred_handler(args: argparse.Namespace):
     """Handler for the 'shred' command."""
-    logger = logging.getLogger(__name__)
     logger.info("Starting bash2gitlab shredder...")
 
     # Resolve the file and directory paths
@@ -1094,9 +1584,39 @@ def main() -> int:
         action="store_true",
         help="Simulate the shredding process without writing any files.",
     )
+    compile_parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch source directories and auto-recompile on changes.",
+    )
     shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
+
+    # Init Parser
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Initialize a new bash2gitlab project and config file.",
+    )
+    init_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="The directory to initialize the project in. Defaults to the current directory.",
+    )
+    init_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the initialization process without creating the config file.",
+    )
+    init_parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose (DEBUG) logging output.",
+    )
+    init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    init_parser.set_defaults(func=init_handler)
 
     args = parser.parse_args()
 
@@ -1126,7 +1646,8 @@ def main() -> int:
     # Merge boolean flags
     args.verbose = args.verbose or config.verbose or False
     args.quiet = args.quiet or config.quiet or False
-    args.format = args.format or config.format or False
+    if hasattr(args, "format"):
+        args.format = args.format or config.format or False
     args.dry_run = args.dry_run or config.dry_run or False
 
     # --- Setup Logging ---
