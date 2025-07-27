@@ -21,7 +21,6 @@ markdown_extensions:
 nav:
   - "Overview": "index.md"
   - "Installation": "installation.md"
-  - "Getting Started": "getting_started.md"
   - "Usage":
       - "Usage": "usage.md"
   - "API": "API.md"
