@@ -35,8 +35,7 @@ So you extract the bash to a .sh file and execute it. But your job is mostly def
 repository. So the .sh file needs to be in every repo that imports the template. That's not good. You can't import
 bash from the other repo.
 
-Do you want to import the template from the centralized repo and clone the centralized repo to get the non-yaml files?
-That requires additional permissions that a simple yaml import doesn't and clutters the file system.
+Other solutions to get at a centralized bash script quickly get complicated.
 
 ## Installation
 
@@ -53,6 +52,13 @@ pip install bash2gitlab
 ```
 
 ## Usage
+
+- Shred your current .gitlab-ci.yml file into yaml and bash
+- Edit your bash
+- Compile it
+- Deploy the .gitlab-ci.yml to your project root by copying the file.
+
+See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tree/main/examples).
 
 ```bash
 ❯ bash2gitlab compile --help
@@ -98,3 +104,4 @@ No particular guarantees that the compiled will have comments.
 
 ## Not ready yet
 - Powershell is supported by gitlab, but not by this library... yet.
+- Validate/lint with API calls to Gitlab.

@@ -1,9 +1,9 @@
-site_name: "pycodetags"
-site_url: "https://pycodetags.readthedocs.io/"
+site_name: "bash2gitlab"
+site_url: "https://bash2gitlab.readthedocs.io/"
 site_author: "Matthew Dean Martin <matthewdeanmartin@gmail.com>"
-site_description: "Documentation of pycodetags, a tool for TODO comments in source code"
+site_description: "Documentation of bash2gitlab, a tool for compiling bash to .gitlab-ci.yml"
 
-repo_url: "https://github.com/matthewdeanmartin/pycodetags"
+repo_url: "https://github.com/matthewdeanmartin/bash2gitlab"
 
 theme:
   name: readthedocs
