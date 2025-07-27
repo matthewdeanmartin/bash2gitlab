@@ -259,6 +259,7 @@ def process_uncompiled_directory(
         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
         scripts_path (Path): Optionally put all bash files into a script folder.
         templates_dir (Path): Optionally put all yaml files into a template folder.
+        output_templates_dir (Path): Optionally put all compiled template files into an output template folder.
         dry_run (bool): If True, simulate the process without writing any files.
 
     Returns:

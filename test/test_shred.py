@@ -1,17 +1,13 @@
 from __future__ import annotations
 
+import platform
 import stat
 from pathlib import Path
-import platform
 
 import pytest
 from ruamel.yaml import YAML
 
-from bash2gitlab.shred_all import (
-    SHEBANG,
-    create_script_filename,
-    shred_gitlab_ci,
-)
+from bash2gitlab.shred_all import SHEBANG, create_script_filename, shred_gitlab_ci
 
 # A sample GitLab CI configuration with various script definitions for comprehensive testing.
 SAMPLE_GITLAB_CI_CONTENT = """

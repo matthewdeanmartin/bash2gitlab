@@ -3,6 +3,7 @@
 ├── compile_all.py
 ├── logging_config.py
 ├── py.typed
+├── shred_all.py
 ├── __about__.py
 └── __main__.py
 ```
@@ -24,8 +25,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 logger = logging.getLogger(__name__)
 
-BANNER = """
-# DO NOT EDIT
+BANNER = """# DO NOT EDIT
 # This is a compiled file, compiled with bash2gitlab
 # Recompile instead of editing this file.
 
@@ -265,6 +265,17 @@ def process_uncompiled_directory(
 ) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
+
+    Args:
+        uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
+        output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
+        scripts_path (Path): Optionally put all bash files into a script folder.
+        templates_dir (Path): Optionally put all yaml files into a template folder.
+        output_templates_dir (Path): Optionally put all compiled template files into an output template folder.
+        dry_run (bool): If True, simulate the process without writing any files.
+
+    Returns:
+        - The total number of jobs processed.
     """
     inlined_count = 0
     # Safely clean up previous outputs
@@ -347,29 +358,6 @@ def process_uncompiled_directory(
         logger.info(f"Successfully processed and wrote {written_files} file(s).")
 
     return inlined_count
-
-
-# --- Main Execution Block ---
-
-if __name__ == "__main__":
-
-    def run() -> None:
-        # Define project structure paths
-        uncompiled_root = Path("uncompiled")
-        output_root = Path(".")  # Output to the current directory
-        scripts_dir = uncompiled_root / "scripts"
-        templates_input_dir = uncompiled_root / "templates"
-        templates_output_dir = output_root / "templates"
-
-        try:
-            process_uncompiled_directory(
-                uncompiled_root, output_root, scripts_dir, templates_input_dir, templates_output_dir
-            )
-            logger.info("✅ GitLab CI processing complete.")
-        except (FileNotFoundError, RuntimeError, ValueError) as e:
-            logger.error(f"❌ An error occurred: {e}")
-
-    run()
 ```
 ## File: logging_config.py
 ```python
@@ -442,6 +430,201 @@ def generate_config(level: str = "DEBUG") -> dict[str, Any]:
 ```
 # when type checking dependents, tell type checkers to use this package's types
 ```
+## File: shred_all.py
+```python
+from __future__ import annotations
+
+import io
+import logging
+import re
+from pathlib import Path
+
+from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import FoldedScalarString
+
+logger = logging.getLogger(__name__)
+
+SHEBANG = "#!/bin/bash"
+
+
+def create_script_filename(job_name: str, script_key: str) -> str:
+    """
+    Creates a standardized, safe filename for a script.
+
+    Args:
+        job_name (str): The name of the GitLab CI job.
+        script_key (str): The key of the script block (e.g., 'script', 'before_script').
+
+    Returns:
+        str: A safe, descriptive filename like 'job-name_script.sh'.
+    """
+    # Sanitize job_name: replace spaces and invalid characters with hyphens
+    sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
+    # Clean up multiple hyphens
+    sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
+
+    # For the main 'script' key, just use the job name. For others, append the key.
+    if script_key == "script":
+        return f"{sanitized_job_name}.sh"
+    return f"{sanitized_job_name}_{script_key}.sh"
+
+
+def shred_script_block(
+    script_content: list[str] | str,
+    job_name: str,
+    script_key: str,
+    scripts_output_path: Path,
+    dry_run: bool = False,
+) -> tuple[str | None, str | None]:
+    """
+    Extracts a script block into a .sh file and returns the command to run it.
+
+    Args:
+        script_content (Union[list[str], str]): The script content from the YAML.
+        job_name (str): The name of the job.
+        script_key (str): The key of the script ('script', 'before_script', etc.).
+        scripts_output_path (Path): The directory to save the new .sh file.
+        dry_run (bool): If True, don't write any files.
+
+    Returns:
+        A tuple containing:
+        - The path to the new script file (or None if no script was created).
+        - The command to execute the new script (e.g., './scripts/my-job.sh').
+    """
+    if not script_content:
+        return None, None
+
+    # This block will handle converting CommentedSeq and its contents (which may include
+    # CommentedMap objects) into a simple list of strings.
+    processed_lines = []
+    if isinstance(script_content, str):
+        processed_lines.extend(script_content.splitlines())
+    elif script_content:  # It's a list-like object (e.g., ruamel.yaml.CommentedSeq)
+        yaml = YAML()
+        for item in script_content:
+            if isinstance(item, str):
+                processed_lines.append(item)
+            elif item is not None:
+                # Any non-string item (like a CommentedMap that ruamel parsed from "key: value")
+                # should be dumped back into a string representation.
+                with io.StringIO() as string_stream:
+                    yaml.dump(item, string_stream)
+                    # The dump might include '...' at the end, remove it and any trailing newline.
+                    item_as_string = string_stream.getvalue().replace("...", "").strip()
+                    if item_as_string:
+                        processed_lines.append(item_as_string)
+
+    # Filter out empty or whitespace-only lines from the final list
+    script_lines = [line for line in processed_lines if line and line.strip()]
+
+    if not script_lines:
+        logger.debug(f"Skipping empty script block in job '{job_name}' for key '{script_key}'.")
+        return None, None
+
+    script_filename = create_script_filename(job_name, script_key)
+    script_filepath = scripts_output_path / script_filename
+    execution_command = f"./{script_filepath.relative_to(scripts_output_path.parent)}"
+
+    full_script_content = f"{SHEBANG}\n" + "\n".join(script_lines) + "\n"
+
+    logger.info(f"Shredding script from '{job_name}:{script_key}' to '{script_filepath}'")
+
+    if not dry_run:
+        script_filepath.parent.mkdir(parents=True, exist_ok=True)
+        script_filepath.write_text(full_script_content, encoding="utf-8")
+        # Make the script executable
+        script_filepath.chmod(0o755)
+
+    return str(script_filepath), execution_command
+
+
+def process_shred_job(
+    job_name: str,
+    job_data: dict,
+    scripts_output_path: Path,
+    dry_run: bool = False,
+) -> int:
+    """
+    Processes a single job definition to shred its script blocks.
+
+    Args:
+        job_name (str): The name of the job.
+        job_data (dict): The dictionary representing the job's configuration.
+        scripts_output_path (Path): The directory to save shredded scripts.
+        dry_run (bool): If True, simulate without writing files.
+
+    Returns:
+        int: The number of script blocks shredded from this job.
+    """
+    shredded_count = 0
+    script_keys = ["script", "before_script", "after_script", "pre_get_sources_script"]
+
+    for key in script_keys:
+        if key in job_data and job_data[key]:
+            _, command = shred_script_block(job_data[key], job_name, key, scripts_output_path, dry_run)
+            if command:
+                # Replace the script block with a single command to execute the new file
+                job_data[key] = FoldedScalarString(command.replace("\\", "/"))
+                shredded_count += 1
+    return shredded_count
+
+
+def shred_gitlab_ci(
+    input_yaml_path: Path,
+    output_yaml_path: Path,
+    scripts_output_path: Path,
+    dry_run: bool = False,
+) -> tuple[int, int]:
+    """
+    Loads a GitLab CI YAML file, shreds all script blocks into separate .sh files,
+    and saves the modified YAML.
+
+    Args:
+        input_yaml_path (Path): Path to the input .gitlab-ci.yml file.
+        output_yaml_path (Path): Path to write the modified .gitlab-ci.yml file.
+        scripts_output_path (Path): Directory to store the generated .sh files.
+        dry_run (bool): If True, simulate the process without writing any files.
+
+    Returns:
+        A tuple containing:
+        - The total number of jobs processed.
+        - The total number of script files created.
+    """
+    if not input_yaml_path.is_file():
+        raise FileNotFoundError(f"Input YAML file not found: {input_yaml_path}")
+
+    if output_yaml_path.is_dir():
+        output_yaml_path = output_yaml_path / input_yaml_path.name
+
+    logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    data = yaml.load(input_yaml_path)
+
+    jobs_processed = 0
+    scripts_created = 0
+
+    # Process all top-level keys that look like jobs
+    for key, value in data.items():
+        # Heuristic: A job is a dictionary that contains a 'script' key.
+        if isinstance(value, dict) and "script" in value:
+            logger.debug(f"Processing job: {key}")
+            jobs_processed += 1
+            scripts_created += process_shred_job(key, value, scripts_output_path, dry_run)
+
+    if scripts_created > 0:
+        logger.info(f"Shredded {scripts_created} script(s) from {jobs_processed} job(s).")
+        if not dry_run:
+            logger.info(f"Writing modified YAML to: {output_yaml_path}")
+            output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_yaml_path.open("w", encoding="utf-8") as f:
+                yaml.dump(data, f)
+    else:
+        logger.info("No script blocks found to shred.")
+
+    return jobs_processed, scripts_created
+```
 ## File: __about__.py
 ```python
 """Metadata for bash2gitlab."""
@@ -458,7 +641,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -504,6 +687,7 @@ from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.logging_config import generate_config
+from bash2gitlab.shred_all import shred_gitlab_ci
 
 
 def run_formatter(output_dir: Path, templates_output_dir: Path):
@@ -590,7 +774,7 @@ def main() -> int:
 
     # --- Compile Command ---
     compile_parser = subparsers.add_parser(
-        "compile", help="Compile an 'uncompiled' directory into a standard GitLab CI structure."
+        "compile", help="Compile an uncompiled directory into a standard GitLab CI structure."
     )
     compile_parser.add_argument(
         "--in",
@@ -633,6 +817,36 @@ def main() -> int:
     compile_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     compile_parser.set_defaults(func=compile_handler)
 
+    # --- Shred Command (add this section) ---
+    shred_parser = subparsers.add_parser(
+        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
+    )
+    shred_parser.add_argument(
+        "--in",
+        dest="input_file",
+        required=True,
+        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
+    )
+    shred_parser.add_argument(
+        "--out",
+        dest="output_file",
+        required=True,
+        help="Output path for the modified GitLab CI file.",
+    )
+    shred_parser.add_argument(
+        "--scripts-out",
+        required=False,
+        help="Output directory to save the shredded .sh script files.",
+    )
+    shred_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the shredding process without writing any files.",
+    )
+    shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    shred_parser.set_defaults(func=shred_handler)
+
     args = parser.parse_args()
 
     # --- Setup Logging ---
@@ -646,6 +860,43 @@ def main() -> int:
 
     args.func(args)
     return 0
+
+
+def shred_handler(args: argparse.Namespace):
+    """Handler for the 'shred' command."""
+    logger = logging.getLogger(__name__)
+    logger.info("Starting bash2gitlab shredder...")
+
+    # Resolve the file and directory paths
+    in_file = Path(args.input_file).resolve()
+    out_file = Path(args.output_file).resolve()
+    if args.scripts_out:
+        scripts_out_dir = Path(args.scripts_out).resolve()
+    else:
+        if out_file.is_file():
+            scripts_out_dir = out_file.parent
+        else:
+            scripts_out_dir = out_file
+    dry_run = bool(args.dry_run)
+
+    try:
+        jobs, scripts = shred_gitlab_ci(
+            input_yaml_path=in_file,
+            output_yaml_path=out_file,
+            scripts_output_path=scripts_out_dir,
+            dry_run=dry_run,
+        )
+
+        if dry_run:
+            logger.info(f"DRY RUN: Would have processed {jobs} jobs and created {scripts} script(s).")
+        else:
+            logger.info(f"✅ Successfully processed {jobs} jobs and created {scripts} script(s).")
+            logger.info(f"Modified YAML written to: {out_file}")
+            logger.info(f"Scripts shredded to: {scripts_out_dir}")
+
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

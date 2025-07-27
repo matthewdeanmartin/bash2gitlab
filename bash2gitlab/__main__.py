@@ -208,6 +208,7 @@ def main() -> int:
     args.func(args)
     return 0
 
+
 def shred_handler(args: argparse.Namespace):
     """Handler for the 'shred' command."""
     logger = logging.getLogger(__name__)
@@ -243,6 +244,7 @@ def shred_handler(args: argparse.Namespace):
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -127,9 +127,7 @@ def process_shred_job(
 
     for key in script_keys:
         if key in job_data and job_data[key]:
-            _, command = shred_script_block(
-                job_data[key], job_name, key, scripts_output_path, dry_run
-            )
+            _, command = shred_script_block(job_data[key], job_name, key, scripts_output_path, dry_run)
             if command:
                 # Replace the script block with a single command to execute the new file
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
@@ -164,7 +162,6 @@ def shred_gitlab_ci(
     if output_yaml_path.is_dir():
         output_yaml_path = output_yaml_path / input_yaml_path.name
 
-
     logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
     yaml = YAML()
     yaml.preserve_quotes = True
@@ -180,9 +177,7 @@ def shred_gitlab_ci(
         if isinstance(value, dict) and "script" in value:
             logger.debug(f"Processing job: {key}")
             jobs_processed += 1
-            scripts_created += process_shred_job(
-                key, value, scripts_output_path, dry_run
-            )
+            scripts_created += process_shred_job(key, value, scripts_output_path, dry_run)
 
     if scripts_created > 0:
         logger.info(f"Shredded {scripts_created} script(s) from {jobs_processed} job(s).")
