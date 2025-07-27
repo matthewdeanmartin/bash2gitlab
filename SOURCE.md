@@ -2,7 +2,6 @@
 ```
 ├── CHANGELOG.md
 ├── compile_all.py
-├── config.md
 ├── config.py
 ├── logging_config.py
 ├── py.typed
@@ -393,41 +392,6 @@ def process_uncompiled_directory(
         logger.info(f"Successfully processed and wrote {written_files} file(s).")
 
     return inlined_count
-```
-## File: config.md
-```markdown
-# Configuration
-
-Precedence rules:
-
-1. CLI Switches
-2. Env Vars
-3. TOML file
-
-## Toml based
-
-pyproject.toml example
-```toml
-[tool.bash2gitlab]
-input_file = "my_ci.yml"
-scripts_out = "shredded_scripts/"
-dry_run = false
-```
-
-bash2gitlab.toml example
-```
-input_dir = "/path/from/toml"
-output_dir = "output/toml"
-verbose = false
-```
-
-## Environment Variable Based
-
-Prefix any switch with BASH2GITLAB
-```bash
-export BASH2GITLAB_OUTPUT_FILE=out.yml
-export BASH2GITLAB_QUIET=1
-```
 ```
 ## File: config.py
 ```python
@@ -1071,11 +1035,13 @@ def main() -> int:
     compile_parser.add_argument(
         "--in",
         dest="input_dir",
+        required=not bool(config.input_dir),
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
     compile_parser.add_argument(
         "--out",
         dest="output_dir",
+        required=not bool(config.output_dir),
         help="Output directory for the compiled GitLab CI files.",
     )
     compile_parser.add_argument(

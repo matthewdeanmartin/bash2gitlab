@@ -164,11 +164,13 @@ def main() -> int:
     compile_parser.add_argument(
         "--in",
         dest="input_dir",
+        required=not bool(config.input_dir),
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
     compile_parser.add_argument(
         "--out",
         dest="output_dir",
+        required=not bool(config.output_dir),
         help="Output directory for the compiled GitLab CI files.",
     )
     compile_parser.add_argument(

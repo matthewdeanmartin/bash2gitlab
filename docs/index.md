@@ -43,7 +43,7 @@ That requires additional permissions that a simple yaml import doesn't and clutt
 
 ## Usage
 
-See examples in repo.
+See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tree/main/examples).
 
 ```bash
 # compiling
@@ -80,4 +80,3 @@ No particular guarantees that the compiled will have comments.
 ## Not ready yet
 
 - Powershell is supported by gitlab, but not by this library... yet.
-- config via environment variables or toml file

@@ -24,6 +24,8 @@ job:
         - make build
 ```
 
+See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tree/main/examples).
+
 ## Scenario
 Your .gitlab-ci.yml pipelines are more bash than yaml. 1000s of lines of bash. But your IDE doesn't recognize
 your bash as bash, it is a yaml string. You get syntax highlighting telling you that `script:` is a yaml key and that
@@ -96,4 +98,3 @@ No particular guarantees that the compiled will have comments.
 
 ## Not ready yet
 - Powershell is supported by gitlab, but not by this library... yet.
-- config via environment variables or toml file
