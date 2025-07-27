@@ -9,9 +9,9 @@
 - check in all files, both the source and compiled.
 
 ## Hints
+
 - use a `/src/` and `/out/` folder pair
 - You can separately do a deployment to get your `.gitlab-ci.yml` to the root of your repo. Don't compile to and from the same folder (say, root and `/src/`)
-
 
 ```bash
 ❯ bash2gitlab --help
@@ -48,8 +48,9 @@ options:
   -q, --quiet           Disable output.
 ```
 
-Shred is the command to convert your .gitlab-ci.yml into a collection of yaml and shell scripts that can be compiled. 
+Shred is the command to convert your .gitlab-ci.yml into a collection of yaml and shell scripts that can be compiled.
 I'd expect this to be one time event.
+
 ```bash
 ❯ bash2gitlab shred --help
 usage: bash2gitlab shred [-h] --in INPUT_FILE --out OUTPUT_FILE [--scripts-out SCRIPTS_OUT] [--dry-run] [-v] [-q]

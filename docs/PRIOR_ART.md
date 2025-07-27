@@ -14,7 +14,6 @@ I think this is painful because
 - [yaml-shellcheck](https://github.com/mschuett/yaml-shellcheck) Supports multiple CI syntaxes
 - [shellcheck-scripts-embedded-in-gitlab-ci-yaml](https://candrews.integralblue.com/2022/02/shellcheck-scripts-embedded-in-gitlab-ci-yaml/)
 
-
 ## IDE support for yaml in-place
 
 - [harrydowning.yaml-embedded-languages](https://marketplace.visualstudio.com/items?itemName=harrydowning.yaml-embedded-languages)

@@ -12,13 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.2.0] - 2025-07-13
+## [0.3.0] - 2025-07-27
+
+### Added
+
+- Option to use toml config file or envvar config instead of CLI switches
+
+### Fixed
+
+- Python 3.14 support fixed.
+
+## [0.2.0] - 2025-07-27
 
 ### Added
 
 - shred command to turn pre-existing bash-in-yaml pipeline templates into shell files and yaml
 
-## [0.1.0] - 2025-07-13
+## [0.1.0] - 2025-07-26
 
 ### Added
 
@@ -26,4 +36,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - verbose and quiet logging
 - CLI interface
 - supports simple in/out project structure
-- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution 
+- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution
