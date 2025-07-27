@@ -37,7 +37,7 @@ Documentation = "https://bash2gitlab.readthedocs.io/en/latest/"
 Changelog = "https://github.com/matthewdeanmartin/bash2gitlab/blob/main/CHANGELOG.md"
 
 homepage = "https://github.com/matthewdeanmartin/bash2gitlab"
-issues = "https://matthewdeanmartin.github.io/bash2gitlab/"
+issues = "https://github.com/matthewdeanmartin/bash2gitlab/issues/"
 # support – e.g. chat or forum - TODO
 
 [tool.hatch.build.targets.sdist]
