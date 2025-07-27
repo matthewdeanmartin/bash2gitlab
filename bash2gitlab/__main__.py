@@ -33,6 +33,7 @@ from pathlib import Path
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.compile_all import process_uncompiled_directory
+from bash2gitlab.config import config
 from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
 
@@ -107,108 +108,6 @@ def compile_handler(args: argparse.Namespace):
         sys.exit(1)
 
 
-def main() -> int:
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        prog=__about__.__title__,
-        description=root_doc,
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
-
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # --- Compile Command ---
-    compile_parser = subparsers.add_parser(
-        "compile", help="Compile an uncompiled directory into a standard GitLab CI structure."
-    )
-    compile_parser.add_argument(
-        "--in",
-        dest="input_dir",
-        required=True,
-        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
-    )
-    compile_parser.add_argument(
-        "--out",
-        dest="output_dir",
-        required=True,
-        help="Output directory for the compiled GitLab CI files.",
-    )
-    compile_parser.add_argument(
-        "--scripts",
-        dest="scripts_dir",
-        help="Directory containing bash scripts to inline. (Default: <in>)",
-    )
-    compile_parser.add_argument(
-        "--templates-in",
-        help="Input directory for CI templates. (Default: <in>)",
-    )
-    compile_parser.add_argument(
-        "--templates-out",
-        help="Output directory for compiled CI templates. (Default: <out>)",
-    )
-    compile_parser.add_argument(
-        "--format",
-        action="store_true",
-        help="Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.",
-    )
-
-    compile_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the compilation process without writing any files.",
-    )
-
-    compile_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    compile_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-    compile_parser.set_defaults(func=compile_handler)
-
-    # --- Shred Command (add this section) ---
-    shred_parser = subparsers.add_parser(
-        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
-    )
-    shred_parser.add_argument(
-        "--in",
-        dest="input_file",
-        required=True,
-        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
-    )
-    shred_parser.add_argument(
-        "--out",
-        dest="output_file",
-        required=True,
-        help="Output path for the modified GitLab CI file.",
-    )
-    shred_parser.add_argument(
-        "--scripts-out",
-        required=False,
-        help="Output directory to save the shredded .sh script files.",
-    )
-    shred_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the shredding process without writing any files.",
-    )
-    shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-    shred_parser.set_defaults(func=shred_handler)
-
-    args = parser.parse_args()
-
-    # --- Setup Logging ---
-    if args.verbose:
-        log_level = "DEBUG"
-    elif args.quiet:
-        log_level = "CRITICAL"
-    else:
-        log_level = "INFO"
-    logging.config.dictConfig(generate_config(level=log_level))
-
-    args.func(args)
-    return 0
-
-
 def shred_handler(args: argparse.Namespace):
     """Handler for the 'shred' command."""
     logger = logging.getLogger(__name__)
@@ -244,6 +143,131 @@ def shred_handler(args: argparse.Namespace):
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
         sys.exit(1)
+
+
+def main() -> int:
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(
+        prog=__about__.__title__,
+        description=root_doc,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # --- Compile Command ---
+    compile_parser = subparsers.add_parser(
+        "compile", help="Compile an uncompiled directory into a standard GitLab CI structure."
+    )
+    compile_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
+    )
+    compile_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        help="Output directory for the compiled GitLab CI files.",
+    )
+    compile_parser.add_argument(
+        "--scripts",
+        dest="scripts_dir",
+        help="Directory containing bash scripts to inline. (Default: <in>)",
+    )
+    compile_parser.add_argument(
+        "--templates-in",
+        help="Input directory for CI templates. (Default: <in>)",
+    )
+    compile_parser.add_argument(
+        "--templates-out",
+        help="Output directory for compiled CI templates. (Default: <out>)",
+    )
+    compile_parser.add_argument(
+        "--format",
+        action="store_true",
+        help="Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.",
+    )
+    compile_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the compilation process without writing any files.",
+    )
+    compile_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    compile_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    compile_parser.set_defaults(func=compile_handler)
+
+    # --- Shred Command ---
+    shred_parser = subparsers.add_parser(
+        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
+    )
+    shred_parser.add_argument(
+        "--in",
+        dest="input_file",
+        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
+    )
+    shred_parser.add_argument(
+        "--out",
+        dest="output_file",
+        help="Output path for the modified GitLab CI file.",
+    )
+    shred_parser.add_argument(
+        "--scripts-out",
+        help="Output directory to save the shredded .sh script files.",
+    )
+    shred_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the shredding process without writing any files.",
+    )
+    shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    shred_parser.set_defaults(func=shred_handler)
+
+    args = parser.parse_args()
+
+    # --- Configuration Precedence: CLI > ENV > TOML ---
+    # Merge string/path arguments
+    if args.command == "compile":
+        args.input_dir = args.input_dir or config.input_dir
+        args.output_dir = args.output_dir or config.output_dir
+        args.scripts_dir = args.scripts_dir or config.scripts_dir
+        args.templates_in = args.templates_in or config.templates_in
+        args.templates_out = args.templates_out or config.templates_out
+        # Validate required arguments after merging
+        if not args.input_dir:
+            compile_parser.error("argument --in is required")
+        if not args.output_dir:
+            compile_parser.error("argument --out is required")
+    elif args.command == "shred":
+        args.input_file = args.input_file or config.input_file
+        args.output_file = args.output_file or config.output_file
+        args.scripts_out = args.scripts_out or config.scripts_out
+        # Validate required arguments after merging
+        if not args.input_file:
+            shred_parser.error("argument --in is required")
+        if not args.output_file:
+            shred_parser.error("argument --out is required")
+
+    # Merge boolean flags
+    args.verbose = args.verbose or config.verbose or False
+    args.quiet = args.quiet or config.quiet or False
+    args.format = args.format or config.format or False
+    args.dry_run = args.dry_run or config.dry_run or False
+
+    # --- Setup Logging ---
+    if args.verbose:
+        log_level = "DEBUG"
+    elif args.quiet:
+        log_level = "CRITICAL"
+    else:
+        log_level = "INFO"
+    logging.config.dictConfig(generate_config(level=log_level))
+
+    # Execute the appropriate handler
+    args.func(args)
+    return 0
 
 
 if __name__ == "__main__":

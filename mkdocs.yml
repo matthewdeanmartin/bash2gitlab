@@ -23,6 +23,7 @@ nav:
   - "Installation": "installation.md"
   - "Usage":
       - "Usage": "usage.md"
+      - "Configuration": "config.md"
   - "API": "API.md"
   - "Prior Art":
       - "Keep Bash in Yaml": "PRIOR_ART.md"

@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.2.0"
+version = "0.3.0"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -10,9 +10,11 @@ requires-python = ">=3.8"
 dependencies = [
     "ruamel.yaml",
     "yamlfix",
-    "colorlog"
+    "colorlog",
     # backwards compatibility
-#    "toml; python_version < '3.11'",
+    "toml; python_version < '3.11'",
+    # yamlfix
+    "pydantic>=2.12.0a1; python_version >= '3.14'"
 #    "importlib-resources; python_version < '3.9'",
 #    "typing_extensions ; python_version < '3.8'",
 ]
@@ -237,7 +239,7 @@ exclude = [
 ]
 
 # Assume Python 3.10.
-target-version = "py311"
+target-version = "py39"
 
 
 [tool.ruff.lint.pydocstyle]
@@ -284,115 +286,5 @@ app_author = "matth"
 source_folder = "bash2gitlab"
 # ctags_file = "code_tags.tags"
 
-[tool.bash2gitlab]
-# Range Validation, Range Sources
-# Empty list means use file
-valid_authors = []
-valid_authors_file = "AUTHORS.md"
-# Can be Gnits, single_column, humans.txt
-valid_authors_schema = "single_column"
-# Case-insensitive. Needs at least "done"
-valid_status = [
-    "planning",
-    "ready",
-    "done",
-    "development",
-    "inprogress",
-    "testing",
-    "closed",
-    "fixed",
-    "nobug",
-    "wontfix"
-]
-# Only displayed
-valid_categories = [
-    "cli",               # __main__.py, CLI integration
-    "views",             # views.py, rendering output
-    "parser",            # data_tags_parsers.py, AST, comment parsing
-    "folk_parser",       # folk_tags_parser.py, fallback parsing
-    "config",            # config.py, dotenv.py
-    "plugin",            # plugin_manager.py, plugin_specs.py
-    "logging",           # logging_config.py
-    "schema",            # data_tags_schema.py
-    "core",              # data_tags_classes.py, converters.py
-    "serialization",     # common_interfaces.py
-    "collection",        # aggregate.py, collect.py
-    "utils",             # comment_finder.py, view_tools.py
-    "testing",           # if you add test tags
-    "documentation",      # if documenting tags
-    "validation",        # if validating tags
-    "build", "ast", "changelog", "meta", "git", "reports", "catdogs","base", "parsing"
-
-]
-# Only displayed
-valid_priorities = [
-    "1","2","3",
-    "high",
-    "medium",
-    "low",
-    "urgent",         # optional: higher than high
-    "trivial"         # optional: lower than low
-]
-
-# Used to support change log generation and other features.
-closed_status = ["done", "closed", "fixed", "nobug", "wontfix"]
-# Empty list means no restrictions
-valid_releases = [
-    "0.3.0",
-    "0.4.0",
-    "0.5.0",
-    "0.6.0", # current
-    "1.0.0",
-    "2.0.0",
-    "3.0.0"
-]
-# Use to look up valid releases (versions numbers)
-valid_releases_file = "CHANGELOG.md"
-valid_releases_file_schema = "CHANGELOG.md"
-# Used in sorting and views
-releases_schema = "semantic"
-# Subsection of release. Only displayed.
-valid_iterations = ["1", "2", "3", "4"]
-
-# Empty list means all are allowed
-valid_custom_field_names = []
-# Originator and origination date are important for issue identification
-# Without it, heuristics are more likely to fail to match issues to their counterpart in git history
-mandatory_fields = [
-    "originator", "origination_date", # primary keys
-    "status", "category", "priority", # can be known
-    "release", # can mean planned or actual. Ambiguous
-    # "iteration" # if this roughly means sprint number, it is a high churn field.
-]
-# Helpful for parsing tracker field, used to make ticket a clickable url
-tracker_domain = "example.com"
-# Can be url or ticket
-tracker_style = "url"
-
-# Active user from "os", "env", "git"
-user_identification_technique = "os"
-# .env variable if method is "env"
-user_env_var = "CODE_TAGS_USER"
-
-# Defines the action for a TODO condition: "stop", "warn", "nothing".
-enable_actions = true
-default_action = "warn"
-action_on_past_due = true
-action_only_on_responsible_user = true
-
-# Environment detection
-disable_on_ci = true
-
-# Use .env file
-use_dot_env = true
-
-# default CLI arguments
-modules = [] # "demo","bash2gitlab"]
-src = ["bash2gitlab", "tests", "plugins"]
-active_schemas = ["todo", "folk", "data"]
-
-[tool.bash2gitlab.synonyms]
-REQUIREMENT = ["REQ", "REQS", "REQUIREMENTS"]
-TODO = ["TASK", "ISSUE"]
-
-
+# [tool.bash2gitlab]
+# nothing yet

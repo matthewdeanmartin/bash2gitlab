@@ -12,16 +12,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.3.0] - 2025-07-27
-
-### Added
-
-- Option to use toml config file or envvar config instead of CLI switches
-
-### Fixed
-
-- Python 3.14 support fixed.
-
 ## [0.2.0] - 2025-07-27
 
 ### Added
