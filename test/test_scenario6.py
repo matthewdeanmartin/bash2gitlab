@@ -8,9 +8,9 @@ from bash2gitlab.compile_all import process_uncompiled_directory
 
 def test_yaml_it_src_to_out():
     with chdir_to_file_dir(__file__):
-        uncompiled = Path("scenario5/folder")
-        output_root = Path("scenario5/out")
-        templates_dir = Path("scenario5/folder")
+        uncompiled = Path("scenario6/in")
+        output_root = Path("scenario6/out")
+        templates_dir = Path("scenario6/in")
         output_templates_dir = output_root
         scripts_dir = uncompiled
 

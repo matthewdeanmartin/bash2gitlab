@@ -81,7 +81,7 @@ def test_process_script_list_already_literal():
     """Tests that a pre-existing LiteralScalarString is passed through."""
     literal = LiteralScalarString("some existing script")
     result = compile_all.process_script_list(literal, Path("."), {})
-    assert result is literal
+    assert result == [literal]
 
 
 def test_collect_script_sources(tmp_path: Path):

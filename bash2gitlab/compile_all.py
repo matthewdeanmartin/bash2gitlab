@@ -6,7 +6,7 @@ import re
 import shlex
 import shutil
 from pathlib import Path
-from typing import Any, Union, cast
+from typing import Union
 
 from ruamel.yaml import YAML, CommentedMap
 from ruamel.yaml.scalarstring import LiteralScalarString
@@ -68,7 +68,7 @@ def extract_script_path(command_line: str) -> str | None:
         # Malformed shell syntax
         return None
 
-    executors = {"bash", "sh", "source"}
+    executors = {"bash", "sh", "source", "."}
 
     parts = 0
     path_found = None
@@ -112,9 +112,8 @@ def process_script_list(
     Processes a list of script lines, inlining any shell script references.
     Returns a new list of lines or a single literal scalar string for long scripts.
     """
-    if not isinstance(script_list, list):
-        # Return as-is if the script is already a single scalar string.
-        return cast(Any, script_list)
+    if isinstance(script_list, str):
+        script_list = [script_list]
 
     # First pass: check for any long scripts. If one is found, it takes over the whole block.
     for line in script_list:
@@ -148,7 +147,7 @@ def process_script_list(
 def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, str]) -> int:
     """Processes a single job definition to inline scripts."""
     found = 0
-    for script_key in ["script", "before_script", "after_script"]:
+    for script_key in ["script", "before_script", "after_script", "pre_get_sources_script"]:
         if script_key in job_data:
             result = process_script_list(job_data[script_key], scripts_root, script_sources)
             if result != job_data[script_key]:
@@ -184,7 +183,7 @@ def inline_gitlab_scripts(
 
     for name in ["after_script", "before_script"]:
         if name in data:
-            logger.info(f"Processing top-level '{name}' section.")
+            logger.info(f"Processing top-level '{name}' section, even though gitlab has deprecated them.")
             result = process_script_list(data[name], scripts_root, script_sources)
             if result != data[name]:
                 data[name] = result
@@ -196,6 +195,16 @@ def inline_gitlab_scripts(
         if isinstance(job_data, dict) and "script" in job_data:
             logger.info(f"Processing job: {job_name}")
             inlined_count += process_job(job_data, scripts_root, script_sources)
+        if isinstance(job_data, dict) and "hooks" in job_data:
+            if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
+                logger.info(f"Processing pre_get_sources_script: {job_name}")
+                inlined_count += process_job(job_data["hooks"], scripts_root, script_sources)
+        if isinstance(job_data, dict) and "run" in job_data:
+            if isinstance(job_data["run"], list):
+                for item in job_data["run"]:
+                    if isinstance(item, dict) and "script" in item:
+                        logger.info(f"Processing run/script: {job_name}")
+                        inlined_count += process_job(item, scripts_root, script_sources)
 
     # --- Reorder top-level keys for consistent output ---
     logger.info("Reordering top-level keys in the final YAML.")
@@ -327,26 +336,3 @@ def process_uncompiled_directory(
         logger.info(f"Successfully processed and wrote {written_files} file(s).")
 
     return inlined_count
-
-
-# --- Main Execution Block ---
-
-if __name__ == "__main__":
-
-    def run() -> None:
-        # Define project structure paths
-        uncompiled_root = Path("uncompiled")
-        output_root = Path(".")  # Output to the current directory
-        scripts_dir = uncompiled_root / "scripts"
-        templates_input_dir = uncompiled_root / "templates"
-        templates_output_dir = output_root / "templates"
-
-        try:
-            process_uncompiled_directory(
-                uncompiled_root, output_root, scripts_dir, templates_input_dir, templates_output_dir
-            )
-            logger.info("✅ GitLab CI processing complete.")
-        except (FileNotFoundError, RuntimeError, ValueError) as e:
-            logger.error(f"❌ An error occurred: {e}")
-
-    run()
