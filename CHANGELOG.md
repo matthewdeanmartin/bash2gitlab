@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.5.1] - 2025-07-30
+
+### Fixed
+
+- Preserve long lines
+- Remove leading blank lines from scripts to avoid indentation indicators (e.g. `|2-`)
+
 ## [0.5.0] - 2025-07-29
 
 ### Fixed

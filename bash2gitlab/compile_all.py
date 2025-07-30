@@ -169,6 +169,7 @@ def inline_gitlab_scripts(
     """
     inlined_count = 0
     yaml = YAML()
+    yaml.width = 4096
     yaml.preserve_quotes = True
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
@@ -312,10 +313,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     new_hash = get_content_hash(new_content)
 
     if not output_file.exists():
-        logger.info(f"Writing new file: {output_file}")
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(new_content, encoding="utf-8")
-        hash_file.write_text(new_hash, encoding="utf-8")
+        write_yaml(output_file, new_content, hash_file, new_hash)
         return True
 
     if not hash_file.exists():
@@ -366,13 +364,41 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         # sys.exit(error_message)
 
     if new_content != current_content:
-        logger.info(f"Overwriting file with new content: {output_file}")
-        output_file.write_text(new_content, encoding="utf-8")
-        hash_file.write_text(new_hash, encoding="utf-8")
+        write_yaml(output_file, new_content, hash_file, new_hash)
         return True
     else:
         logger.info(f"Content of {output_file} is already up to date. Skipping.")
         return False
+
+
+def remove_leading_blank_lines(text: str) -> str:
+    """
+    Removes leading blank lines (including lines with only whitespace) from a string.
+    """
+    lines = text.splitlines()
+    # Find the first non-blank line
+    for i, line in enumerate(lines):
+        if line.strip() != "":
+            return "\n".join(lines[i:])
+    return ""  # All lines were blank
+
+
+def write_yaml(
+    output_file: Path,
+    new_content: str,
+    hash_file: Path,
+    new_hash: str,
+):
+    logger.info(f"Writing new file: {output_file}")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # # Check if it parses.
+    # yaml_loader = YAML(typ='safe')
+    # yaml_loader.load(StringIO(new_content))
+    new_content = remove_leading_blank_lines(new_content)
+
+    output_file.write_text(new_content, encoding="utf-8")
+    hash_file.write_text(new_hash, encoding="utf-8")
 
 
 def process_uncompiled_directory(

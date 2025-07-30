@@ -219,6 +219,7 @@ def inline_gitlab_scripts(
     """
     inlined_count = 0
     yaml = YAML()
+    yaml.width = 4096
     yaml.preserve_quotes = True
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
@@ -362,10 +363,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     new_hash = get_content_hash(new_content)
 
     if not output_file.exists():
-        logger.info(f"Writing new file: {output_file}")
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_text(new_content, encoding="utf-8")
-        hash_file.write_text(new_hash, encoding="utf-8")
+        write_yaml(output_file, new_content, hash_file, new_hash)
         return True
 
     if not hash_file.exists():
@@ -416,13 +414,41 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         # sys.exit(error_message)
 
     if new_content != current_content:
-        logger.info(f"Overwriting file with new content: {output_file}")
-        output_file.write_text(new_content, encoding="utf-8")
-        hash_file.write_text(new_hash, encoding="utf-8")
+        write_yaml(output_file, new_content, hash_file, new_hash)
         return True
     else:
         logger.info(f"Content of {output_file} is already up to date. Skipping.")
         return False
+
+
+def remove_leading_blank_lines(text: str) -> str:
+    """
+    Removes leading blank lines (including lines with only whitespace) from a string.
+    """
+    lines = text.splitlines()
+    # Find the first non-blank line
+    for i, line in enumerate(lines):
+        if line.strip() != "":
+            return "\n".join(lines[i:])
+    return ""  # All lines were blank
+
+
+def write_yaml(
+    output_file: Path,
+    new_content: str,
+    hash_file: Path,
+    new_hash: str,
+):
+    logger.info(f"Writing new file: {output_file}")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # # Check if it parses.
+    # yaml_loader = YAML(typ='safe')
+    # yaml_loader.load(StringIO(new_content))
+    new_content = remove_leading_blank_lines(new_content)
+
+    output_file.write_text(new_content, encoding="utf-8")
+    hash_file.write_text(new_hash, encoding="utf-8")
 
 
 def process_uncompiled_directory(
@@ -1102,6 +1128,7 @@ def shred_script_block(
         processed_lines.extend(script_content.splitlines())
     elif script_content:  # It's a list-like object (e.g., ruamel.yaml.CommentedSeq)
         yaml = YAML()
+        yaml.width = 4096
         for item in script_content:
             if isinstance(item, str):
                 processed_lines.append(item)
@@ -1234,6 +1261,7 @@ def shred_gitlab_ci(
 
     logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
     yaml = YAML()
+    yaml.width = 4096
     yaml.preserve_quotes = True
     yaml.indent(mapping=2, sequence=4, offset=2)
     data = yaml.load(input_yaml_path)
@@ -1469,7 +1497,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.4.1"
+__version__ = "0.5.1"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]

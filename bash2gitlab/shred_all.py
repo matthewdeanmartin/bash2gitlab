@@ -121,6 +121,7 @@ def shred_script_block(
         processed_lines.extend(script_content.splitlines())
     elif script_content:  # It's a list-like object (e.g., ruamel.yaml.CommentedSeq)
         yaml = YAML()
+        yaml.width = 4096
         for item in script_content:
             if isinstance(item, str):
                 processed_lines.append(item)
@@ -253,6 +254,7 @@ def shred_gitlab_ci(
 
     logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
     yaml = YAML()
+    yaml.width = 4096
     yaml.preserve_quotes = True
     yaml.indent(mapping=2, sequence=4, offset=2)
     data = yaml.load(input_yaml_path)
