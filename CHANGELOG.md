@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.5.0] - 2025-07-29
+
+### Fixed
+
+- Subfolders with yaml files are now processed
+
+### Added 
+
+- Started a feature to detect modification, currently warns and doesn't stop.
+
+
 ## [0.4.1] - 2025-07-27
 
 ### Fixed

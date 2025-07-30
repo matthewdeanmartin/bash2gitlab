@@ -50,11 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ```python
 from __future__ import annotations
 
+import difflib
+import hashlib
 import io
 import logging
 import re
 import shlex
-import shutil
 from pathlib import Path
 from typing import Union
 
@@ -314,6 +315,116 @@ def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
     return script_sources
 
 
+# --- NEW AND MODIFIED FUNCTIONS START HERE ---
+
+
+def normalize_content_for_hash(content: str) -> str:
+    """
+    Normalizes file content for consistent hashing.
+    It removes YAML/shell comments, strips leading/trailing whitespace from lines,
+    and removes blank lines. This makes the hash robust against trivial formatting changes.
+    """
+    lines = content.splitlines()
+    # Remove comments and strip whitespace from each line
+    lines_no_comments = [re.sub(r"\s*#.*$", "", line).strip().replace(" ", "") for line in lines if line]
+    # Filter out any lines that are now empty
+    non_empty_lines = [line for line in lines_no_comments if line]
+    return "".join(non_empty_lines)
+
+
+def get_content_hash(content: str) -> str:
+    """Calculates the SHA256 hash of the normalized content."""
+    normalized_content = normalize_content_for_hash(content)
+    return hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
+
+
+def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
+    """
+    Writes a compiled file safely. If the destination file was manually edited,
+    it aborts the entire script with a descriptive error and a diff of the changes.
+
+    Args:
+        output_file: The path to the destination file.
+        new_content: The full, new content to be written.
+        dry_run: If True, simulate without writing.
+
+    Returns:
+        True if a file was written or would be written in a dry run, False otherwise.
+
+    Raises:
+        SystemExit: If the destination file has been manually modified.
+    """
+    if dry_run:
+        logger.info(f"[DRY RUN] Would evaluate writing to {output_file}")
+        return True
+
+    hash_file = output_file.with_suffix(output_file.suffix + ".hash")
+    new_hash = get_content_hash(new_content)
+
+    if not output_file.exists():
+        logger.info(f"Writing new file: {output_file}")
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_text(new_content, encoding="utf-8")
+        hash_file.write_text(new_hash, encoding="utf-8")
+        return True
+
+    if not hash_file.exists():
+        error_message = (
+            f"ERROR: Destination file '{output_file}' exists but its .hash file is missing. "
+            "Aborting to prevent data loss. If you want to regenerate this file, "
+            "please remove it and run the script again."
+        )
+        logger.error(error_message)
+        raise SystemExit(1)
+
+    last_known_hash = hash_file.read_text(encoding="utf-8").strip()
+    current_content = output_file.read_text(encoding="utf-8")
+    current_hash = get_content_hash(current_content)
+
+    if last_known_hash != current_hash:
+        logger.warning(
+            f"Manual edit detected in '{output_file}'. Continuing because I can't tell if this was a code"
+            "modification or yaml reformatting."
+        )
+
+        diff = difflib.unified_diff(
+            current_content.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            fromfile=f"{output_file} (current)",
+            tofile=f"{output_file} (proposed)",
+        )
+
+        diff_text = "".join(diff)
+        if not diff_text:
+            diff_text = "No visual differences found, but content hash differs (likely whitespace or comment changes)."
+
+        # error_message = (
+        #     f"\n--- MANUAL EDIT DETECTED ---\n"
+        #     f"CANNOT OVERWRITE: The destination file below has been modified:\n"
+        #     f"  {output_file}\n\n"
+        #     f"The script detected that its content no longer matches the last generated version.\n"
+        #     f"To prevent data loss, the process has been stopped.\n\n"
+        #     f"--- PROPOSED CHANGES ---\n"
+        #     f"{diff_text}\n"
+        #     f"--- HOW TO RESOLVE ---\n"
+        #     f"1. Revert the manual changes in '{output_file}' and run this script again.\n"
+        #     f"OR\n"
+        #     f"2. If the manual changes are desired, delete the file and its corresponding '.hash' file "
+        #     f"('{hash_file}') to allow the script to regenerate it from the new base.\n"
+        # )
+        # We use sys.exit to print the message directly and exit with an error code.
+        # sys.exit(error_message)
+
+    if new_content != current_content:
+        logger.info(f"Overwriting file with new content: {output_file}")
+        output_file.write_text(new_content, encoding="utf-8")
+        hash_file.write_text(new_hash, encoding="utf-8")
+        return True
+    else:
+        logger.info(f"Content of {output_file} is already up to date. Skipping.")
+        return False
+
+
 def process_uncompiled_directory(
     uncompiled_path: Path,
     output_path: Path,
@@ -324,6 +435,7 @@ def process_uncompiled_directory(
 ) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
+    This version safely writes files by checking hashes to avoid overwriting manual changes.
 
     Args:
         uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
@@ -334,95 +446,78 @@ def process_uncompiled_directory(
         dry_run (bool): If True, simulate the process without writing any files.
 
     Returns:
-        - The total number of jobs processed.
+        The total number of inlined sections across all files.
     """
-    inlined_count = 0
-    # Safely clean up previous outputs
-    logger.info(f"Cleaning previous output in '{output_path}' and '{output_templates_dir}'")
-    for extension in ["yml", "yaml"]:
-        if (output_path / f".gitlab-ci.{extension}").exists():
-            (output_path / f".gitlab-ci.{extension}").unlink()
-    if output_templates_dir != uncompiled_path and output_templates_dir.exists() and not dry_run:
-        shutil.rmtree(output_templates_dir)
+    total_inlined_count = 0
+    written_files_count = 0
 
     if not dry_run:
+        output_path.mkdir(parents=True, exist_ok=True)
         output_templates_dir.mkdir(parents=True, exist_ok=True)
 
     script_sources = collect_script_sources(scripts_path)
-    written_files = 0
 
-    # Load global variables from the special file, if it exists
     global_vars = {}
     global_vars_path = uncompiled_path / "global_variables.sh"
     if global_vars_path.is_file():
         logger.info(f"Found and loading variables from {global_vars_path}")
         content = global_vars_path.read_text(encoding="utf-8")
         global_vars = parse_env_file(content)
-        inlined_count += 1
+        total_inlined_count += 1
 
-    # Process root .gitlab-ci.yml
-    root_yaml_extension = "yml"
-    root_yaml = uncompiled_path / f".gitlab-ci.{root_yaml_extension}"
+    root_yaml = uncompiled_path / ".gitlab-ci.yml"
     if not root_yaml.exists():
-        root_yaml_extension = "yaml"
         root_yaml = uncompiled_path / ".gitlab-ci.yaml"
 
-    output_root_yaml: Path | None = None
     if root_yaml.is_file():
         logger.info(f"Processing root file: {root_yaml}")
         raw_text = root_yaml.read_text(encoding="utf-8")
-        inlined_for_file, compiled = inline_gitlab_scripts(
-            raw_text,
-            scripts_path,
-            script_sources,
-            global_vars,
-            uncompiled_path,  # Pass the path for finding job-specific vars
+        inlined_for_file, compiled_text = inline_gitlab_scripts(
+            raw_text, scripts_path, script_sources, global_vars, uncompiled_path
         )
-        inlined_count += inlined_for_file
-        output_root_yaml = output_path / f".gitlab-ci.{root_yaml_extension}"
-        if not dry_run:
-            if inlined_for_file:
-                output_root_yaml.write_text(BANNER + compiled, encoding="utf-8")
-            else:
-                output_root_yaml.write_text(raw_text, encoding="utf-8")
+        total_inlined_count += inlined_for_file
 
-        written_files += 1
+        final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
+        output_root_yaml = output_path / root_yaml.name
 
-    # Process templates/*.yml and *.yaml
+        if write_compiled_file(output_root_yaml, final_content, dry_run):
+            written_files_count += 1
+
     if templates_dir.is_dir():
-        template_files = list(templates_dir.glob("*.yml")) + list(templates_dir.glob("*.yaml"))
+        template_files = list(templates_dir.rglob("*.yml")) + list(templates_dir.rglob("*.yaml"))
         if not template_files:
             logger.warning(f"No template YAML files found in {templates_dir}")
 
         for template_path in template_files:
-            output_to_write = output_templates_dir / template_path.name
-            if output_root_yaml != output_to_write:
-                logger.info(f"Processing template file: {template_path}")
-                raw_text = template_path.read_text(encoding="utf-8")
-                inlined_for_file, compiled = inline_gitlab_scripts(
-                    raw_text,
-                    scripts_path,
-                    script_sources,
-                    {},  # Do not pass global variables to templates
-                    uncompiled_path,  # Pass the path for finding job-specific vars
-                )
-                inlined_count += inlined_for_file
+            logger.info(f"Processing template file: {template_path}")
+            relative_path = template_path.relative_to(templates_dir)
+            output_file = output_templates_dir / relative_path
 
-                if not dry_run:
-                    if inlined_for_file > 0:
-                        # inlines happened
-                        output_to_write.write_text(BANNER + compiled, encoding="utf-8")
-                    else:
-                        # no change
-                        output_to_write.write_text(raw_text, encoding="utf-8")
-                written_files += 1
+            raw_text = template_path.read_text(encoding="utf-8")
+            inlined_for_file, compiled_text = inline_gitlab_scripts(
+                raw_text,
+                scripts_path,
+                script_sources,
+                {},
+                uncompiled_path,
+            )
+            total_inlined_count += inlined_for_file
 
-    if written_files == 0:
-        raise RuntimeError("No output files were written. Check input paths and file names.")
-    else:
-        logger.info(f"Successfully processed and wrote {written_files} file(s).")
+            final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
 
-    return inlined_count
+            if write_compiled_file(output_file, final_content, dry_run):
+                written_files_count += 1
+
+    if written_files_count == 0 and not dry_run:
+        logger.warning(
+            "No output files were written. This could be because all files are up-to-date, or due to errors."
+        )
+    elif not dry_run:
+        logger.info(f"Successfully processed files. {written_files_count} file(s) were created or updated.")
+    elif dry_run:
+        logger.info(f"[DRY RUN] Simulation complete. Would have processed {written_files_count} file(s).")
+
+    return total_inlined_count
 ```
 ## File: config.py
 ```python
@@ -1374,7 +1469,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]

@@ -1,5 +1,5 @@
 # bash2gitlab
-Compile bash to yaml pipelines to get IDE support for bash and import bash from template repos
+Compile bash to yaml pipelines to get IDE support for bash and import bash from centralized template repos
 
 For example
 
@@ -26,7 +26,12 @@ job:
 
 See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tree/main/examples).
 
-## Scenario
+## Who is this for
+
+- If you store your yaml templates in a centralized repo and `include:` them from other repos.
+- If you have a lot of bash in your yaml that in theory could be executed locally
+
+
 Your .gitlab-ci.yml pipelines are more bash than yaml. 1000s of lines of bash. But your IDE doesn't recognize
 your bash as bash, it is a yaml string. You get syntax highlighting telling you that `script:` is a yaml key and that
 is it.
@@ -36,6 +41,12 @@ repository. So the .sh file needs to be in every repo that imports the template.
 bash from the other repo.
 
 Other solutions to get at a centralized bash script quickly get complicated.
+
+## Who this is not for
+
+If all your yaml pipelines are in a single repository, you  can just reference bash files in your single repository.
+
+If you have a trivial amount of bash in your templates
 
 ## Installation
 

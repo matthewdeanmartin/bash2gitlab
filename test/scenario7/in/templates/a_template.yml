@@ -1,0 +1,3 @@
+a_job:
+  script:
+    - ./templates/script6.sh
