@@ -113,10 +113,3 @@ This approach can't handle invocations that...
 ## Formatting and comments
 No particular guarantees that the compiled will have comments.
 
-## Not ready yet
-- Powershell is supported by gitlab, but not by this library... yet.
-- Validate/lint with API calls to Gitlab.
-- Support alternative yaml formatters (prettier, yamlfix, yamlfixer-opt-nc)
-- custom shebang
-- custom "do not edit" banner
-- Include command to reproduce build copied to header

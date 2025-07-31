@@ -1,0 +1,7 @@
+.a_job:
+  before_script:
+    - ./templates/script6.sh
+  script:
+    - ./templates/script7.sh
+  after_script:
+    - ./templates/script8.sh

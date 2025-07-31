@@ -50,16 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ```python
 from __future__ import annotations
 
+import base64
 import difflib
-import hashlib
 import io
 import logging
 import re
 import shlex
+import sys
 from pathlib import Path
 from typing import Union
 
 from ruamel.yaml import YAML, CommentedMap
+from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 logger = logging.getLogger(__name__)
@@ -80,7 +82,7 @@ def parse_env_file(file_content: str) -> dict[str, str]:
         file_content (str): The content of the variables file.
 
     Returns:
-        Dict[str, str]: A dictionary of the parsed variables.
+        dict[str, str]: A dictionary of the parsed variables.
     """
     variables = {}
     logger.debug("Parsing global variables file.")
@@ -110,7 +112,7 @@ def extract_script_path(command_line: str) -> str | None:
         command_line (str): A shell command line.
 
     Returns:
-        Optional[str]: The script path if the line is a script invocation; otherwise, None.
+        str | None: The script path if the line is a script invocation; otherwise, None.
     """
     try:
         tokens: list[str] = shlex.split(command_line)
@@ -244,7 +246,7 @@ def inline_gitlab_scripts(
     # Process all jobs
     for job_name, job_data in data.items():
         if isinstance(job_data, dict):
-            # FIX: Look for and process job-specific variables file
+            # Look for and process job-specific variables file
             safe_job_name = job_name.replace(":", "_")
             job_vars_filename = f"{safe_job_name}_variables.sh"
             job_vars_path = uncompiled_path / job_vars_filename
@@ -264,7 +266,12 @@ def inline_gitlab_scripts(
                     inlined_count += 1
 
             # A simple heuristic for a "job" is a dictionary with a 'script' key.
-            if "script" in job_data:
+            if (
+                "script" in job_data
+                or "before_script" in job_data
+                or "after_script" in job_data
+                or "pre_get_sources_script" in job_data
+            ):
                 logger.info(f"Processing job: {job_name}")
                 inlined_count += process_job(job_data, scripts_root, script_sources)
             if "hooks" in job_data:
@@ -319,30 +326,41 @@ def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
 # --- NEW AND MODIFIED FUNCTIONS START HERE ---
 
 
-def normalize_content_for_hash(content: str) -> str:
+def remove_leading_blank_lines(text: str) -> str:
     """
-    Normalizes file content for consistent hashing.
-    It removes YAML/shell comments, strips leading/trailing whitespace from lines,
-    and removes blank lines. This makes the hash robust against trivial formatting changes.
+    Removes leading blank lines (including lines with only whitespace) from a string.
     """
-    lines = content.splitlines()
-    # Remove comments and strip whitespace from each line
-    lines_no_comments = [re.sub(r"\s*#.*$", "", line).strip().replace(" ", "") for line in lines if line]
-    # Filter out any lines that are now empty
-    non_empty_lines = [line for line in lines_no_comments if line]
-    return "".join(non_empty_lines)
+    lines = text.splitlines()
+    # Find the first non-blank line
+    for i, line in enumerate(lines):
+        if line.strip() != "":
+            return "\n".join(lines[i:])
+    return ""  # All lines were blank
 
 
-def get_content_hash(content: str) -> str:
-    """Calculates the SHA256 hash of the normalized content."""
-    normalized_content = normalize_content_for_hash(content)
-    return hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
+def write_yaml_and_hash(
+    output_file: Path,
+    new_content: str,
+    hash_file: Path,
+):
+    """Writes the YAML content and a base64 encoded version to a .hash file."""
+    logger.info(f"Writing new file: {output_file}")
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    new_content = remove_leading_blank_lines(new_content)
+
+    output_file.write_text(new_content, encoding="utf-8")
+
+    # Store a base64 encoded copy of the exact content we just wrote.
+    encoded_content = base64.b64encode(new_content.encode("utf-8")).decode("utf-8")
+    hash_file.write_text(encoded_content, encoding="utf-8")
+    logger.debug(f"Updated hash file: {hash_file}")
 
 
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
     """
-    Writes a compiled file safely. If the destination file was manually edited,
-    it aborts the entire script with a descriptive error and a diff of the changes.
+    Writes a compiled file safely. If the destination file was manually edited in a meaningful way
+    (i.e., the YAML data structure changed), it aborts with a descriptive error and a diff.
 
     Args:
         output_file: The path to the destination file.
@@ -357,15 +375,21 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     """
     if dry_run:
         logger.info(f"[DRY RUN] Would evaluate writing to {output_file}")
-        return True
+        # In dry run, we report as if a change would happen if there is one.
+        if not output_file.exists() or output_file.read_text(encoding="utf-8") != new_content:
+            logger.info(f"[DRY RUN] Changes detected for {output_file}.")
+            return True
+        logger.info(f"[DRY RUN] No changes for {output_file}.")
+        return False
 
     hash_file = output_file.with_suffix(output_file.suffix + ".hash")
-    new_hash = get_content_hash(new_content)
 
     if not output_file.exists():
-        write_yaml(output_file, new_content, hash_file, new_hash)
+        logger.info(f"Output file {output_file} does not exist. Creating.")
+        write_yaml_and_hash(output_file, new_content, hash_file)
         return True
 
+    # --- File and hash file exist, perform validation ---
     if not hash_file.exists():
         error_message = (
             f"ERROR: Destination file '{output_file}' exists but its .hash file is missing. "
@@ -375,80 +399,75 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         logger.error(error_message)
         raise SystemExit(1)
 
-    last_known_hash = hash_file.read_text(encoding="utf-8").strip()
+    # Decode the last known content from the hash file
+    last_known_base64 = hash_file.read_text(encoding="utf-8").strip()
+    try:
+        last_known_content_bytes = base64.b64decode(last_known_base64)
+        last_known_content = last_known_content_bytes.decode("utf-8")
+    except (ValueError, TypeError) as e:
+        error_message = (
+            f"ERROR: Could not decode the .hash file for '{output_file}'. It may be corrupted.\n"
+            f"Error: {e}\n"
+            "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
+        )
+        logger.error(error_message)
+        raise SystemExit(1) from e
+
     current_content = output_file.read_text(encoding="utf-8")
-    current_hash = get_content_hash(current_content)
 
-    if last_known_hash != current_hash:
-        logger.warning(
-            f"Manual edit detected in '{output_file}'. Continuing because I can't tell if this was a code"
-            "modification or yaml reformatting."
+    # Load both YAML versions to compare their data structures
+    yaml = YAML()
+    try:
+        current_doc = yaml.load(current_content)
+        last_known_doc = yaml.load(last_known_content)
+    except YAMLError as e:
+        error_message = (
+            f"ERROR: Could not parse YAML from '{output_file}'. It may be corrupted.\n"
+            f"Error: {e}\n"
+            "Aborting. Please fix the file syntax or remove it to regenerate."
         )
+        logger.error(error_message)
+        raise SystemExit(1) from e
 
+    # If the loaded documents are not identical, it means a meaningful change was made.
+    if current_doc != last_known_doc:
+        # Generate a diff between the *last known good version* and the *current modified version*
         diff = difflib.unified_diff(
+            last_known_content.splitlines(keepends=True),
             current_content.splitlines(keepends=True),
-            new_content.splitlines(keepends=True),
-            fromfile=f"{output_file} (current)",
-            tofile=f"{output_file} (proposed)",
+            fromfile=f"{output_file} (last known good)",
+            tofile=f"{output_file} (current, with manual edits)",
         )
-
         diff_text = "".join(diff)
-        if not diff_text:
-            diff_text = "No visual differences found, but content hash differs (likely whitespace or comment changes)."
 
-        # error_message = (
-        #     f"\n--- MANUAL EDIT DETECTED ---\n"
-        #     f"CANNOT OVERWRITE: The destination file below has been modified:\n"
-        #     f"  {output_file}\n\n"
-        #     f"The script detected that its content no longer matches the last generated version.\n"
-        #     f"To prevent data loss, the process has been stopped.\n\n"
-        #     f"--- PROPOSED CHANGES ---\n"
-        #     f"{diff_text}\n"
-        #     f"--- HOW TO RESOLVE ---\n"
-        #     f"1. Revert the manual changes in '{output_file}' and run this script again.\n"
-        #     f"OR\n"
-        #     f"2. If the manual changes are desired, delete the file and its corresponding '.hash' file "
-        #     f"('{hash_file}') to allow the script to regenerate it from the new base.\n"
-        # )
+        error_message = (
+            f"\n--- MANUAL EDIT DETECTED ---\n"
+            f"CANNOT OVERWRITE: The destination file below has been modified:\n"
+            f"  {output_file}\n\n"
+            f"The script detected that its data no longer matches the last generated version.\n"
+            f"To prevent data loss, the process has been stopped.\n\n"
+            f"--- DETECTED CHANGES ---\n"
+            f"{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n"
+            f"--- HOW TO RESOLVE ---\n"
+            f"1. Revert the manual changes in '{output_file}' and run this script again.\n"
+            f"OR\n"
+            f"2. If the manual changes are desired, incorporate them into the source files\n"
+            f"   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n"
+            f"   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n"
+            f"   to regenerate it from the new base.\n"
+        )
         # We use sys.exit to print the message directly and exit with an error code.
-        # sys.exit(error_message)
+        sys.exit(error_message)
 
+    # If we reach here, the current file is valid (or just reformatted).
+    # Now, we check if the *newly generated* content is different from the current content.
     if new_content != current_content:
-        write_yaml(output_file, new_content, hash_file, new_hash)
+        logger.info(f"Content of {output_file} has changed (reformatted or updated). Writing new version.")
+        write_yaml_and_hash(output_file, new_content, hash_file)
         return True
     else:
         logger.info(f"Content of {output_file} is already up to date. Skipping.")
         return False
-
-
-def remove_leading_blank_lines(text: str) -> str:
-    """
-    Removes leading blank lines (including lines with only whitespace) from a string.
-    """
-    lines = text.splitlines()
-    # Find the first non-blank line
-    for i, line in enumerate(lines):
-        if line.strip() != "":
-            return "\n".join(lines[i:])
-    return ""  # All lines were blank
-
-
-def write_yaml(
-    output_file: Path,
-    new_content: str,
-    hash_file: Path,
-    new_hash: str,
-):
-    logger.info(f"Writing new file: {output_file}")
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
-    # # Check if it parses.
-    # yaml_loader = YAML(typ='safe')
-    # yaml_loader.load(StringIO(new_content))
-    new_content = remove_leading_blank_lines(new_content)
-
-    output_file.write_text(new_content, encoding="utf-8")
-    hash_file.write_text(new_hash, encoding="utf-8")
 
 
 def process_uncompiled_directory(
@@ -479,7 +498,8 @@ def process_uncompiled_directory(
 
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
-        output_templates_dir.mkdir(parents=True, exist_ok=True)
+        if templates_dir.is_dir():
+            output_templates_dir.mkdir(parents=True, exist_ok=True)
 
     script_sources = collect_script_sources(scripts_path)
 

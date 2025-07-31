@@ -1,0 +1,2 @@
+.some-script: &some-anchor
+  - ./script1.sh

@@ -1,0 +1,29 @@
+.job1:
+  hooks:
+    pre_get_sources_script:
+      - ./script1.sh
+  script: ./script1b.sh
+
+
+.production:
+  stage: deploy
+  script: ./script2.sh
+  environment: production
+
+
+.dot:
+  stage: deploy
+  script: . script3.sh
+  environment: production
+
+
+.job2:
+  variables:
+    DOCKERPATH: "**/Dockerfile"
+  script: ./script4.sh
+
+
+.job:
+  run:
+    - name: 'hello_steps'
+      script: ./script5.sh

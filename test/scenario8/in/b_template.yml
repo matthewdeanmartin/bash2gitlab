@@ -1,0 +1,7 @@
+.b_job:
+  before_script:
+    - ./script-1.sh
+#  script:
+#    - ./script2.sh
+#  after_script:
+#    - ./script3.sh
