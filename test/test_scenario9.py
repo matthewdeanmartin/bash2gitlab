@@ -22,5 +22,3 @@ def test_yaml_it_src_to_out_hidden_jobs():
             assert ".sh" not in output or ". before_script.sh" in output
             found += 1
         assert found
-
-

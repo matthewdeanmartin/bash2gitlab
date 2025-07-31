@@ -168,6 +168,7 @@ def inline_gitlab_scripts(
     """
     Loads a GitLab CI YAML file, inlines scripts, merges global and job-specific variables,
     reorders top-level keys, and returns the result as a string.
+    This version now supports inlining scripts in top-level lists used as YAML anchors.
     """
     inlined_count = 0
     yaml = YAML()
@@ -193,9 +194,21 @@ def inline_gitlab_scripts(
                 data[name] = result
                 inlined_count += 1
 
-    # Process all jobs
+    # Process all jobs and top-level script lists (which are often used for anchors)
     for job_name, job_data in data.items():
-        if isinstance(job_data, dict):
+        # --- MODIFICATION START ---
+        # Handle top-level keys that are lists of scripts. This pattern is commonly
+        # used to create reusable script blocks with YAML anchors, e.g.:
+        # .my-script-template: &my-script-anchor
+        #   - ./scripts/my-script.sh
+        if isinstance(job_data, list):
+            logger.info(f"Processing top-level list key '{job_name}', potentially a script anchor.")
+            result = process_script_list(job_data, scripts_root, script_sources)
+            if result != job_data:
+                data[job_name] = result
+                inlined_count += 1
+        # --- MODIFICATION END ---
+        elif isinstance(job_data, dict):
             # Look for and process job-specific variables file
             safe_job_name = job_name.replace(":", "_")
             job_vars_filename = f"{safe_job_name}_variables.sh"
@@ -271,9 +284,6 @@ def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
         raise RuntimeError(f"No non-empty scripts found in '{scripts_dir}'.")
 
     return script_sources
-
-
-# --- NEW AND MODIFIED FUNCTIONS START HERE ---
 
 
 def remove_leading_blank_lines(text: str) -> str:

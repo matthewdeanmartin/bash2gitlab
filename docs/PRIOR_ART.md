@@ -26,7 +26,7 @@ I can't find any tools that format bash in-place in the yaml.
 
 - [Gitlab runner](https://docs.gitlab.com/runner/) Install both gitlab and a runner on your machine. Not really what
   most developers want to locally test their pipelines.
-- [gitlab-ci-local](https://github.com/firecow/gitlab-ci-local)
+- [gitlab-ci-local](https://github.com/firecow/gitlab-ci-local) Runs gitlab pipeline in local docker containers.
 - [ci-yml](https://pypi.org/project/ci-yml/) is close? You write your pipeline in travis syntax(!) in a ci.yml, execute
   it locally and then use the tool to execute as gitlab-ci.yml... I think.
 

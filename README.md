@@ -101,7 +101,7 @@ This will be inlined into the `variables:` stanza.
 - global_variables.sh
 
 ## Out of scope
-This doesn't inline include templates, only references to `.sh` files. In otherwords, if you are incluing many yaml
+This doesn't inline include templates, only references to `.sh` files. In other words, if you are including many yaml
 templates, then there will still be many yaml templates, they won't be merged to a single file.
 
 This approach can't handle invocations that...
@@ -113,3 +113,7 @@ This approach can't handle invocations that...
 ## Formatting and comments
 No particular guarantees that the compiled will have comments.
 
+## Prior Art
+- [gitlab-ci-local](https://github.com/firecow/gitlab-ci-local) Runs pipeline in local docker containers. 
+
+bash2gitlab differs in that it assumes you can and want to execute your bash scripts without docker containers.
