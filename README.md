@@ -62,6 +62,19 @@ If for some reason you want to use it as a library...
 pip install bash2gitlab
 ```
 
+## Bash completion
+
+This project uses [argcomplete](https://github.com/kislyuk/argcomplete) for tab completion in Bash.
+After installation, enable completions with one of the following:
+
+```bash
+# Enable for all Python executables
+activate-global-python-argcomplete
+
+# Or enable for the current shell only
+eval "$(register-python-argcomplete bash2gitlab)"
+```
+
 ## Usage
 
 - Shred your current .gitlab-ci.yml file into yaml and bash

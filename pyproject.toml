@@ -10,6 +10,7 @@ requires-python = ">=3.8"
 dependencies = [
     "ruamel.yaml",
     "colorlog",
+    "argcomplete",
     "watchdog>=3.0.0",
     # backwards compatibility
     "toml; python_version < '3.11'",
