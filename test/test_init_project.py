@@ -61,6 +61,7 @@ def test_create_config_file_standard_run(tmp_path: Path):
     test_config = {
         **DEFAULT_CONFIG,
         "quiet": True,
+        "verbose": False
     }
 
     # Run the function using the tmp_path fixture

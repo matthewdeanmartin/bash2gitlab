@@ -50,6 +50,7 @@ def compile_handler(args: argparse.Namespace):
     templates_in_dir = Path(args.templates_in).resolve() if args.templates_in else in_dir
     templates_out_dir = Path(args.templates_out).resolve() if args.templates_out else out_dir
     dry_run = bool(args.dry_run)
+    parallelism = args.parallelism
 
     if args.watch:
         start_watch(
@@ -59,6 +60,7 @@ def compile_handler(args: argparse.Namespace):
             templates_dir=templates_in_dir,
             output_templates_dir=templates_out_dir,
             dry_run=dry_run,
+            parallelism=parallelism,
         )
         return
 
@@ -70,6 +72,7 @@ def compile_handler(args: argparse.Namespace):
             templates_dir=templates_in_dir,
             output_templates_dir=templates_out_dir,
             dry_run=dry_run,
+            parallelism=parallelism,
         )
 
 
@@ -156,6 +159,12 @@ def main() -> int:
     compile_parser.add_argument(
         "--templates-out",
         help="Output directory for compiled CI templates. (Default: <out>)",
+    )
+    compile_parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=config.parallelism,
+        help="Number of files to compile in parallel (default: CPU count).",
     )
     compile_parser.add_argument(
         "--dry-run",

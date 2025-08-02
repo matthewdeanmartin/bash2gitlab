@@ -13,7 +13,6 @@ DEFAULT_CONFIG = {
     "scripts_dir": "scripts",
     "templates_in": "templates",
     "templates_out": "out/templates",
-
 }
 
 # Default settings for boolean flags
