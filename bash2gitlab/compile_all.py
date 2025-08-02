@@ -4,6 +4,7 @@ import base64
 import difflib
 import io
 import logging
+import multiprocessing
 import re
 import shlex
 import sys
@@ -420,6 +421,30 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         return False
 
 
+def _compile_single_file(
+    source_path: Path,
+    output_file: Path,
+    scripts_path: Path,
+    script_sources: dict[str, str],
+    variables: dict[str, str],
+    uncompiled_path: Path,
+    dry_run: bool,
+    label: str,
+) -> tuple[int, int]:
+    """Compile a single YAML file and write the result.
+
+    Returns a tuple of the number of inlined sections and whether a file was written (0 or 1).
+    """
+    logger.info(f"Processing {label}: {source_path}")
+    raw_text = source_path.read_text(encoding="utf-8")
+    inlined_for_file, compiled_text = inline_gitlab_scripts(
+        raw_text, scripts_path, script_sources, variables, uncompiled_path
+    )
+    final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
+    written = write_compiled_file(output_file, final_content, dry_run)
+    return inlined_for_file, int(written)
+
+
 def process_uncompiled_directory(
     uncompiled_path: Path,
     output_path: Path,
@@ -427,6 +452,7 @@ def process_uncompiled_directory(
     templates_dir: Path,
     output_templates_dir: Path,
     dry_run: bool = False,
+    parallelism: int | None = None,
 ) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
@@ -439,6 +465,7 @@ def process_uncompiled_directory(
         templates_dir (Path): Optionally put all yaml files into a template folder.
         output_templates_dir (Path): Optionally put all compiled template files into an output template folder.
         dry_run (bool): If True, simulate the process without writing any files.
+        parallelism (int | None): Maximum number of processes to use for parallel compilation.
 
     Returns:
         The total number of inlined sections across all files.
@@ -461,23 +488,15 @@ def process_uncompiled_directory(
         global_vars = parse_env_file(content)
         total_inlined_count += 1
 
+    files_to_process: list[tuple[Path, Path, dict[str, str], str]] = []
+
     root_yaml = uncompiled_path / ".gitlab-ci.yml"
     if not root_yaml.exists():
         root_yaml = uncompiled_path / ".gitlab-ci.yaml"
 
     if root_yaml.is_file():
-        logger.info(f"Processing root file: {root_yaml}")
-        raw_text = root_yaml.read_text(encoding="utf-8")
-        inlined_for_file, compiled_text = inline_gitlab_scripts(
-            raw_text, scripts_path, script_sources, global_vars, uncompiled_path
-        )
-        total_inlined_count += inlined_for_file
-
-        final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
         output_root_yaml = output_path / root_yaml.name
-
-        if write_compiled_file(output_root_yaml, final_content, dry_run):
-            written_files_count += 1
+        files_to_process.append((root_yaml, output_root_yaml, global_vars, "root file"))
 
     if templates_dir.is_dir():
         template_files = list(templates_dir.rglob("*.yml")) + list(templates_dir.rglob("*.yaml"))
@@ -485,24 +504,31 @@ def process_uncompiled_directory(
             logger.warning(f"No template YAML files found in {templates_dir}")
 
         for template_path in template_files:
-            logger.info(f"Processing template file: {template_path}")
             relative_path = template_path.relative_to(templates_dir)
             output_file = output_templates_dir / relative_path
+            files_to_process.append((template_path, output_file, {}, "template file"))
 
-            raw_text = template_path.read_text(encoding="utf-8")
-            inlined_for_file, compiled_text = inline_gitlab_scripts(
-                raw_text,
-                scripts_path,
-                script_sources,
-                {},
-                uncompiled_path,
+    total_files = len(files_to_process)
+    max_workers = multiprocessing.cpu_count()
+    if parallelism and parallelism > 0:
+        max_workers = min(parallelism, max_workers)
+
+    if total_files >= 5 and max_workers > 1:
+        args_list = [
+            (src, out, scripts_path, script_sources, vars, uncompiled_path, dry_run, label)
+            for src, out, vars, label in files_to_process
+        ]
+        with multiprocessing.Pool(processes=max_workers) as pool:
+            results = pool.starmap(_compile_single_file, args_list)
+        total_inlined_count += sum(inlined for inlined, _ in results)
+        written_files_count += sum(written for _, written in results)
+    else:
+        for src, out, vars, label in files_to_process:
+            inlined_for_file, wrote = _compile_single_file(
+                src, out, scripts_path, script_sources, vars, uncompiled_path, dry_run, label
             )
             total_inlined_count += inlined_for_file
-
-            final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
-
-            if write_compiled_file(output_file, final_content, dry_run):
-                written_files_count += 1
+            written_files_count += wrote
 
     if written_files_count == 0 and not dry_run:
         logger.warning(

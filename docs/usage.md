@@ -30,7 +30,7 @@ options:
 ```bash
 ❯ bash2gitlab compile --help
 usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
-                           [--templates-out TEMPLATES_OUT] [--format] [--dry-run] [-v] [-q]
+                           [--templates-out TEMPLATES_OUT] [--parallelism PARALLELISM] [--dry-run] [-v] [-q]
 
 options:
   -h, --help            show this help message and exit
@@ -42,7 +42,8 @@ options:
                         Input directory for CI templates. (Default: <in>)
   --templates-out TEMPLATES_OUT
                         Output directory for compiled CI templates. (Default: <out>)
-  --format              Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.
+  --parallelism PARALLELISM
+                        Number of files to compile in parallel (default: CPU count).
   --dry-run             Simulate the compilation process without writing any files.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.

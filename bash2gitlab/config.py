@@ -116,6 +116,26 @@ class _Config:
 
         return None
 
+    def _get_int(self, key: str) -> int | None:
+        """Gets an integer value, respecting precedence."""
+        value = self._env_config.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except ValueError:
+                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
+                return None
+
+        value = self._file_config.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
+                return None
+
+        return None
+
     # --- Compile Command Properties ---
     @property
     def input_dir(self) -> str | None:
@@ -136,6 +156,10 @@ class _Config:
     @property
     def templates_out(self) -> str | None:
         return self._get_str("templates_out")
+
+    @property
+    def parallelism(self) -> int | None:
+        return self._get_int("parallelism")
 
     # --- Shred Command Properties ---
     @property

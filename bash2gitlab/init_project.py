@@ -13,8 +13,6 @@ DEFAULT_CONFIG = {
     "scripts_dir": "scripts",
     "templates_in": "templates",
     "templates_out": "out/templates",
-    "verbose":"false"
-
 }
 
 # Default settings for boolean flags
@@ -93,6 +91,9 @@ def create_config_file(base_path: Path, config: dict[str, Any], dry_run: bool = 
     # Write the config file
     # Lowercase boolean values for TOML compatibility
     formatted_config = config.copy()
+    # Ensure required flags are present
+    for key, default in DEFAULT_FLAGS.items():
+        formatted_config.setdefault(key, default)
     for key, value in formatted_config.items():
         if isinstance(value, bool):
             formatted_config[key] = str(value).lower()
