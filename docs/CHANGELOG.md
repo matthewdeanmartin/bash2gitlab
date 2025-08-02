@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.7.0] - 2025-08-02
+
+### Added
+
+- Started work on a clone feature to get scripts into dependent repos for testing. Not fully baked yet.
+
+### Removed
+
+- A `--format` option was a bad idea because all of the major yaml formatting tools are in various states of
+  unsupportedness and cause failures unrelated to bash2gitlab's outputs. Use your favorite orchestration tool, such as
+  make or just to format with a yaml formatter that works for you.
+
 ## [0.6.0] - 2025-07-30
 
 ### Changed
