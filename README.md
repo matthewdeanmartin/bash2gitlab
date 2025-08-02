@@ -74,7 +74,7 @@ See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tr
 ```bash
 ❯ bash2gitlab compile --help
 usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
-                           [--templates-out TEMPLATES_OUT] [--format] [-v]
+                           [--templates-out TEMPLATES_OUT] [--parallelism PARALLELISM] [-v]
 
 options:
   -h, --help            show this help message and exit
@@ -86,7 +86,8 @@ options:
                         Input directory for CI templates. (Default: <in>)
   --templates-out TEMPLATES_OUT
                         Output directory for compiled CI templates. (Default: <out>)
-  --format              Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.
+  --parallelism PARALLELISM
+                        Number of files to compile in parallel (default: CPU count).
   -v, --verbose         Enable verbose (DEBUG) logging output.
 ```
 

@@ -43,6 +43,7 @@ class _RecompileHandler(FileSystemEventHandler):
         templates_dir: Path,
         output_templates_dir: Path,
         dry_run: bool = False,
+        parallelism: int | None = None,
     ) -> None:
         super().__init__()
         self._paths = {
@@ -52,7 +53,7 @@ class _RecompileHandler(FileSystemEventHandler):
             "templates_dir": templates_dir,
             "output_templates_dir": output_templates_dir,
         }
-        self._flags = {"dry_run": dry_run}
+        self._flags = {"dry_run": dry_run, "parallelism": parallelism}
         self._debounce: float = 0.5  # seconds
         self._last_run = 0.0
 
@@ -86,6 +87,7 @@ def start_watch(
     templates_dir: Path,
     output_templates_dir: Path,
     dry_run: bool = False,
+    parallelism: int | None = None,
 ) -> None:
     """
     Start an in-process watchdog that recompiles whenever source files change.
@@ -99,6 +101,7 @@ def start_watch(
         templates_dir=templates_dir,
         output_templates_dir=output_templates_dir,
         dry_run=dry_run,
+        parallelism=parallelism,
     )
 
     observer = Observer()
