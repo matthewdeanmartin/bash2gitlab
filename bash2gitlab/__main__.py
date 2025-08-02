@@ -26,6 +26,8 @@ import logging.config
 import sys
 from pathlib import Path
 
+import argcomplete
+
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.clone2local import clone2local_handler
@@ -256,6 +258,7 @@ def main() -> int:
     init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     init_parser.set_defaults(func=init_handler)
 
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     # --- Configuration Precedence: CLI > ENV > TOML ---
