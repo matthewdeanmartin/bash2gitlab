@@ -9,7 +9,6 @@
 ├── mock_ci_vars.py
 ├── py.typed
 ├── shred_all.py
-├── tool_yamlfix.py
 ├── utils.py
 ├── watch_files.py
 ├── __about__.py
@@ -111,6 +110,7 @@ import base64
 import difflib
 import io
 import logging
+import multiprocessing
 import re
 import shlex
 import sys
@@ -527,6 +527,30 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         return False
 
 
+def _compile_single_file(
+    source_path: Path,
+    output_file: Path,
+    scripts_path: Path,
+    script_sources: dict[str, str],
+    variables: dict[str, str],
+    uncompiled_path: Path,
+    dry_run: bool,
+    label: str,
+) -> tuple[int, int]:
+    """Compile a single YAML file and write the result.
+
+    Returns a tuple of the number of inlined sections and whether a file was written (0 or 1).
+    """
+    logger.info(f"Processing {label}: {source_path}")
+    raw_text = source_path.read_text(encoding="utf-8")
+    inlined_for_file, compiled_text = inline_gitlab_scripts(
+        raw_text, scripts_path, script_sources, variables, uncompiled_path
+    )
+    final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
+    written = write_compiled_file(output_file, final_content, dry_run)
+    return inlined_for_file, int(written)
+
+
 def process_uncompiled_directory(
     uncompiled_path: Path,
     output_path: Path,
@@ -534,6 +558,7 @@ def process_uncompiled_directory(
     templates_dir: Path,
     output_templates_dir: Path,
     dry_run: bool = False,
+    parallelism: int | None = None,
 ) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
@@ -546,6 +571,7 @@ def process_uncompiled_directory(
         templates_dir (Path): Optionally put all yaml files into a template folder.
         output_templates_dir (Path): Optionally put all compiled template files into an output template folder.
         dry_run (bool): If True, simulate the process without writing any files.
+        parallelism (int | None): Maximum number of processes to use for parallel compilation.
 
     Returns:
         The total number of inlined sections across all files.
@@ -568,23 +594,15 @@ def process_uncompiled_directory(
         global_vars = parse_env_file(content)
         total_inlined_count += 1
 
+    files_to_process: list[tuple[Path, Path, dict[str, str], str]] = []
+
     root_yaml = uncompiled_path / ".gitlab-ci.yml"
     if not root_yaml.exists():
         root_yaml = uncompiled_path / ".gitlab-ci.yaml"
 
     if root_yaml.is_file():
-        logger.info(f"Processing root file: {root_yaml}")
-        raw_text = root_yaml.read_text(encoding="utf-8")
-        inlined_for_file, compiled_text = inline_gitlab_scripts(
-            raw_text, scripts_path, script_sources, global_vars, uncompiled_path
-        )
-        total_inlined_count += inlined_for_file
-
-        final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
         output_root_yaml = output_path / root_yaml.name
-
-        if write_compiled_file(output_root_yaml, final_content, dry_run):
-            written_files_count += 1
+        files_to_process.append((root_yaml, output_root_yaml, global_vars, "root file"))
 
     if templates_dir.is_dir():
         template_files = list(templates_dir.rglob("*.yml")) + list(templates_dir.rglob("*.yaml"))
@@ -592,24 +610,31 @@ def process_uncompiled_directory(
             logger.warning(f"No template YAML files found in {templates_dir}")
 
         for template_path in template_files:
-            logger.info(f"Processing template file: {template_path}")
             relative_path = template_path.relative_to(templates_dir)
             output_file = output_templates_dir / relative_path
+            files_to_process.append((template_path, output_file, {}, "template file"))
 
-            raw_text = template_path.read_text(encoding="utf-8")
-            inlined_for_file, compiled_text = inline_gitlab_scripts(
-                raw_text,
-                scripts_path,
-                script_sources,
-                {},
-                uncompiled_path,
+    total_files = len(files_to_process)
+    max_workers = multiprocessing.cpu_count()
+    if parallelism and parallelism > 0:
+        max_workers = min(parallelism, max_workers)
+
+    if total_files >= 5 and max_workers > 1:
+        args_list = [
+            (src, out, scripts_path, script_sources, vars, uncompiled_path, dry_run, label)
+            for src, out, vars, label in files_to_process
+        ]
+        with multiprocessing.Pool(processes=max_workers) as pool:
+            results = pool.starmap(_compile_single_file, args_list)
+        total_inlined_count += sum(inlined for inlined, _ in results)
+        written_files_count += sum(written for _, written in results)
+    else:
+        for src, out, vars, label in files_to_process:
+            inlined_for_file, wrote = _compile_single_file(
+                src, out, scripts_path, script_sources, vars, uncompiled_path, dry_run, label
             )
             total_inlined_count += inlined_for_file
-
-            final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
-
-            if write_compiled_file(output_file, final_content, dry_run):
-                written_files_count += 1
+            written_files_count += wrote
 
     if written_files_count == 0 and not dry_run:
         logger.warning(
@@ -742,6 +767,26 @@ class _Config:
 
         return None
 
+    def _get_int(self, key: str) -> int | None:
+        """Gets an integer value, respecting precedence."""
+        value = self._env_config.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except ValueError:
+                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
+                return None
+
+        value = self._file_config.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
+                return None
+
+        return None
+
     # --- Compile Command Properties ---
     @property
     def input_dir(self) -> str | None:
@@ -763,6 +808,10 @@ class _Config:
     def templates_out(self) -> str | None:
         return self._get_str("templates_out")
 
+    @property
+    def parallelism(self) -> int | None:
+        return self._get_int("parallelism")
+
     # --- Shred Command Properties ---
     @property
     def input_file(self) -> str | None:
@@ -777,10 +826,6 @@ class _Config:
         return self._get_str("scripts_out")
 
     # --- Shared Properties ---
-    @property
-    def format(self) -> bool | None:
-        return self._get_bool("format")
-
     @property
     def dry_run(self) -> bool | None:
         return self._get_bool("dry_run")
@@ -827,7 +872,6 @@ DEFAULT_CONFIG = {
 
 # Default settings for boolean flags
 DEFAULT_FLAGS = {
-    "format": False,
     "verbose": False,
     "quiet": False,
 }
@@ -844,7 +888,6 @@ templates_in = "{templates_in}"
 templates_out = "{templates_out}"
 
 # Command-line flag defaults
-format = {format}
 verbose = {verbose}
 quiet = {quiet}
 """
@@ -1378,55 +1421,6 @@ def shred_gitlab_ci(
 
     return jobs_processed, total_files_created
 ```
-## File: tool_yamlfix.py
-```python
-from __future__ import annotations
-
-import logging
-import subprocess  # nosec
-import sys
-from pathlib import Path
-
-logger = logging.getLogger(__name__)
-
-# TODO: possibly switch to yamlfixer-opt-nc or prettier as yamlfix somewhat unsupported.
-
-
-def run_formatter(output_dir: Path, templates_output_dir: Path):
-    """
-    Runs yamlfix on the output directories.
-
-    Args:
-        output_dir (Path): The main output directory.
-        templates_output_dir (Path): The templates output directory.
-    """
-    try:
-        # Check if yamlfix is installed
-        subprocess.run(["yamlfix", "--version"], check=True, capture_output=True)  # nosec
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        logger.error(
-            "❌ 'yamlfix' is not installed or not in PATH. Please install it to use the --format option (`pip install yamlfix`)."
-        )
-        sys.exit(1)
-
-    targets = []
-    if output_dir.is_dir():
-        targets.append(str(output_dir))
-    if templates_output_dir.is_dir():
-        targets.append(str(templates_output_dir))
-
-    if not targets:
-        logger.warning("No output directories found to format.")
-        return
-
-    logger.info(f"Running yamlfix on: {', '.join(targets)}")
-    try:
-        subprocess.run(["yamlfix", *targets], check=True, capture_output=True)  # nosec
-        logger.info("✅ Formatting complete.")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"❌ Error running yamlfix: {e.stderr.decode()}")
-        sys.exit(1)
-```
 ## File: utils.py
 ```python
 def remove_leading_blank_lines(text: str) -> str:
@@ -1456,7 +1450,6 @@ Usage (internal):
         templates_dir=Path("./ci/templates"),
         output_templates_dir=Path("./compiled/templates"),
         dry_run=False,
-        format_output=False,
     )
 """
 
@@ -1488,7 +1481,7 @@ class _RecompileHandler(FileSystemEventHandler):
         templates_dir: Path,
         output_templates_dir: Path,
         dry_run: bool = False,
-        format_output: bool = False,
+        parallelism: int | None = None,
     ) -> None:
         super().__init__()
         self._paths = {
@@ -1498,7 +1491,7 @@ class _RecompileHandler(FileSystemEventHandler):
             "templates_dir": templates_dir,
             "output_templates_dir": output_templates_dir,
         }
-        self._flags = {"dry_run": dry_run, "format_output": format_output}
+        self._flags = {"dry_run": dry_run, "parallelism": parallelism}
         self._debounce: float = 0.5  # seconds
         self._last_run = 0.0
 
@@ -1518,11 +1511,7 @@ class _RecompileHandler(FileSystemEventHandler):
 
         logger.info("🔄 Source changed; recompiling…")
         try:
-            format_output = self._flags["format_output"]
-            del self._flags["format_output"]
             process_uncompiled_directory(**self._paths, **self._flags)  # type: ignore[arg-type]
-            # TODO: run formatter.
-            self._flags["format_output"] = format_output
             logger.info("✅ Recompiled successfully.")
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("❌ Recompilation failed: %s", exc, exc_info=True)
@@ -1536,7 +1525,7 @@ def start_watch(
     templates_dir: Path,
     output_templates_dir: Path,
     dry_run: bool = False,
-    format_output: bool = False,
+    parallelism: int | None = None,
 ) -> None:
     """
     Start an in-process watchdog that recompiles whenever source files change.
@@ -1550,7 +1539,7 @@ def start_watch(
         templates_dir=templates_dir,
         output_templates_dir=output_templates_dir,
         dry_run=dry_run,
-        format_output=format_output,
+        parallelism=parallelism,
     )
 
     observer = Observer()
@@ -1587,7 +1576,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -1601,7 +1590,7 @@ __status__ = "4 - Beta"
 
 ❯ bash2gitlab compile --help
 usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
-                           [--templates-out TEMPLATES_OUT] [--format] [-v]
+                           [--templates-out TEMPLATES_OUT] [-v]
 
 options:
   -h, --help            show this help message and exit
@@ -1613,7 +1602,6 @@ options:
                         Input directory for CI templates. (Default: <in>)
   --templates-out TEMPLATES_OUT
                         Output directory for compiled CI templates. (Default: <out>)
-  --format              Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.
   -v, --verbose         Enable verbose (DEBUG) logging output.
 
 """
@@ -1634,7 +1622,6 @@ from bash2gitlab.config import config
 from bash2gitlab.init_project import init_handler
 from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
-from bash2gitlab.tool_yamlfix import run_formatter
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
@@ -1651,6 +1638,7 @@ def compile_handler(args: argparse.Namespace):
     templates_in_dir = Path(args.templates_in).resolve() if args.templates_in else in_dir
     templates_out_dir = Path(args.templates_out).resolve() if args.templates_out else out_dir
     dry_run = bool(args.dry_run)
+    parallelism = args.parallelism
 
     if args.watch:
         start_watch(
@@ -1660,7 +1648,7 @@ def compile_handler(args: argparse.Namespace):
             templates_dir=templates_in_dir,
             output_templates_dir=templates_out_dir,
             dry_run=dry_run,
-            format_output=args.format,
+            parallelism=parallelism,
         )
         return
 
@@ -1672,10 +1660,8 @@ def compile_handler(args: argparse.Namespace):
             templates_dir=templates_in_dir,
             output_templates_dir=templates_out_dir,
             dry_run=dry_run,
+            parallelism=parallelism,
         )
-
-        if args.format:
-            run_formatter(out_dir, templates_out_dir)
 
         logger.info("✅ GitLab CI processing complete.")
 
@@ -1762,9 +1748,10 @@ def main() -> int:
         help="Output directory for compiled CI templates. (Default: <out>)",
     )
     compile_parser.add_argument(
-        "--format",
-        action="store_true",
-        help="Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.",
+        "--parallelism",
+        type=int,
+        default=config.parallelism,
+        help="Number of files to compile in parallel (default: CPU count).",
     )
     compile_parser.add_argument(
         "--dry-run",
@@ -1885,8 +1872,6 @@ def main() -> int:
     # Merge boolean flags
     args.verbose = args.verbose or config.verbose or False
     args.quiet = args.quiet or config.quiet or False
-    if hasattr(args, "format"):
-        args.format = args.format or config.format or False
     if hasattr(args, "dry_run"):
         args.dry_run = args.dry_run or config.dry_run or False
 

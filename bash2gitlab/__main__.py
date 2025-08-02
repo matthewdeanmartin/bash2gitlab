@@ -75,7 +75,6 @@ def compile_handler(args: argparse.Namespace):
             parallelism=parallelism,
         )
 
-
         logger.info("✅ GitLab CI processing complete.")
 
     except (FileNotFoundError, RuntimeError, ValueError) as e:
