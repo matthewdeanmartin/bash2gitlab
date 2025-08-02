@@ -29,6 +29,7 @@ from pathlib import Path
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.clone2local import clone2local_handler
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
 from bash2gitlab.init_project import init_handler
@@ -207,6 +208,26 @@ def main() -> int:
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
 
+    # --- clone2local Command ---
+    clone_parser = subparsers.add_parser(
+        "clone2local", help="Clone a repository using sparse checkout.",
+    )
+    clone_parser.add_argument(
+        "--repo-url", required=True, help="Repository URL to clone.",
+    )
+    clone_parser.add_argument(
+        "--clone-dir", required=True, help="Destination directory for the clone.",
+    )
+    clone_parser.add_argument(
+        "--sparse-dirs",
+        nargs="+",
+        required=True,
+        help="Directories to include in the sparse checkout.",
+    )
+    clone_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    clone_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    clone_parser.set_defaults(func=clone2local_handler)
+
     # Init Parser
     init_parser = subparsers.add_parser(
         "init",
@@ -262,7 +283,8 @@ def main() -> int:
     args.quiet = args.quiet or config.quiet or False
     if hasattr(args, "format"):
         args.format = args.format or config.format or False
-    args.dry_run = args.dry_run or config.dry_run or False
+    if hasattr(args, "dry_run"):
+        args.dry_run = args.dry_run or config.dry_run or False
 
     # --- Setup Logging ---
     if args.verbose:
