@@ -11,9 +11,7 @@ bash2gitlab compile --in test/scenario2/src --out test/scenario2/out
 echo "compile (2)..."
 bash2gitlab compile --in test/scenario2/src --out test/scenario2/out --verbose
 echo "compile (3)..."
-bash2gitlab compile --in test/scenario2/src --out test/scenario2/out --format
-echo "compile (4)..."
 bash2gitlab compile --in test/scenario2/src --out test/scenario2/out --dry-run
-echo "compile (5)..."
+echo "compile (4)..."
 bash2gitlab compile --in test/scenario2/src --out test/scenario2/out --quiet
 echo "done..."

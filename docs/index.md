@@ -47,7 +47,7 @@ See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tr
 
 ```bash
 # compiling
-bash2gitlab compile --in src --out out --format
+bash2gitlab compile --in src --out out
 # shredding
 bash2gitlab shred --in original/.gitlab-ci.yml --out src
 ```
