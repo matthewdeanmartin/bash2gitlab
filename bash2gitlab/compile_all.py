@@ -14,6 +14,8 @@ from ruamel.yaml import YAML, CommentedMap
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
+from bash2gitlab.utils import remove_leading_blank_lines
+
 logger = logging.getLogger(__name__)
 
 BANNER = """# DO NOT EDIT
@@ -284,18 +286,6 @@ def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
         raise RuntimeError(f"No non-empty scripts found in '{scripts_dir}'.")
 
     return script_sources
-
-
-def remove_leading_blank_lines(text: str) -> str:
-    """
-    Removes leading blank lines (including lines with only whitespace) from a string.
-    """
-    lines = text.splitlines()
-    # Find the first non-blank line
-    for i, line in enumerate(lines):
-        if line.strip() != "":
-            return "\n".join(lines[i:])
-    return ""  # All lines were blank
 
 
 def write_yaml_and_hash(

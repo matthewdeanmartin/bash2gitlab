@@ -152,10 +152,6 @@ class _Config:
 
     # --- Shared Properties ---
     @property
-    def format(self) -> bool | None:
-        return self._get_bool("format")
-
-    @property
     def dry_run(self) -> bool | None:
         return self._get_bool("dry_run")
 

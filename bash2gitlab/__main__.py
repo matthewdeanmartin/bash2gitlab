@@ -2,7 +2,7 @@
 
 ❯ bash2gitlab compile --help
 usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
-                           [--templates-out TEMPLATES_OUT] [--format] [-v]
+                           [--templates-out TEMPLATES_OUT] [-v]
 
 options:
   -h, --help            show this help message and exit
@@ -14,7 +14,6 @@ options:
                         Input directory for CI templates. (Default: <in>)
   --templates-out TEMPLATES_OUT
                         Output directory for compiled CI templates. (Default: <out>)
-  --format              Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.
   -v, --verbose         Enable verbose (DEBUG) logging output.
 
 """
@@ -35,7 +34,6 @@ from bash2gitlab.config import config
 from bash2gitlab.init_project import init_handler
 from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
-from bash2gitlab.tool_yamlfix import run_formatter
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
@@ -61,7 +59,6 @@ def compile_handler(args: argparse.Namespace):
             templates_dir=templates_in_dir,
             output_templates_dir=templates_out_dir,
             dry_run=dry_run,
-            format_output=args.format,
         )
         return
 
@@ -75,8 +72,6 @@ def compile_handler(args: argparse.Namespace):
             dry_run=dry_run,
         )
 
-        if args.format:
-            run_formatter(out_dir, templates_out_dir)
 
         logger.info("✅ GitLab CI processing complete.")
 
@@ -163,11 +158,6 @@ def main() -> int:
         help="Output directory for compiled CI templates. (Default: <out>)",
     )
     compile_parser.add_argument(
-        "--format",
-        action="store_true",
-        help="Format all output YAML files using 'yamlfix'. Requires yamlfix to be installed.",
-    )
-    compile_parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Simulate the compilation process without writing any files.",
@@ -210,13 +200,18 @@ def main() -> int:
 
     # --- clone2local Command ---
     clone_parser = subparsers.add_parser(
-        "clone2local", help="Clone a repository using sparse checkout.",
+        "clone2local",
+        help="Clone a repository using sparse checkout.",
     )
     clone_parser.add_argument(
-        "--repo-url", required=True, help="Repository URL to clone.",
+        "--repo-url",
+        required=True,
+        help="Repository URL to clone.",
     )
     clone_parser.add_argument(
-        "--clone-dir", required=True, help="Destination directory for the clone.",
+        "--clone-dir",
+        required=True,
+        help="Destination directory for the clone.",
     )
     clone_parser.add_argument(
         "--sparse-dirs",
@@ -281,8 +276,6 @@ def main() -> int:
     # Merge boolean flags
     args.verbose = args.verbose or config.verbose or False
     args.quiet = args.quiet or config.quiet or False
-    if hasattr(args, "format"):
-        args.format = args.format or config.format or False
     if hasattr(args, "dry_run"):
         args.dry_run = args.dry_run or config.dry_run or False
 

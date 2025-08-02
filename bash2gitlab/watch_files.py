@@ -12,7 +12,6 @@ Usage (internal):
         templates_dir=Path("./ci/templates"),
         output_templates_dir=Path("./compiled/templates"),
         dry_run=False,
-        format_output=False,
     )
 """
 
@@ -44,7 +43,6 @@ class _RecompileHandler(FileSystemEventHandler):
         templates_dir: Path,
         output_templates_dir: Path,
         dry_run: bool = False,
-        format_output: bool = False,
     ) -> None:
         super().__init__()
         self._paths = {
@@ -54,7 +52,7 @@ class _RecompileHandler(FileSystemEventHandler):
             "templates_dir": templates_dir,
             "output_templates_dir": output_templates_dir,
         }
-        self._flags = {"dry_run": dry_run, "format_output": format_output}
+        self._flags = {"dry_run": dry_run}
         self._debounce: float = 0.5  # seconds
         self._last_run = 0.0
 
@@ -74,11 +72,7 @@ class _RecompileHandler(FileSystemEventHandler):
 
         logger.info("🔄 Source changed; recompiling…")
         try:
-            format_output = self._flags["format_output"]
-            del self._flags["format_output"]
             process_uncompiled_directory(**self._paths, **self._flags)  # type: ignore[arg-type]
-            # TODO: run formatter.
-            self._flags["format_output"] = format_output
             logger.info("✅ Recompiled successfully.")
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("❌ Recompilation failed: %s", exc, exc_info=True)
@@ -92,7 +86,6 @@ def start_watch(
     templates_dir: Path,
     output_templates_dir: Path,
     dry_run: bool = False,
-    format_output: bool = False,
 ) -> None:
     """
     Start an in-process watchdog that recompiles whenever source files change.
@@ -106,7 +99,6 @@ def start_watch(
         templates_dir=templates_dir,
         output_templates_dir=output_templates_dir,
         dry_run=dry_run,
-        format_output=format_output,
     )
 
     observer = Observer()

@@ -1,6 +1,7 @@
 ## Tree for bash2gitlab
 ```
 ├── CHANGELOG.md
+├── clone2local.py
 ├── compile_all.py
 ├── config.py
 ├── init_project.py
@@ -9,6 +10,7 @@
 ├── py.typed
 ├── shred_all.py
 ├── tool_yamlfix.py
+├── utils.py
 ├── watch_files.py
 ├── __about__.py
 └── __main__.py
@@ -46,6 +48,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - supports simple in/out project structure
 - supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution
 ```
+## File: clone2local.py
+```python
+from __future__ import annotations
+
+import logging
+import subprocess  # nosec
+from collections.abc import Sequence
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def clone_repository(repo_url: str, sparse_dirs: Sequence[str], clone_dir: str | Path) -> None:
+    """Clone a repository using Git's sparse checkout.
+
+    Parameters
+    ----------
+    repo_url:
+        The URL of the repository to clone.
+    sparse_dirs:
+        Iterable of directories to include in the sparse checkout.
+    clone_dir:
+        Destination directory for the clone.
+    """
+    clone_path = Path(clone_dir)
+    logger.debug("Cloning repo %s into %s with sparse dirs %s", repo_url, clone_path, list(sparse_dirs))
+    subprocess.run(  # nosec
+        [
+            "git",
+            "clone",
+            "--depth",
+            "1",
+            "--filter=blob:none",
+            "--sparse",
+            repo_url,
+            str(clone_path),
+        ],
+        check=True,
+    )
+    subprocess.run(  # nosec
+        ["git", "sparse-checkout", "init", "--cone"],
+        cwd=clone_path,
+        check=True,
+    )
+    subprocess.run(  # nosec
+        ["git", "sparse-checkout", "set", *sparse_dirs],
+        cwd=clone_path,
+        check=True,
+    )
+
+
+def clone2local_handler(args) -> None:
+    """Argparse handler for the clone2local command."""
+    clone_repository(args.repo_url, args.sparse_dirs, args.clone_dir)
+```
 ## File: compile_all.py
 ```python
 from __future__ import annotations
@@ -63,6 +120,8 @@ from typing import Union
 from ruamel.yaml import YAML, CommentedMap
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
+
+from bash2gitlab.utils import remove_leading_blank_lines
 
 logger = logging.getLogger(__name__)
 
@@ -334,18 +393,6 @@ def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
         raise RuntimeError(f"No non-empty scripts found in '{scripts_dir}'.")
 
     return script_sources
-
-
-def remove_leading_blank_lines(text: str) -> str:
-    """
-    Removes leading blank lines (including lines with only whitespace) from a string.
-    """
-    lines = text.splitlines()
-    # Find the first non-blank line
-    for i, line in enumerate(lines):
-        if line.strip() != "":
-            return "\n".join(lines[i:])
-    return ""  # All lines were blank
 
 
 def write_yaml_and_hash(
@@ -1380,6 +1427,19 @@ def run_formatter(output_dir: Path, templates_output_dir: Path):
         logger.error(f"❌ Error running yamlfix: {e.stderr.decode()}")
         sys.exit(1)
 ```
+## File: utils.py
+```python
+def remove_leading_blank_lines(text: str) -> str:
+    """
+    Removes leading blank lines (including lines with only whitespace) from a string.
+    """
+    lines = text.splitlines()
+    # Find the first non-blank line
+    for i, line in enumerate(lines):
+        if line.strip() != "":
+            return "\n".join(lines[i:])
+    return ""  # All lines were blank
+```
 ## File: watch_files.py
 ```python
 """
@@ -1527,7 +1587,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.5.2"
+__version__ = "0.6.0"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -1568,6 +1628,7 @@ from pathlib import Path
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.clone2local import clone2local_handler
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
 from bash2gitlab.init_project import init_handler
@@ -1746,6 +1807,31 @@ def main() -> int:
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
 
+    # --- clone2local Command ---
+    clone_parser = subparsers.add_parser(
+        "clone2local",
+        help="Clone a repository using sparse checkout.",
+    )
+    clone_parser.add_argument(
+        "--repo-url",
+        required=True,
+        help="Repository URL to clone.",
+    )
+    clone_parser.add_argument(
+        "--clone-dir",
+        required=True,
+        help="Destination directory for the clone.",
+    )
+    clone_parser.add_argument(
+        "--sparse-dirs",
+        nargs="+",
+        required=True,
+        help="Directories to include in the sparse checkout.",
+    )
+    clone_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    clone_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    clone_parser.set_defaults(func=clone2local_handler)
+
     # Init Parser
     init_parser = subparsers.add_parser(
         "init",
@@ -1801,7 +1887,8 @@ def main() -> int:
     args.quiet = args.quiet or config.quiet or False
     if hasattr(args, "format"):
         args.format = args.format or config.format or False
-    args.dry_run = args.dry_run or config.dry_run or False
+    if hasattr(args, "dry_run"):
+        args.dry_run = args.dry_run or config.dry_run or False
 
     # --- Setup Logging ---
     if args.verbose:

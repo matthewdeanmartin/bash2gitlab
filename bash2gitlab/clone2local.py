@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-import subprocess
+import subprocess  # nosec
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +21,8 @@ def clone_repository(repo_url: str, sparse_dirs: Sequence[str], clone_dir: str |
         Destination directory for the clone.
     """
     clone_path = Path(clone_dir)
-    logger.debug(
-        "Cloning repo %s into %s with sparse dirs %s", repo_url, clone_path, list(sparse_dirs)
-    )
-    subprocess.run(
+    logger.debug("Cloning repo %s into %s with sparse dirs %s", repo_url, clone_path, list(sparse_dirs))
+    subprocess.run(  # nosec
         [
             "git",
             "clone",
@@ -37,16 +35,17 @@ def clone_repository(repo_url: str, sparse_dirs: Sequence[str], clone_dir: str |
         ],
         check=True,
     )
-    subprocess.run(
+    subprocess.run(  # nosec
         ["git", "sparse-checkout", "init", "--cone"],
         cwd=clone_path,
         check=True,
     )
-    subprocess.run(
+    subprocess.run(  # nosec
         ["git", "sparse-checkout", "set", *sparse_dirs],
         cwd=clone_path,
         check=True,
     )
+
 
 def clone2local_handler(args) -> None:
     """Argparse handler for the clone2local command."""

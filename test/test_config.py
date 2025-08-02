@@ -38,7 +38,6 @@ def test_load_from_bash2gitlab_toml(tmp_path: Path):
         """
         input_dir = "/path/from/toml"
         output_dir = "output/toml"
-        format = true
         """
     )
 
@@ -48,7 +47,6 @@ def test_load_from_bash2gitlab_toml(tmp_path: Path):
 
     assert config.input_dir == "/path/from/toml"
     assert config.output_dir == "output/toml"
-    assert config.format is True
     assert config.verbose is None  # Not defined in file
 
 
@@ -142,7 +140,6 @@ def test_no_config_file_found(tmp_path: Path):
 
     assert config.input_dir is None
     assert config.output_dir is None
-    assert config.format is None
 
 
 def test_config_file_finding_logic(tmp_path: Path):

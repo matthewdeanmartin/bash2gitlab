@@ -31,7 +31,6 @@ def test_prompt_for_config_custom_values(monkeypatch):
         "my_scripts",  # scripts_dir
         "",  # templates_in (default)
         "my_out/tpl",  # templates_out
-        "y",  # format
         "n",  # verbose
         "yes",  # quiet
     ]
@@ -49,7 +48,6 @@ def test_prompt_for_config_custom_values(monkeypatch):
         "scripts_dir": "my_scripts",
         "templates_in": "templates",  # Default value
         "templates_out": "my_out/tpl",
-        "format": True,
         "verbose": False,
         "quiet": True,
     }
@@ -62,8 +60,6 @@ def test_create_config_file_standard_run(tmp_path: Path):
     """
     test_config = {
         **DEFAULT_CONFIG,
-        "format": True,
-        "verbose": False,
         "quiet": True,
     }
 
@@ -78,7 +74,6 @@ def test_create_config_file_standard_run(tmp_path: Path):
     content = config_file.read_text()
     # Create a comparable config with lowercase bools for the template
     formatted_config = test_config.copy()
-    formatted_config["format"] = "true"
     formatted_config["verbose"] = "false"
     formatted_config["quiet"] = "true"
     expected_content = TOML_TEMPLATE.format(**formatted_config)

@@ -13,11 +13,12 @@ DEFAULT_CONFIG = {
     "scripts_dir": "scripts",
     "templates_in": "templates",
     "templates_out": "out/templates",
+    "verbose":"false"
+
 }
 
 # Default settings for boolean flags
 DEFAULT_FLAGS = {
-    "format": False,
     "verbose": False,
     "quiet": False,
 }
@@ -34,7 +35,6 @@ templates_in = "{templates_in}"
 templates_out = "{templates_out}"
 
 # Command-line flag defaults
-format = {format}
 verbose = {verbose}
 quiet = {quiet}
 """
