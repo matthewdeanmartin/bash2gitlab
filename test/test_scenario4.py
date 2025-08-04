@@ -6,7 +6,7 @@ from test.temp_change_dir import chdir_to_file_dir
 from bash2gitlab.compile_all import process_uncompiled_directory
 
 
-def test_yaml_it_src_to_out():
+def test_yaml_it_src_to_out_4():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario4/uncompiled")
         output_root = Path("scenario4/.out")
