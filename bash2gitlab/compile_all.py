@@ -9,12 +9,14 @@ import re
 import shlex
 import sys
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 from ruamel.yaml import YAML, CommentedMap
+from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
+from bash2gitlab.bash_reader import inline_bash_source
 from bash2gitlab.utils import remove_leading_blank_lines
 
 logger = logging.getLogger(__name__)
@@ -94,59 +96,100 @@ def extract_script_path(command_line: str) -> str | None:
     return None
 
 
-def read_bash_script(path: Path, script_sources: dict[str, str]) -> str:
-    """Reads a bash script's content from the pre-collected source map and strips the shebang if present."""
-    if str(path) not in script_sources:
-        raise FileNotFoundError(f"Script not found in source map: {path}")
-    logger.debug(f"Reading script from source map: {path}")
-    content = script_sources[str(path)].strip()
-    if not content:
-        raise ValueError(f"Script is empty: {path}")
+# def read_bash_script(path: Path, script_sources: dict[str, str]) -> str:
+#     """Reads a bash script's content from the pre-collected source map and strips the shebang if present."""
+#     if str(path) not in script_sources:
+#         raise FileNotFoundError(f"Script not found in source map: {path}")
+#     logger.debug(f"Reading script from source map: {path}")
+#     content = script_sources[str(path)].strip()
+#     if not content:
+#         raise ValueError(f"Script is empty: {path}")
+#
+#     lines = content.splitlines()
+#     if lines and lines[0].startswith("#!"):
+#         logger.debug(f"Stripping shebang from script: {lines[0]}")
+#         lines = lines[1:]
+#     return "\n".join(lines)
+
+
+def read_bash_script(path: Path, _script_sources: dict[str, str]) -> str:
+    """Reads a bash script and inlines any sourced files."""
+    logger.debug(f"Reading and inlining script from: {path}")
+
+    # Use the new bash_reader to recursively inline all `source` commands
+    content = inline_bash_source(path)
+
+    if not content.strip():
+        raise ValueError(f"Script is empty or only contains whitespace: {path}")
 
     lines = content.splitlines()
     if lines and lines[0].startswith("#!"):
         logger.debug(f"Stripping shebang from script: {lines[0]}")
         lines = lines[1:]
+
     return "\n".join(lines)
 
 
 def process_script_list(
-    script_list: Union[list[str], str], scripts_root: Path, script_sources: dict[str, str]
-) -> Union[list[str], LiteralScalarString]:
+    script_list: Union[list[Any], str], scripts_root: Path, script_sources: dict[str, str]
+) -> Union[list[Any], LiteralScalarString]:
     """
-    Processes a list of script lines, inlining any shell script references.
-    Returns a new list of lines or a single literal scalar string for long scripts.
+    Processes a list of script lines, inlining any shell script references
+    while preserving other lines like YAML references. It will convert the
+    entire block to a literal scalar string `|` for long scripts, but only
+    if no YAML tags (like !reference) are present.
     """
     if isinstance(script_list, str):
         script_list = [script_list]
 
-    # First pass: check for any long scripts. If one is found, it takes over the whole block.
-    for line in script_list:
-        script_path_str = extract_script_path(line) if isinstance(line, str) else None
-        if script_path_str:
-            rel_path = script_path_str.strip().lstrip("./")
-            script_path = scripts_root / rel_path
-            bash_code = read_bash_script(script_path, script_sources)
-            # If a script is long, we replace the entire block for clarity.
-            if len(bash_code.splitlines()) > 3:
-                logger.info(f"Inlining long script '{script_path}' as a single block.")
-                return LiteralScalarString(bash_code)
+    processed_items: list[Any] = []
+    contains_tagged_scalar = False
+    is_long = False
 
-    # Second pass: if no long scripts were found, inline all scripts line-by-line.
-    inlined_lines: list[str] = []
-    for line in script_list:
-        script_path_str = extract_script_path(line) if isinstance(line, str) else None
+    for item in script_list:
+        # Check for non-string YAML objects first (like !reference).
+        if not isinstance(item, str):
+            if isinstance(item, TaggedScalar):
+                contains_tagged_scalar = True
+            processed_items.append(item)
+            continue  # Go to next item
+
+        # It's a string, see if it's a script path.
+        script_path_str = extract_script_path(item)
         if script_path_str:
             rel_path = script_path_str.strip().lstrip("./")
             script_path = scripts_root / rel_path
-            bash_code = read_bash_script(script_path, script_sources)
-            bash_lines = bash_code.splitlines()
-            logger.info(f"Inlining short script '{script_path}' ({len(bash_lines)} lines).")
-            inlined_lines.extend(bash_lines)
+            try:
+                bash_code = read_bash_script(script_path, script_sources)
+                bash_lines = bash_code.splitlines()
+
+                # Check if this specific script is long
+                if len(bash_lines) > 3:
+                    is_long = True
+
+                logger.info(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                processed_items.extend(bash_lines)
+            except (FileNotFoundError, ValueError) as e:
+                logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
+                processed_items.append(item)
         else:
-            inlined_lines.append(line)
+            # It's a regular command string, preserve it.
+            processed_items.append(item)
 
-    return inlined_lines
+    # --- Decide on the return format ---
+    # Condition to use a literal block `|`:
+    # 1. It must NOT contain any special YAML tags.
+    # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
+    if not contains_tagged_scalar and (is_long or len(processed_items) > 5):
+        # We can safely convert to a single string block.
+        final_script_block = "\n".join(map(str, processed_items))
+        logger.info("Formatting script block as a single literal block for clarity.")
+        return LiteralScalarString(final_script_block)
+    else:
+        # We must return a list to preserve YAML tags or because it's short.
+        if contains_tagged_scalar:
+            logger.debug("Preserving script block as a list to support YAML tags (!reference).")
+        return processed_items
 
 
 def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, str]) -> int:

@@ -1,6 +1,6 @@
 ## Tree for bash2gitlab
 ```
-├── CHANGELOG.md
+├── bash_reader.py
 ├── clone2local.py
 ├── compile_all.py
 ├── config.py
@@ -15,92 +15,317 @@
 └── __main__.py
 ```
 
-## File: CHANGELOG.md
-```markdown
-# Changelog
+## File: bash_reader.py
+```python
+from __future__ import annotations
 
-All notable changes to this project will be documented in this file.
+import logging
+import re
+from pathlib import Path
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+# Set up a logger for this module
+logger = logging.getLogger(__name__)
 
-- Added for new features.
-- Changed for changes in existing functionality.
-- Deprecated for soon-to-be removed features.
-- Removed for now removed features.
-- Fixed for any bug fixes.
-- Security in case of vulnerabilities.
+# Regex to match 'source file.sh' or '. file.sh'
+# It ensures the line contains nothing else but the sourcing command.
+# - ^\s* - Start of the line with optional whitespace.
+# - (?:source|\.) - Non-capturing group for 'source' or '.'.
+# - \s+         - At least one whitespace character.
+# - (?P<path>[\w./\\-]+) - Captures the file path.
+# - \s*$        - Optional whitespace until the end of the line.
+SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
 
-## [0.2.0] - 2025-07-27
 
-### Added
+def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None = None) -> str:
+    """
+    Reads a bash script and recursively inlines content from sourced files.
 
-- shred command to turn pre-existing bash-in-yaml pipeline templates into shell files and yaml
+    This function processes a bash script, identifies any 'source' or '.' commands,
+    and replaces them with the content of the specified script. It handles
+    nested sourcing and prevents infinite loops from circular dependencies.
 
-## [0.1.0] - 2025-07-26
+    Args:
+        main_script_path: The absolute path to the main bash script to process.
+        processed_files: A set used internally to track already processed files
+                         to prevent circular sourcing. Should not be set manually.
 
-### Added
+    Returns:
+        A string containing the script content with all sourced files inlined.
 
-- compile command exists
-- verbose and quiet logging
-- CLI interface
-- supports simple in/out project structure
-- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution
+    Raises:
+        FileNotFoundError: If the main_script_path or any sourced script does not exist.
+    """
+    # Initialize the set to track processed files on the first call
+    if processed_files is None:
+        processed_files = set()
+
+    # Resolve the absolute path to handle relative paths correctly
+    main_script_path = main_script_path.resolve()
+
+    # Prevent circular sourcing by checking if the file has been processed
+    if main_script_path in processed_files:
+        logger.warning(f"Circular source detected and skipped: {main_script_path}")
+        return ""
+
+    # Check if the script exists before trying to read it
+    if not main_script_path.is_file():
+        raise FileNotFoundError(f"Script not found: {main_script_path}")
+
+    logger.debug(f"Processing script: {main_script_path}")
+    processed_files.add(main_script_path)
+
+    final_content_lines = []
+    try:
+        with main_script_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                match = SOURCE_COMMAND_REGEX.match(line)
+                if match:
+                    # A source command was found, process the sourced file
+                    sourced_script_name = match.group("path")
+                    # Resolve the path relative to the current script's directory
+                    sourced_script_path = (main_script_path.parent / sourced_script_name).resolve()
+
+                    logger.info(f"Inlining sourced file: {sourced_script_name} -> {sourced_script_path}")
+
+                    # Recursively call the function to inline the nested script
+                    inlined_content = inline_bash_source(sourced_script_path, processed_files)
+                    final_content_lines.append(inlined_content)
+                else:
+                    # This line is not a source command, so keep it as is
+                    final_content_lines.append(line)
+    except Exception as e:
+        logger.error(f"Failed to read or process {main_script_path}: {e}")
+        # Re-raise the exception to notify the caller of the failure
+        raise
+
+    return "".join(final_content_lines)
 ```
 ## File: clone2local.py
 ```python
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess  # nosec
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
 from collections.abc import Sequence
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-def clone_repository(repo_url: str, sparse_dirs: Sequence[str], clone_dir: str | Path) -> None:
-    """Clone a repository using Git's sparse checkout.
+def fetch_repository_archive(repo_url: str, branch: str, sparse_dirs: Sequence[str], clone_dir: str | Path) -> None:
+    """
+    Fetches a repository archive for a specific branch, extracts it, and copies directories.
+
+    This function avoids using Git. It downloads the repository as a ZIP archive,
+    unpacks it to a temporary location, and then copies only the requested
+    directories to the final destination. It performs cleanup of all temporary
+    files upon completion or in case of an error.
+
+    Args:
+        repo_url:
+            The URL of the repository (e.g., 'https://github.com/user/repo').
+        branch:
+            The name of the branch to download (e.g., 'main', 'develop').
+        sparse_dirs:
+            A sequence of directory paths (relative to the repo root) to
+            extract and copy to the clone_dir.
+        clone_dir:
+            The destination directory. This directory must be empty before the
+            operation begins.
+
+    Raises:
+        FileExistsError:
+            If the clone_dir exists and is not empty.
+        ConnectionError:
+            If the specified branch archive cannot be found or accessed.
+        IOError:
+            If the downloaded archive has an unexpected file structure.
+        Exception:
+            Propagates exceptions from network, file, or archive operations.
+    """
+    clone_path = Path(clone_dir)
+    logger.debug(
+        "Fetching archive for repo %s (branch: %s) into %s with sparse dirs %s",
+        repo_url,
+        branch,
+        clone_path,
+        list(sparse_dirs),
+    )
+
+    # 1. Validate that the destination directory is empty.
+    if clone_path.exists() and any(clone_path.iterdir()):
+        raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
+    # Ensure the directory exists, but don't error if it's already there (as long as it's empty)
+    clone_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Use a temporary directory that cleans itself up automatically.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = temp_path / "repo.zip"
+            unzip_root = temp_path / "unzipped"
+            unzip_root.mkdir()
+
+            # 2. Construct the archive URL and check for its existence.
+            archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
+            if not archive_url.startswith("http"):
+                raise TypeError(f"Expected http or https protocol, got {archive_url}")
+            try:
+                # Use a simple open to verify existence without a full download.
+
+                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec
+                    # The 'with' block itself confirms a 2xx status.
+                    logger.info("Confirmed repository archive exists at: %s", archive_url)
+            except urllib.error.HTTPError as e:
+                # Re-raise with a more specific message for clarity.
+                raise ConnectionError(
+                    f"Could not find archive for branch '{branch}' at '{archive_url}'. "
+                    f"Please check the repository URL and branch name. (HTTP Status: {e.code})"
+                ) from e
+            except urllib.error.URLError as e:
+                raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
+
+            logger.info("Downloading archive to %s", archive_path)
+
+            urllib.request.urlretrieve(archive_url, archive_path)  # nosec
+
+            # 3. Unzip the downloaded archive.
+            logger.info("Extracting archive to %s", unzip_root)
+            with zipfile.ZipFile(archive_path, "r") as zf:
+                zf.extractall(unzip_root)
+
+            # The archive usually extracts into a single sub-directory (e.g., 'repo-name-main').
+            # We need to find this directory to locate the source files.
+            extracted_items = list(unzip_root.iterdir())
+            if not extracted_items:
+                raise OSError("Archive is empty.")
+
+            # Find the single root directory within the extracted files.
+            source_repo_root = None
+            if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                source_repo_root = extracted_items[0]
+            else:
+                # Fallback for archives that might not have a single root folder.
+                logger.warning("Archive does not contain a single root directory. Using extraction root.")
+                source_repo_root = unzip_root
+
+            # 4. Copy the specified 'sparse' directories to the final destination.
+            logger.info("Copying specified directories to final destination.")
+            for dir_name in sparse_dirs:
+                source_dir = source_repo_root / dir_name
+                dest_dir = clone_path / Path(dir_name).name  # Use the basename for the destination
+
+                if source_dir.is_dir():
+                    logger.debug("Copying '%s' to '%s'", source_dir, dest_dir)
+                    shutil.copytree(source_dir, dest_dir)
+                else:
+                    logger.warning("Directory '%s' not found in repository archive, skipping.", dir_name)
+
+    except Exception as e:
+        logger.error("Operation failed: %s. Cleaning up destination directory.", e)
+        # 5. Clean up the destination on any failure.
+        shutil.rmtree(clone_path, ignore_errors=True)
+        # Re-raise the exception to notify the caller of the failure.
+        raise
+
+    logger.info("Successfully fetched directories into %s", clone_path)
+
+
+def clone_repository_ssh(repo_url: str, branch: str, sparse_dirs: Sequence[str], clone_dir: str | Path) -> None:
+    """
+    Clones a repository using Git, checks out a branch, and copies specified directories.
+
+    This function is designed for SSH or authenticated HTTPS URLs that require local
+    Git and credential management (e.g., SSH keys). It performs a full clone into a
+    temporary directory, checks out the target branch, and then copies only the
+    requested directories to the final destination.
 
     Parameters
     ----------
     repo_url:
-        The URL of the repository to clone.
+        The repository URL (e.g., 'git@github.com:user/repo.git').
+    branch:
+        The name of the branch to check out (e.g., 'main', 'develop').
     sparse_dirs:
-        Iterable of directories to include in the sparse checkout.
+        A sequence of directory paths (relative to the repo root) to copy.
     clone_dir:
-        Destination directory for the clone.
+        The destination directory. This directory must be empty.
+
+    Raises:
+    ------
+    FileExistsError:
+        If the clone_dir exists and is not empty.
+    subprocess.CalledProcessError:
+        If any Git command fails.
+    Exception:
+        Propagates other exceptions from file operations.
     """
     clone_path = Path(clone_dir)
-    logger.debug("Cloning repo %s into %s with sparse dirs %s", repo_url, clone_path, list(sparse_dirs))
-    subprocess.run(  # nosec
-        [
-            "git",
-            "clone",
-            "--depth",
-            "1",
-            "--filter=blob:none",
-            "--sparse",
-            repo_url,
-            str(clone_path),
-        ],
-        check=True,
+    logger.debug(
+        "Cloning repo %s (branch: %s) into %s with sparse dirs %s",
+        repo_url,
+        branch,
+        clone_path,
+        list(sparse_dirs),
     )
-    subprocess.run(  # nosec
-        ["git", "sparse-checkout", "init", "--cone"],
-        cwd=clone_path,
-        check=True,
-    )
-    subprocess.run(  # nosec
-        ["git", "sparse-checkout", "set", *sparse_dirs],
-        cwd=clone_path,
-        check=True,
-    )
+
+    # 1. Validate that the destination directory is empty.
+    if clone_path.exists() and any(clone_path.iterdir()):
+        raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
+    clone_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Use a temporary directory for the full clone, which will be auto-cleaned.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_clone_path = Path(temp_dir)
+            logger.info("Cloning '%s' to temporary location: %s", repo_url, temp_clone_path)
+
+            # 2. Clone the repository.
+            # We clone the specific branch directly to be more efficient.
+            subprocess.run(  # nosec
+                ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
+                check=True,
+                capture_output=True,  # Capture stdout/stderr to hide git's noisy output
+            )
+
+            logger.info("Clone successful. Copying specified directories.")
+            # 3. Copy the specified 'sparse' directories to the final destination.
+            for dir_name in sparse_dirs:
+                source_dir = temp_clone_path / dir_name
+                # Use the basename of the source for the destination path.
+                dest_dir = clone_path / Path(dir_name).name
+
+                if source_dir.is_dir():
+                    logger.debug("Copying '%s' to '%s'", source_dir, dest_dir)
+                    shutil.copytree(source_dir, dest_dir)
+                else:
+                    logger.warning("Directory '%s' not found in repository, skipping.", dir_name)
+
+    except Exception as e:
+        logger.error("Operation failed: %s. Cleaning up destination directory.", e)
+        # 4. Clean up the destination on any failure.
+        shutil.rmtree(clone_path, ignore_errors=True)
+        # Re-raise the exception to notify the caller of the failure.
+        raise
+
+    logger.info("Successfully cloned directories into %s", clone_path)
 
 
 def clone2local_handler(args) -> None:
-    """Argparse handler for the clone2local command."""
-    clone_repository(args.repo_url, args.sparse_dirs, args.clone_dir)
+    """
+    Argparse handler for the clone2local command.
+
+    This handler remains compatible with the new archive-based fetch function.
+    """
+    # This function now calls the new implementation, preserving the call stack.
+    if str(args.repo_url).startswith("ssh"):
+        return clone_repository_ssh(args.repo_url, args.branch, args.sparse_dirs, args.copy_dir)
+    return fetch_repository_archive(args.repo_url, args.branch, args.sparse_dirs, args.copy_dir)
 ```
 ## File: compile_all.py
 ```python
@@ -115,12 +340,14 @@ import re
 import shlex
 import sys
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 from ruamel.yaml import YAML, CommentedMap
+from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
+from bash2gitlab.bash_reader import inline_bash_source
 from bash2gitlab.utils import remove_leading_blank_lines
 
 logger = logging.getLogger(__name__)
@@ -200,59 +427,100 @@ def extract_script_path(command_line: str) -> str | None:
     return None
 
 
-def read_bash_script(path: Path, script_sources: dict[str, str]) -> str:
-    """Reads a bash script's content from the pre-collected source map and strips the shebang if present."""
-    if str(path) not in script_sources:
-        raise FileNotFoundError(f"Script not found in source map: {path}")
-    logger.debug(f"Reading script from source map: {path}")
-    content = script_sources[str(path)].strip()
-    if not content:
-        raise ValueError(f"Script is empty: {path}")
+# def read_bash_script(path: Path, script_sources: dict[str, str]) -> str:
+#     """Reads a bash script's content from the pre-collected source map and strips the shebang if present."""
+#     if str(path) not in script_sources:
+#         raise FileNotFoundError(f"Script not found in source map: {path}")
+#     logger.debug(f"Reading script from source map: {path}")
+#     content = script_sources[str(path)].strip()
+#     if not content:
+#         raise ValueError(f"Script is empty: {path}")
+#
+#     lines = content.splitlines()
+#     if lines and lines[0].startswith("#!"):
+#         logger.debug(f"Stripping shebang from script: {lines[0]}")
+#         lines = lines[1:]
+#     return "\n".join(lines)
+
+
+def read_bash_script(path: Path, _script_sources: dict[str, str]) -> str:
+    """Reads a bash script and inlines any sourced files."""
+    logger.debug(f"Reading and inlining script from: {path}")
+
+    # Use the new bash_reader to recursively inline all `source` commands
+    content = inline_bash_source(path)
+
+    if not content.strip():
+        raise ValueError(f"Script is empty or only contains whitespace: {path}")
 
     lines = content.splitlines()
     if lines and lines[0].startswith("#!"):
         logger.debug(f"Stripping shebang from script: {lines[0]}")
         lines = lines[1:]
+
     return "\n".join(lines)
 
 
 def process_script_list(
-    script_list: Union[list[str], str], scripts_root: Path, script_sources: dict[str, str]
-) -> Union[list[str], LiteralScalarString]:
+    script_list: Union[list[Any], str], scripts_root: Path, script_sources: dict[str, str]
+) -> Union[list[Any], LiteralScalarString]:
     """
-    Processes a list of script lines, inlining any shell script references.
-    Returns a new list of lines or a single literal scalar string for long scripts.
+    Processes a list of script lines, inlining any shell script references
+    while preserving other lines like YAML references. It will convert the
+    entire block to a literal scalar string `|` for long scripts, but only
+    if no YAML tags (like !reference) are present.
     """
     if isinstance(script_list, str):
         script_list = [script_list]
 
-    # First pass: check for any long scripts. If one is found, it takes over the whole block.
-    for line in script_list:
-        script_path_str = extract_script_path(line) if isinstance(line, str) else None
-        if script_path_str:
-            rel_path = script_path_str.strip().lstrip("./")
-            script_path = scripts_root / rel_path
-            bash_code = read_bash_script(script_path, script_sources)
-            # If a script is long, we replace the entire block for clarity.
-            if len(bash_code.splitlines()) > 3:
-                logger.info(f"Inlining long script '{script_path}' as a single block.")
-                return LiteralScalarString(bash_code)
+    processed_items: list[Any] = []
+    contains_tagged_scalar = False
+    is_long = False
 
-    # Second pass: if no long scripts were found, inline all scripts line-by-line.
-    inlined_lines: list[str] = []
-    for line in script_list:
-        script_path_str = extract_script_path(line) if isinstance(line, str) else None
+    for item in script_list:
+        # Check for non-string YAML objects first (like !reference).
+        if not isinstance(item, str):
+            if isinstance(item, TaggedScalar):
+                contains_tagged_scalar = True
+            processed_items.append(item)
+            continue  # Go to next item
+
+        # It's a string, see if it's a script path.
+        script_path_str = extract_script_path(item)
         if script_path_str:
             rel_path = script_path_str.strip().lstrip("./")
             script_path = scripts_root / rel_path
-            bash_code = read_bash_script(script_path, script_sources)
-            bash_lines = bash_code.splitlines()
-            logger.info(f"Inlining short script '{script_path}' ({len(bash_lines)} lines).")
-            inlined_lines.extend(bash_lines)
+            try:
+                bash_code = read_bash_script(script_path, script_sources)
+                bash_lines = bash_code.splitlines()
+
+                # Check if this specific script is long
+                if len(bash_lines) > 3:
+                    is_long = True
+
+                logger.info(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                processed_items.extend(bash_lines)
+            except (FileNotFoundError, ValueError) as e:
+                logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
+                processed_items.append(item)
         else:
-            inlined_lines.append(line)
+            # It's a regular command string, preserve it.
+            processed_items.append(item)
 
-    return inlined_lines
+    # --- Decide on the return format ---
+    # Condition to use a literal block `|`:
+    # 1. It must NOT contain any special YAML tags.
+    # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
+    if not contains_tagged_scalar and (is_long or len(processed_items) > 5):
+        # We can safely convert to a single string block.
+        final_script_block = "\n".join(map(str, processed_items))
+        logger.info("Formatting script block as a single literal block for clarity.")
+        return LiteralScalarString(final_script_block)
+    else:
+        # We must return a list to preserve YAML tags or because it's short.
+        if contains_tagged_scalar:
+            logger.debug("Preserving script block as a list to support YAML tags (!reference).")
+        return processed_items
 
 
 def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, str]) -> int:
@@ -1241,14 +1509,16 @@ def shred_script_block(
     if not script_content:
         return None, None
 
+    yaml = YAML()
+    yaml.width = 4096
+
     # This block will handle converting CommentedSeq and its contents (which may include
     # CommentedMap objects) into a simple list of strings.
     processed_lines = []
     if isinstance(script_content, str):
         processed_lines.extend(script_content.splitlines())
     elif script_content:  # It's a list-like object (e.g., ruamel.yaml.CommentedSeq)
-        yaml = YAML()
-        yaml.width = 4096
+
         for item in script_content:
             if isinstance(item, str):
                 processed_lines.append(item)
@@ -1576,7 +1846,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -1613,6 +1883,8 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
+
+import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
@@ -1794,26 +2066,31 @@ def main() -> int:
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
 
-    # --- clone2local Command ---
+    # --- copy2local Command ---
     clone_parser = subparsers.add_parser(
-        "clone2local",
-        help="Clone a repository using sparse checkout.",
+        "copy2local",
+        help="Copy folder(s) from a repo to local, for testing bash in the dependent repo",
     )
     clone_parser.add_argument(
         "--repo-url",
         required=True,
-        help="Repository URL to clone.",
+        help="Repository URL to copy.",
     )
     clone_parser.add_argument(
-        "--clone-dir",
+        "--branch",
         required=True,
-        help="Destination directory for the clone.",
+        help="Branch to copy.",
+    )
+    clone_parser.add_argument(
+        "--copy-dir",
+        required=True,
+        help="Destination directory for the copy.",
     )
     clone_parser.add_argument(
         "--sparse-dirs",
         nargs="+",
         required=True,
-        help="Directories to include in the sparse checkout.",
+        help="Directories to include in the sparse copy.",
     )
     clone_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     clone_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
@@ -1844,6 +2121,7 @@ def main() -> int:
     init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     init_parser.set_defaults(func=init_handler)
 
+    argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     # --- Configuration Precedence: CLI > ENV > TOML ---

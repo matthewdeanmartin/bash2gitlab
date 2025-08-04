@@ -31,7 +31,6 @@ See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tr
 - If you store your yaml templates in a centralized repo and `include:` them from other repos.
 - If you have a lot of bash in your yaml that in theory could be executed locally
 
-
 Your .gitlab-ci.yml pipelines are more bash than yaml. 1000s of lines of bash. But your IDE doesn't recognize
 your bash as bash, it is a yaml string. You get syntax highlighting telling you that `script:` is a yaml key and that
 is it.
@@ -40,17 +39,15 @@ So you extract the bash to a .sh file and execute it. But your job is mostly def
 repository. So the .sh file needs to be in every repo that imports the template. That's not good. You can't import
 bash from the other repo.
 
-Other solutions to get at a centralized bash script quickly get complicated.
-
 ## Who this is not for
 
-If all your yaml pipelines are in a single repository, you  can just reference bash files in your single repository.
+If all your yaml pipelines are in a single repository, you can just reference bash files in your single repository.
 
 If you have a trivial amount of bash in your templates
 
 ## Installation
 
-This is a standalone command, pipx is better.
+This is a standalone command, installing with pipx is better than pip.
 
 ```bash
 pipx install bash2gitlab
@@ -84,10 +81,24 @@ eval "$(register-python-argcomplete bash2gitlab)"
 
 See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tree/main/examples).
 
-```bash
+```text
+❯ bash2gitlab --help
+usage: bash2gitlab [-h] [--version] {compile,shred,copy2local,init} ...
+
+positional arguments:
+  {compile,shred,copy2local,init}
+    compile             Compile an uncompiled directory into a standard GitLab CI structure.
+    shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
+    copy2local          Copy folder(s) from a repo to local, for testing bash in the dependent repo
+    init                Initialize a new bash2gitlab project and config file.
+
+options:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
+
 ❯ bash2gitlab compile --help
-usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
-                           [--templates-out TEMPLATES_OUT] [--parallelism PARALLELISM] [-v]
+usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN] 
+[--templates-out TEMPLATES_OUT] [--parallelism PARALLELISM] [--dry-run] [-v] [-q] [--watch]
 
 options:
   -h, --help            show this help message and exit
@@ -101,7 +112,10 @@ options:
                         Output directory for compiled CI templates. (Default: <out>)
   --parallelism PARALLELISM
                         Number of files to compile in parallel (default: CPU count).
+  --dry-run             Simulate the compilation process without writing any files.
   -v, --verbose         Enable verbose (DEBUG) logging output.
+  -q, --quiet           Disable output.
+  --watch               Watch source directories and auto-recompile on changes.
 ```
 
 ## Name

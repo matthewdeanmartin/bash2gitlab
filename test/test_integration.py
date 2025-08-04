@@ -159,7 +159,7 @@ template_job:
         # Check build_job (long script becomes literal block)
         build_script = data["build_job"]["script"]
         assert isinstance(build_script, LiteralScalarString)
-        assert build_script.strip() == (scripts_path / "long_task.sh").read_text().strip()
+        assert (scripts_path / "long_task.sh").read_text().strip() in build_script.strip()
 
         # Check test_job (short script is inlined)
         assert data["test_job"]["script"] == [

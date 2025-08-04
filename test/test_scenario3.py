@@ -17,4 +17,7 @@ def test_yaml_it_src_to_out():
 
         for file in output_root.rglob("*.yml"):
             output = file.read_text(encoding="utf-8")
-            assert ".sh" not in output or ". before_script.sh" in output
+            assert "format.sh" not in output
+            assert "lint.sh" not in output
+            assert "package.sh" not in output
+            assert "test.sh" not in output

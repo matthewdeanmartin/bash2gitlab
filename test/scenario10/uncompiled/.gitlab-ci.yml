@@ -1,0 +1,13 @@
+---
+stages:
+  - build
+
+.echo: &echo:
+  - echo "referenced"
+
+build:job:
+  stage: build
+  script:
+    - !reference [.echo]
+    - ./build.sh
+    - ./test.sh

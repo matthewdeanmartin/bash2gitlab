@@ -208,26 +208,31 @@ def main() -> int:
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
 
-    # --- clone2local Command ---
+    # --- copy2local Command ---
     clone_parser = subparsers.add_parser(
-        "clone2local",
-        help="Clone a repository using sparse checkout.",
+        "copy2local",
+        help="Copy folder(s) from a repo to local, for testing bash in the dependent repo",
     )
     clone_parser.add_argument(
         "--repo-url",
         required=True,
-        help="Repository URL to clone.",
+        help="Repository URL to copy.",
     )
     clone_parser.add_argument(
-        "--clone-dir",
+        "--branch",
         required=True,
-        help="Destination directory for the clone.",
+        help="Branch to copy.",
+    )
+    clone_parser.add_argument(
+        "--copy-dir",
+        required=True,
+        help="Destination directory for the copy.",
     )
     clone_parser.add_argument(
         "--sparse-dirs",
         nargs="+",
         required=True,
-        help="Directories to include in the sparse checkout.",
+        help="Directories to include in the sparse copy.",
     )
     clone_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     clone_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")

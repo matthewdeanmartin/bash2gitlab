@@ -114,14 +114,16 @@ def shred_script_block(
     if not script_content:
         return None, None
 
+    yaml = YAML()
+    yaml.width = 4096
+
     # This block will handle converting CommentedSeq and its contents (which may include
     # CommentedMap objects) into a simple list of strings.
     processed_lines = []
     if isinstance(script_content, str):
         processed_lines.extend(script_content.splitlines())
     elif script_content:  # It's a list-like object (e.g., ruamel.yaml.CommentedSeq)
-        yaml = YAML()
-        yaml.width = 4096
+
         for item in script_content:
             if isinstance(item, str):
                 processed_lines.append(item)

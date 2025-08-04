@@ -12,6 +12,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.0] - 2025-08-04
+
+### Added
+
+- Inlines bash by same logic as inlining bash into yaml. Looks for `source script.sh` and inlines it.
+
+### Changed
+
+- clone2local is now copy2local using archive and copy commands to get a part of your remote repo into a dependent
+  report for testing.
+
+### Fixed
+
+- Reference or multiple scripts in a script list would all be stomped by last script.
+
 ## [0.7.0] - 2025-08-02
 
 ### Added
