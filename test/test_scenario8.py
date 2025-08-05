@@ -14,7 +14,7 @@ def test_yaml_it_src_to_out_hidden_jobs_8():
         output_templates_dir = output_root
         scripts_dir = uncompiled
 
-        process_uncompiled_directory(uncompiled, output_root, scripts_dir, templates_dir, output_templates_dir)
+        process_uncompiled_directory(uncompiled, output_root, scripts_dir, templates_dir, output_templates_dir, 0)
 
         found = 0
         for file in output_root.rglob("*.yml"):

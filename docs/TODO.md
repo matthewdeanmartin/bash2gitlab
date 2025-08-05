@@ -1,11 +1,13 @@
 # TODO
 
-- Powershell is supported by gitlab, but not by this library... yet.
-- Validate/lint with API calls to Gitlab.
-- Support alternative yaml formatters (prettier, yamlfix, yamlfixer-opt-nc)
+## Bugs
+- Still fails to merge multiple scripts
 
-## Change-in-generated-code-detection
-- switch to whole doc comparison?
+## Logging
+- Add "# inlined file ./file.sh" to `script:` list
+- Bad ratio of info/debug
+- Defaults to debug instead of info
+- Print whole path instead of relative path
 
 ## Config
 - custom shebang
@@ -14,10 +16,6 @@
 ## Compile
 - Include command to reproduce build copied to header
 
-## doesn't handle bash lines in a anchor 
-
-```yaml
-.thing: &anchor
-  - echo 1
-  - echo 2
-```
+## Advanced Features
+- Powershell is supported by gitlab, but not by this library... yet.
+- Validate/lint with API calls to Gitlab.

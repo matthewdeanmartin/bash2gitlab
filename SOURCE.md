@@ -359,6 +359,23 @@ BANNER = """# DO NOT EDIT
 """
 
 
+def short_path(path: Path) -> str:
+    """
+    Return the path relative to the current working directory if possible.
+    Otherwise, return the absolute path.
+
+    Args:
+        path (Path): The path to format for debugging.
+
+    Returns:
+        str: Relative path or absolute path as a fallback.
+    """
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path.resolve())
+
+
 def parse_env_file(file_content: str) -> dict[str, str]:
     """
     Parses a .env-style file content into a dictionary.
@@ -579,7 +596,7 @@ def inline_gitlab_scripts(
         # .my-script-template: &my-script-anchor
         #   - ./scripts/my-script.sh
         if isinstance(job_data, list):
-            logger.info(f"Processing top-level list key '{job_name}', potentially a script anchor.")
+            logger.debug(f"Processing top-level list key '{job_name}', potentially a script anchor.")
             result = process_script_list(job_data, scripts_root, script_sources)
             if result != job_data:
                 data[job_name] = result
@@ -626,7 +643,7 @@ def inline_gitlab_scripts(
                             inlined_count += process_job(item, scripts_root, script_sources)
 
     # --- Reorder top-level keys for consistent output ---
-    logger.info("Reordering top-level keys in the final YAML.")
+    logger.debug("Reordering top-level keys in the final YAML.")
     ordered_data = CommentedMap()
     key_order = ["include", "variables", "stages"]
 
@@ -669,7 +686,7 @@ def write_yaml_and_hash(
     hash_file: Path,
 ):
     """Writes the YAML content and a base64 encoded version to a .hash file."""
-    logger.info(f"Writing new file: {output_file}")
+    logger.info(f"Writing new file: {short_path(output_file)}")
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     new_content = remove_leading_blank_lines(new_content)
@@ -679,7 +696,7 @@ def write_yaml_and_hash(
     # Store a base64 encoded copy of the exact content we just wrote.
     encoded_content = base64.b64encode(new_content.encode("utf-8")).decode("utf-8")
     hash_file.write_text(encoded_content, encoding="utf-8")
-    logger.debug(f"Updated hash file: {hash_file}")
+    logger.debug(f"Updated hash file: {short_path(hash_file)}")
 
 
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
@@ -699,25 +716,25 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         SystemExit: If the destination file has been manually modified.
     """
     if dry_run:
-        logger.info(f"[DRY RUN] Would evaluate writing to {output_file}")
+        logger.info(f"[DRY RUN] Would evaluate writing to {short_path(output_file)}")
         # In dry run, we report as if a change would happen if there is one.
         if not output_file.exists() or output_file.read_text(encoding="utf-8") != new_content:
-            logger.info(f"[DRY RUN] Changes detected for {output_file}.")
+            logger.info(f"[DRY RUN] Changes detected for {short_path(output_file)}.")
             return True
-        logger.info(f"[DRY RUN] No changes for {output_file}.")
+        logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")
         return False
 
     hash_file = output_file.with_suffix(output_file.suffix + ".hash")
 
     if not output_file.exists():
-        logger.info(f"Output file {output_file} does not exist. Creating.")
+        logger.info(f"Output file {short_path(output_file)} does not exist. Creating.")
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
 
     # --- File and hash file exist, perform validation ---
     if not hash_file.exists():
         error_message = (
-            f"ERROR: Destination file '{output_file}' exists but its .hash file is missing. "
+            f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. "
             "Aborting to prevent data loss. If you want to regenerate this file, "
             "please remove it and run the script again."
         )
@@ -731,7 +748,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         last_known_content = last_known_content_bytes.decode("utf-8")
     except (ValueError, TypeError) as e:
         error_message = (
-            f"ERROR: Could not decode the .hash file for '{output_file}'. It may be corrupted.\n"
+            f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\n"
             f"Error: {e}\n"
             "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
         )
@@ -747,7 +764,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         last_known_doc = yaml.load(last_known_content)
     except YAMLError as e:
         error_message = (
-            f"ERROR: Could not parse YAML from '{output_file}'. It may be corrupted.\n"
+            f"ERROR: Could not parse YAML from '{short_path(output_file)}'. It may be corrupted.\n"
             f"Error: {e}\n"
             "Aborting. Please fix the file syntax or remove it to regenerate."
         )
@@ -787,11 +804,11 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # If we reach here, the current file is valid (or just reformatted).
     # Now, we check if the *newly generated* content is different from the current content.
     if new_content != current_content:
-        logger.info(f"Content of {output_file} has changed (reformatted or updated). Writing new version.")
+        logger.info(f"Content of {short_path(output_file)} has changed (reformatted or updated). Writing new version.")
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
     else:
-        logger.info(f"Content of {output_file} is already up to date. Skipping.")
+        logger.info(f"Content of {short_path(output_file)} is already up to date. Skipping.")
         return False
 
 
@@ -809,7 +826,7 @@ def _compile_single_file(
 
     Returns a tuple of the number of inlined sections and whether a file was written (0 or 1).
     """
-    logger.info(f"Processing {label}: {source_path}")
+    logger.info(f"Processing {label}: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
     inlined_for_file, compiled_text = inline_gitlab_scripts(
         raw_text, scripts_path, script_sources, variables, uncompiled_path
@@ -857,7 +874,7 @@ def process_uncompiled_directory(
     global_vars = {}
     global_vars_path = uncompiled_path / "global_variables.sh"
     if global_vars_path.is_file():
-        logger.info(f"Found and loading variables from {global_vars_path}")
+        logger.info(f"Found and loading variables from {short_path(global_vars_path)}")
         content = global_vars_path.read_text(encoding="utf-8")
         global_vars = parse_env_file(content)
         total_inlined_count += 1
@@ -887,7 +904,7 @@ def process_uncompiled_directory(
     if parallelism and parallelism > 0:
         max_workers = min(parallelism, max_workers)
 
-    if total_files >= 5 and max_workers > 1:
+    if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
             (src, out, scripts_path, script_sources, vars, uncompiled_path, dry_run, label)
             for src, out, vars, label in files_to_process
@@ -1846,7 +1863,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]

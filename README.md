@@ -59,19 +59,6 @@ If for some reason you want to use it as a library...
 pip install bash2gitlab
 ```
 
-## Bash completion
-
-This project uses [argcomplete](https://github.com/kislyuk/argcomplete) for tab completion in Bash.
-After installation, enable completions with one of the following:
-
-```bash
-# Enable for all Python executables
-activate-global-python-argcomplete
-
-# Or enable for the current shell only
-eval "$(register-python-argcomplete bash2gitlab)"
-```
-
 ## Usage
 
 - Shred your current .gitlab-ci.yml file into yaml and bash
@@ -118,7 +105,20 @@ options:
   --watch               Watch source directories and auto-recompile on changes.
 ```
 
-## Name
+## Bash completion
+
+This project uses [argcomplete](https://github.com/kislyuk/argcomplete) for tab completion in Bash.
+After installation, enable completions with one of the following:
+
+```bash
+# Enable for all Python executables
+activate-global-python-argcomplete
+
+# Or enable for the current shell only
+eval "$(register-python-argcomplete bash2gitlab)"
+```
+
+## Supported Shells
 Gitlab runners expect bash, sh or powershell. To use another shell, you have to use bash to execute a script in the other
 shell.
 
@@ -129,7 +129,7 @@ This will be inlined into the `variables:` stanza.
 - global_variables.sh
 
 ## Out of scope
-This doesn't inline include templates, only references to `.sh` files. In other words, if you are including many yaml
+This doesn't inline `include:` templates, only references to `.sh` files. In other words, if you are including many yaml
 templates, then there will still be many yaml templates, they won't be merged to a single file.
 
 This approach can't handle invocations that...
