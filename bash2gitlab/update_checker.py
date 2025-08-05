@@ -20,6 +20,7 @@ Requirements:
 To use, simply import and call the `check_for_updates` function.
 
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,6 @@ import os
 import sys
 import tempfile
 import time
-from typing import Optional
 from urllib import error, request
 
 # The 'packaging' library is highly recommended for robust version handling.
@@ -48,10 +48,10 @@ class PackageNotFoundError(Exception):
 def check_for_updates(
     package_name: str,
     current_version: str,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     cache_ttl_seconds: int = 86400,
     include_prereleases: bool = False,
-) -> Optional[str]:
+) -> str | None:
     """
     Checks for a new version of a package on PyPI.
 
@@ -133,7 +133,7 @@ def reset_cache(package_name: str) -> None:
         pass
 
 
-def _get_logger(logger: Optional[logging.Logger]):
+def _get_logger(logger: logging.Logger | None):
     """Returns a callable for logging or printing."""
     if logger:
         return logger.warning  # Use warning level for 404s
@@ -166,7 +166,7 @@ def _is_check_recently_done(cache_file: str, ttl_seconds: int) -> bool:
     return False
 
 
-def _get_latest_version_from_pypi(package_name: str, include_prereleases: bool) -> Optional[str]:
+def _get_latest_version_from_pypi(package_name: str, include_prereleases: bool) -> str | None:
     """
     Fetches the latest version string of a package from PyPI's JSON API.
     Raises PackageNotFoundError for 404 errors.
