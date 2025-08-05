@@ -36,6 +36,7 @@ from bash2gitlab.config import config
 from bash2gitlab.init_project import init_handler
 from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
+from bash2gitlab.update_checker import check_for_updates
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,8 @@ def shred_handler(args: argparse.Namespace):
 
 def main() -> int:
     """Main CLI entry point."""
+    check_for_updates(__about__.__title__, __about__.__version__)
+
     parser = argparse.ArgumentParser(
         prog=__about__.__title__,
         description=root_doc,

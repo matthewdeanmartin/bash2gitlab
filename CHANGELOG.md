@@ -12,6 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.2] - 2025-08-05
+
+### Added
+
+- Checks for updated package from pypi.
+
+### Changed
+
+- copy2local now copies the contents of src folder to destination folder, to reduce nesting.
+
+
+## [0.8.1] - 2025-08-05
+
+### Added
+
+- Improve logging
+
 ## [0.8.0] - 2025-08-04
 
 ### Added

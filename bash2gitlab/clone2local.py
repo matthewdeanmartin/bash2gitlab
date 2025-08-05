@@ -114,7 +114,7 @@ def fetch_repository_archive(repo_url: str, branch: str, sparse_dirs: Sequence[s
             logger.info("Copying specified directories to final destination.")
             for dir_name in sparse_dirs:
                 source_dir = source_repo_root / dir_name
-                dest_dir = clone_path / Path(dir_name).name  # Use the basename for the destination
+                dest_dir = clone_path  # / Path(dir_name).name  # Use the basename for the destination
 
                 if source_dir.is_dir():
                     logger.debug("Copying '%s' to '%s'", source_dir, dest_dir)

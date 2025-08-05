@@ -402,6 +402,7 @@ source = { editable = "." }
 dependencies = [
     { name = "argcomplete" },
     { name = "colorlog" },
+    { name = "packaging" },
     { name = "pydantic", marker = "python_full_version >= '3.14'" },
     { name = "ruamel-yaml" },
     { name = "toml", marker = "python_full_version < '3.11'" },
@@ -458,6 +459,7 @@ dev = [
 requires-dist = [
     { name = "argcomplete" },
     { name = "colorlog" },
+    { name = "packaging" },
     { name = "pydantic", marker = "python_full_version >= '3.14'", specifier = ">=2.12.0a1" },
     { name = "ruamel-yaml" },
     { name = "toml", marker = "python_full_version < '3.11'" },
