@@ -232,10 +232,9 @@ def main() -> int:
         help="Destination directory for the copy.",
     )
     clone_parser.add_argument(
-        "--sparse-dirs",
-        nargs="+",
+        "--source-dir",
         required=True,
-        help="Directories to include in the sparse copy.",
+        help="Directory to include in the copy.",
     )
     clone_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     clone_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")

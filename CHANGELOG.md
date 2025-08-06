@@ -12,6 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.3] - 2025-08-05
+
+### Added
+
+- Basic ps1 file support
+
+### Fixed
+
+- Fixed bug with copy2local
+
+
 ## [0.8.2] - 2025-08-05
 
 ### Added

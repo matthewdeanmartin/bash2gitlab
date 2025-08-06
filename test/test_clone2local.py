@@ -18,7 +18,7 @@ def temp_test_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def create_fake_zip_archive(branch: str, sparse_dirs: list[str]) -> BytesIO:
+def create_fake_zip_archive(branch: str, sparse_dir: str) -> BytesIO:
     """
     Creates an in-memory zip file that simulates a GitHub repository archive.
     The archive will contain a root folder like 'my-repo-main/'
@@ -31,9 +31,9 @@ def create_fake_zip_archive(branch: str, sparse_dirs: list[str]) -> BytesIO:
         zf.writestr(f"{repo_root_name}/README.md", "# Test Repo")
 
         # Create the specified sparse directories and a file within each
-        for i, dir_path in enumerate(sparse_dirs):
-            full_path = Path(repo_root_name) / dir_path
-            zf.writestr(str(full_path / f"file{i}.txt"), f"content of file {i}")
+
+        full_path = Path(repo_root_name) / sparse_dir
+        zf.writestr(str(full_path / "file1.txt"), "content of file 1")
 
         # Add an extra directory that we do NOT want to be copied
         zf.writestr(f"{repo_root_name}/unwanted_dir/dont_copy.txt", "should not exist")
@@ -134,7 +134,7 @@ class TestFetchRepositoryArchive:
         # --- Arrange ---
         repo_url = "https://github.com/test/repo"
         branch = "main"
-        sparse_dirs = ["app/src"]
+        sparse_dirs = "app/src"
         clone_dir = temp_test_dir / "my-clone"
 
         # Mock network calls to succeed

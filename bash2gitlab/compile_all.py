@@ -92,13 +92,13 @@ def extract_script_path(command_line: str) -> str | None:
         # Malformed shell syntax
         return None
 
-    executors = {"bash", "sh", "source", "."}
+    executors = {"bash", "sh", "source", ".", "pwsh"}
 
     parts = 0
     path_found = None
     for i, token in enumerate(tokens):
         path = Path(token)
-        if path.suffix == ".sh":
+        if path.suffix == ".sh" or path.suffix == ".ps1":
             # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
             if i > 0 and tokens[i - 1] in executors:
                 path_found = str(path).replace("\\", "/")
@@ -337,6 +337,13 @@ def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
 
     script_sources = {}
     for script_file in scripts_dir.glob("**/*.sh"):
+        content = script_file.read_text(encoding="utf-8").strip()
+        if not content:
+            logger.warning(f"Script is empty and will be ignored: {script_file}")
+            continue
+        script_sources[str(script_file)] = content
+
+    for script_file in scripts_dir.glob("**/*.ps1"):
         content = script_file.read_text(encoding="utf-8").strip()
         if not content:
             logger.warning(f"Script is empty and will be ignored: {script_file}")

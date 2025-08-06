@@ -7,13 +7,12 @@ import tempfile
 import urllib.error
 import urllib.request
 import zipfile
-from collections.abc import Sequence
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-def fetch_repository_archive(repo_url: str, branch: str, sparse_dirs: Sequence[str], clone_dir: str | Path) -> None:
+def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
     """
     Fetches a repository archive for a specific branch, extracts it, and copies directories.
 
@@ -27,7 +26,7 @@ def fetch_repository_archive(repo_url: str, branch: str, sparse_dirs: Sequence[s
             The URL of the repository (e.g., 'https://github.com/user/repo').
         branch:
             The name of the branch to download (e.g., 'main', 'develop').
-        sparse_dirs:
+        source_dir:
             A sequence of directory paths (relative to the repo root) to
             extract and copy to the clone_dir.
         clone_dir:
@@ -46,11 +45,11 @@ def fetch_repository_archive(repo_url: str, branch: str, sparse_dirs: Sequence[s
     """
     clone_path = Path(clone_dir)
     logger.debug(
-        "Fetching archive for repo %s (branch: %s) into %s with sparse dirs %s",
+        "Fetching archive for repo %s (branch: %s) into %s with dir %s",
         repo_url,
         branch,
         clone_path,
-        list(sparse_dirs),
+        source_dir,
     )
 
     # 1. Validate that the destination directory is empty.
@@ -110,17 +109,17 @@ def fetch_repository_archive(repo_url: str, branch: str, sparse_dirs: Sequence[s
                 logger.warning("Archive does not contain a single root directory. Using extraction root.")
                 source_repo_root = unzip_root
 
-            # 4. Copy the specified 'sparse' directories to the final destination.
+            # 4. Copy the specified directory to the final destination.
             logger.info("Copying specified directories to final destination.")
-            for dir_name in sparse_dirs:
-                source_dir = source_repo_root / dir_name
-                dest_dir = clone_path  # / Path(dir_name).name  # Use the basename for the destination
 
-                if source_dir.is_dir():
-                    logger.debug("Copying '%s' to '%s'", source_dir, dest_dir)
-                    shutil.copytree(source_dir, dest_dir)
-                else:
-                    logger.warning("Directory '%s' not found in repository archive, skipping.", dir_name)
+            repo_source_dir = source_repo_root / source_dir
+            dest_dir = clone_path  # / Path(dir_name).name  # Use the basename for the destination
+
+            if repo_source_dir.is_dir():
+                logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
+                shutil.copytree(source_dir, dest_dir, dirs_exist_ok=True)
+            else:
+                logger.warning("Directory '%s' not found in repository archive, skipping.", repo_source_dir)
 
     except Exception as e:
         logger.error("Operation failed: %s. Cleaning up destination directory.", e)
@@ -132,7 +131,7 @@ def fetch_repository_archive(repo_url: str, branch: str, sparse_dirs: Sequence[s
     logger.info("Successfully fetched directories into %s", clone_path)
 
 
-def clone_repository_ssh(repo_url: str, branch: str, sparse_dirs: Sequence[str], clone_dir: str | Path) -> None:
+def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
     """
     Clones a repository using Git, checks out a branch, and copies specified directories.
 
@@ -147,8 +146,8 @@ def clone_repository_ssh(repo_url: str, branch: str, sparse_dirs: Sequence[str],
         The repository URL (e.g., 'git@github.com:user/repo.git').
     branch:
         The name of the branch to check out (e.g., 'main', 'develop').
-    sparse_dirs:
-        A sequence of directory paths (relative to the repo root) to copy.
+    source_dir:
+        Directory paths (relative to the repo root) to copy.
     clone_dir:
         The destination directory. This directory must be empty.
 
@@ -163,11 +162,11 @@ def clone_repository_ssh(repo_url: str, branch: str, sparse_dirs: Sequence[str],
     """
     clone_path = Path(clone_dir)
     logger.debug(
-        "Cloning repo %s (branch: %s) into %s with sparse dirs %s",
+        "Cloning repo %s (branch: %s) into %s with source dir %s",
         repo_url,
         branch,
         clone_path,
-        list(sparse_dirs),
+        source_dir,
     )
 
     # 1. Validate that the destination directory is empty.
@@ -190,17 +189,17 @@ def clone_repository_ssh(repo_url: str, branch: str, sparse_dirs: Sequence[str],
             )
 
             logger.info("Clone successful. Copying specified directories.")
-            # 3. Copy the specified 'sparse' directories to the final destination.
-            for dir_name in sparse_dirs:
-                source_dir = temp_clone_path / dir_name
-                # Use the basename of the source for the destination path.
-                dest_dir = clone_path / Path(dir_name).name
+            # 3. Copy the specified directory to the final destination.
 
-                if source_dir.is_dir():
-                    logger.debug("Copying '%s' to '%s'", source_dir, dest_dir)
-                    shutil.copytree(source_dir, dest_dir)
-                else:
-                    logger.warning("Directory '%s' not found in repository, skipping.", dir_name)
+            repo_source_dir = temp_clone_path / source_dir
+            # Use the basename of the source for the destination path.
+            dest_dir = clone_path
+
+            if repo_source_dir.is_dir():
+                logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
+                shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
+            else:
+                logger.warning("Directory '%s' not found in repository, skipping.", source_dir)
 
     except Exception as e:
         logger.error("Operation failed: %s. Cleaning up destination directory.", e)
@@ -220,5 +219,5 @@ def clone2local_handler(args) -> None:
     """
     # This function now calls the new implementation, preserving the call stack.
     if str(args.repo_url).startswith("ssh"):
-        return clone_repository_ssh(args.repo_url, args.branch, args.sparse_dirs, args.copy_dir)
-    return fetch_repository_archive(args.repo_url, args.branch, args.sparse_dirs, args.copy_dir)
+        return clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir)
+    return fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir)

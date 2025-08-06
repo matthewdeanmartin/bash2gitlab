@@ -1,0 +1,8 @@
+job:
+  tags:
+    - windows
+  script:
+    - .\build.ps1
+    - ./build.ps1
+    - pwsh ./build.ps1
+  shell: powershell
