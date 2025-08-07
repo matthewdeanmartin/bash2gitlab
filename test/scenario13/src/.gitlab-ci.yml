@@ -1,0 +1,100 @@
+job:
+  script: echo "hello"
+  
+
+include:
+  - '*.yml'
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLUGGO"
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+
+
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+  - local: "./*.yml"
+    rules:
+      - if: $CI_COMMIT_REF_SLUG == "SLOBBO"
+  - local: "./*.yml"
+    rules:
+      - if: >
+          1 == 1 &&
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1 && 
+          1 == 1
+
+job2:
+  script:
+    - echo "hello"
+
+
+job3:
+  script:
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+
+job4:
+  script:
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+
+job5-lines:
+  script:
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+    - echo "hello"
+
+
+job5-long-script:
+  script: ./build.sh

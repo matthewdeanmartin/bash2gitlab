@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shows command used to generate in the header
 - Added "detect-drift" command, to complement the existing drift detection that runs at compile time.
 
+### Fixed
+
+- Bug that stringified certain complex values in yaml maps.
 
 ## [0.8.3] - 2025-08-05
 

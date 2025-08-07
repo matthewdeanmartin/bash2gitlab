@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import shutil
-import subprocess  # nosec
+import subprocess  # nosec: B404
 import tempfile
 import urllib.error
 import urllib.request
@@ -13,35 +13,29 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
-    """
-    Fetches a repository archive for a specific branch, extracts it, and copies directories.
+    """Fetches and extracts a specific directory from a repository archive.
 
-    This function avoids using Git. It downloads the repository as a ZIP archive,
-    unpacks it to a temporary location, and then copies only the requested
-    directories to the final destination. It performs cleanup of all temporary
+    This function avoids using Git by downloading the repository as a ZIP archive.
+    It unpacks the archive to a temporary location, copies the requested
+    source directory to the final destination, and cleans up all temporary
     files upon completion or in case of an error.
 
     Args:
-        repo_url:
-            The URL of the repository (e.g., 'https://github.com/user/repo').
-        branch:
-            The name of the branch to download (e.g., 'main', 'develop').
-        source_dir:
-            A sequence of directory paths (relative to the repo root) to
+        repo_url: The base URL of the repository (e.g., 'https://github.com/user/repo').
+        branch: The name of the branch to download (e.g., 'main', 'develop').
+        source_dir: A single directory path (relative to the repo root) to
             extract and copy to the clone_dir.
-        clone_dir:
-            The destination directory. This directory must be empty before the
-            operation begins.
+        clone_dir: The destination directory. This directory must be empty.
 
     Raises:
-        FileExistsError:
-            If the clone_dir exists and is not empty.
-        ConnectionError:
-            If the specified branch archive cannot be found or accessed.
-        IOError:
-            If the downloaded archive has an unexpected file structure.
-        Exception:
-            Propagates exceptions from network, file, or archive operations.
+        FileExistsError: If the clone_dir exists and is not empty.
+        ConnectionError: If the specified branch archive cannot be found, accessed,
+            or if a network error occurs.
+        IOError: If the downloaded archive is empty or has an unexpected
+            file structure.
+        TypeError: If the repository URL does not use an http/https protocol.
+        Exception: Propagates other exceptions from network, file, or
+            archive operations after attempting to clean up.
     """
     clone_path = Path(clone_dir)
     logger.debug(
@@ -70,10 +64,11 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
             archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
             if not archive_url.startswith("http"):
                 raise TypeError(f"Expected http or https protocol, got {archive_url}")
+
             try:
                 # Use a simple open to verify existence without a full download.
-
-                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec
+                # nosec: B310 - URL is constructed from trusted inputs in this context.
+                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec: B310
                     # The 'with' block itself confirms a 2xx status.
                     logger.info("Confirmed repository archive exists at: %s", archive_url)
             except urllib.error.HTTPError as e:
@@ -86,8 +81,8 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
                 raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
 
             logger.info("Downloading archive to %s", archive_path)
-
-            urllib.request.urlretrieve(archive_url, archive_path)  # nosec
+            # nosec: B310 - URL is validated above.
+            urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
 
             # 3. Unzip the downloaded archive.
             logger.info("Extracting archive to %s", unzip_root)
@@ -113,11 +108,12 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
             logger.info("Copying specified directories to final destination.")
 
             repo_source_dir = source_repo_root / source_dir
-            dest_dir = clone_path  # / Path(dir_name).name  # Use the basename for the destination
+            dest_dir = clone_path
 
             if repo_source_dir.is_dir():
                 logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
-                shutil.copytree(source_dir, dest_dir, dirs_exist_ok=True)
+                # FIX: Use the correct source path `repo_source_dir` for the copy operation.
+                shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
             else:
                 logger.warning("Directory '%s' not found in repository archive, skipping.", repo_source_dir)
 
@@ -132,33 +128,24 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
 
 
 def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
-    """
-    Clones a repository using Git, checks out a branch, and copies specified directories.
+    """Clones a repo via Git and copies a specific directory.
 
-    This function is designed for SSH or authenticated HTTPS URLs that require local
-    Git and credential management (e.g., SSH keys). It performs a full clone into a
-    temporary directory, checks out the target branch, and then copies only the
-    requested directories to the final destination.
+    This function is designed for SSH or authenticated HTTPS URLs that require
+    local Git and credential management (e.g., SSH keys). It performs an
+    efficient, shallow clone of a specific branch into a temporary directory,
+    then copies the requested source directory to the final destination.
 
-    Parameters
-    ----------
-    repo_url:
-        The repository URL (e.g., 'git@github.com:user/repo.git').
-    branch:
-        The name of the branch to check out (e.g., 'main', 'develop').
-    source_dir:
-        Directory paths (relative to the repo root) to copy.
-    clone_dir:
-        The destination directory. This directory must be empty.
+    Args:
+        repo_url: The repository URL (e.g., 'git@github.com:user/repo.git').
+        branch: The name of the branch to check out (e.g., 'main', 'develop').
+        source_dir: A single directory path (relative to the repo root) to copy.
+        clone_dir: The destination directory. This directory must be empty.
 
     Raises:
-    ------
-    FileExistsError:
-        If the clone_dir exists and is not empty.
-    subprocess.CalledProcessError:
-        If any Git command fails.
-    Exception:
-        Propagates other exceptions from file operations.
+        FileExistsError: If the clone_dir exists and is not empty.
+        subprocess.CalledProcessError: If any Git command fails.
+        Exception: Propagates other exceptions from file operations after
+            attempting to clean up.
     """
     clone_path = Path(clone_dir)
     logger.debug(
@@ -182,7 +169,8 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
 
             # 2. Clone the repository.
             # We clone the specific branch directly to be more efficient.
-            subprocess.run(  # nosec
+            # nosec: B603, B607 - repo_url is a variable, but is intended to be a trusted source.
+            subprocess.run(  # nosec: B603, B607
                 ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
                 check=True,
                 capture_output=True,  # Capture stdout/stderr to hide git's noisy output
@@ -190,9 +178,7 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
 
             logger.info("Clone successful. Copying specified directories.")
             # 3. Copy the specified directory to the final destination.
-
             repo_source_dir = temp_clone_path / source_dir
-            # Use the basename of the source for the destination path.
             dest_dir = clone_path
 
             if repo_source_dir.is_dir():

@@ -83,7 +83,6 @@ def process_script_list(
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
-    is_long = False
 
     for item in script_list:
         # Check for non-string YAML objects first (like !reference).
@@ -102,10 +101,6 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
 
-                # Check if this specific script is long
-                if len(bash_lines) > 3:
-                    is_long = True
-
                 logger.info(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
                 processed_items.extend(bash_lines)
             except (FileNotFoundError, ValueError) as e:
@@ -119,7 +114,8 @@ def process_script_list(
     # Condition to use a literal block `|`:
     # 1. It must NOT contain any special YAML tags.
     # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
-    if not contains_tagged_scalar and (is_long or len(processed_items) > 5):
+    _ = list(type(_) for _ in processed_items)
+    if not contains_tagged_scalar and len(processed_items) > 5 and all(isinstance(_, str) for _ in processed_items):
         # We can safely convert to a single string block.
         final_script_block = "\n".join(map(str, processed_items))
         logger.info("Formatting script block as a single literal block for clarity.")

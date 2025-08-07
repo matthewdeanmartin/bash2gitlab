@@ -6,6 +6,7 @@
 ├── config.py
 ├── detect_drift.py
 ├── init_project.py
+├── map_deploy_command.py
 ├── py.typed
 ├── shred_all.py
 ├── update_checker.py
@@ -128,7 +129,7 @@ from __future__ import annotations
 
 import logging
 import shutil
-import subprocess  # nosec
+import subprocess  # nosec: B404
 import tempfile
 import urllib.error
 import urllib.request
@@ -139,35 +140,29 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
-    """
-    Fetches a repository archive for a specific branch, extracts it, and copies directories.
+    """Fetches and extracts a specific directory from a repository archive.
 
-    This function avoids using Git. It downloads the repository as a ZIP archive,
-    unpacks it to a temporary location, and then copies only the requested
-    directories to the final destination. It performs cleanup of all temporary
+    This function avoids using Git by downloading the repository as a ZIP archive.
+    It unpacks the archive to a temporary location, copies the requested
+    source directory to the final destination, and cleans up all temporary
     files upon completion or in case of an error.
 
     Args:
-        repo_url:
-            The URL of the repository (e.g., 'https://github.com/user/repo').
-        branch:
-            The name of the branch to download (e.g., 'main', 'develop').
-        source_dir:
-            A sequence of directory paths (relative to the repo root) to
+        repo_url: The base URL of the repository (e.g., 'https://github.com/user/repo').
+        branch: The name of the branch to download (e.g., 'main', 'develop').
+        source_dir: A single directory path (relative to the repo root) to
             extract and copy to the clone_dir.
-        clone_dir:
-            The destination directory. This directory must be empty before the
-            operation begins.
+        clone_dir: The destination directory. This directory must be empty.
 
     Raises:
-        FileExistsError:
-            If the clone_dir exists and is not empty.
-        ConnectionError:
-            If the specified branch archive cannot be found or accessed.
-        IOError:
-            If the downloaded archive has an unexpected file structure.
-        Exception:
-            Propagates exceptions from network, file, or archive operations.
+        FileExistsError: If the clone_dir exists and is not empty.
+        ConnectionError: If the specified branch archive cannot be found, accessed,
+            or if a network error occurs.
+        IOError: If the downloaded archive is empty or has an unexpected
+            file structure.
+        TypeError: If the repository URL does not use an http/https protocol.
+        Exception: Propagates other exceptions from network, file, or
+            archive operations after attempting to clean up.
     """
     clone_path = Path(clone_dir)
     logger.debug(
@@ -196,10 +191,11 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
             archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
             if not archive_url.startswith("http"):
                 raise TypeError(f"Expected http or https protocol, got {archive_url}")
+
             try:
                 # Use a simple open to verify existence without a full download.
-
-                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec
+                # nosec: B310 - URL is constructed from trusted inputs in this context.
+                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec: B310
                     # The 'with' block itself confirms a 2xx status.
                     logger.info("Confirmed repository archive exists at: %s", archive_url)
             except urllib.error.HTTPError as e:
@@ -212,8 +208,8 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
                 raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
 
             logger.info("Downloading archive to %s", archive_path)
-
-            urllib.request.urlretrieve(archive_url, archive_path)  # nosec
+            # nosec: B310 - URL is validated above.
+            urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
 
             # 3. Unzip the downloaded archive.
             logger.info("Extracting archive to %s", unzip_root)
@@ -239,11 +235,12 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
             logger.info("Copying specified directories to final destination.")
 
             repo_source_dir = source_repo_root / source_dir
-            dest_dir = clone_path  # / Path(dir_name).name  # Use the basename for the destination
+            dest_dir = clone_path
 
             if repo_source_dir.is_dir():
                 logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
-                shutil.copytree(source_dir, dest_dir, dirs_exist_ok=True)
+                # FIX: Use the correct source path `repo_source_dir` for the copy operation.
+                shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
             else:
                 logger.warning("Directory '%s' not found in repository archive, skipping.", repo_source_dir)
 
@@ -258,33 +255,24 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
 
 
 def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
-    """
-    Clones a repository using Git, checks out a branch, and copies specified directories.
+    """Clones a repo via Git and copies a specific directory.
 
-    This function is designed for SSH or authenticated HTTPS URLs that require local
-    Git and credential management (e.g., SSH keys). It performs a full clone into a
-    temporary directory, checks out the target branch, and then copies only the
-    requested directories to the final destination.
+    This function is designed for SSH or authenticated HTTPS URLs that require
+    local Git and credential management (e.g., SSH keys). It performs an
+    efficient, shallow clone of a specific branch into a temporary directory,
+    then copies the requested source directory to the final destination.
 
-    Parameters
-    ----------
-    repo_url:
-        The repository URL (e.g., 'git@github.com:user/repo.git').
-    branch:
-        The name of the branch to check out (e.g., 'main', 'develop').
-    source_dir:
-        Directory paths (relative to the repo root) to copy.
-    clone_dir:
-        The destination directory. This directory must be empty.
+    Args:
+        repo_url: The repository URL (e.g., 'git@github.com:user/repo.git').
+        branch: The name of the branch to check out (e.g., 'main', 'develop').
+        source_dir: A single directory path (relative to the repo root) to copy.
+        clone_dir: The destination directory. This directory must be empty.
 
     Raises:
-    ------
-    FileExistsError:
-        If the clone_dir exists and is not empty.
-    subprocess.CalledProcessError:
-        If any Git command fails.
-    Exception:
-        Propagates other exceptions from file operations.
+        FileExistsError: If the clone_dir exists and is not empty.
+        subprocess.CalledProcessError: If any Git command fails.
+        Exception: Propagates other exceptions from file operations after
+            attempting to clean up.
     """
     clone_path = Path(clone_dir)
     logger.debug(
@@ -308,7 +296,8 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
 
             # 2. Clone the repository.
             # We clone the specific branch directly to be more efficient.
-            subprocess.run(  # nosec
+            # nosec: B603, B607 - repo_url is a variable, but is intended to be a trusted source.
+            subprocess.run(  # nosec: B603, B607
                 ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
                 check=True,
                 capture_output=True,  # Capture stdout/stderr to hide git's noisy output
@@ -316,9 +305,7 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
 
             logger.info("Clone successful. Copying specified directories.")
             # 3. Copy the specified directory to the final destination.
-
             repo_source_dir = temp_clone_path / source_dir
-            # Use the basename of the source for the destination path.
             dest_dir = clone_path
 
             if repo_source_dir.is_dir():
@@ -423,7 +410,6 @@ def process_script_list(
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
-    is_long = False
 
     for item in script_list:
         # Check for non-string YAML objects first (like !reference).
@@ -442,10 +428,6 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
 
-                # Check if this specific script is long
-                if len(bash_lines) > 3:
-                    is_long = True
-
                 logger.info(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
                 processed_items.extend(bash_lines)
             except (FileNotFoundError, ValueError) as e:
@@ -459,7 +441,8 @@ def process_script_list(
     # Condition to use a literal block `|`:
     # 1. It must NOT contain any special YAML tags.
     # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
-    if not contains_tagged_scalar and (is_long or len(processed_items) > 5):
+    _ = list(type(_) for _ in processed_items)
+    if not contains_tagged_scalar and len(processed_items) > 5 and all(isinstance(_, str) for _ in processed_items):
         # We can safely convert to a single string block.
         final_script_block = "\n".join(map(str, processed_items))
         logger.info("Formatting script block as a single literal block for clarity.")
@@ -1431,6 +1414,139 @@ def init_handler(args: Any):
         return 1
     return 0
 ```
+## File: map_deploy_command.py
+```python
+from __future__ import annotations
+
+import hashlib
+import os
+import shutil
+from pathlib import Path
+
+import toml
+
+
+def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
+    """Parses the pyproject.toml file to get the deployment map.
+
+    Args:
+        pyproject_path: The path to the pyproject.toml file.
+
+    Returns:
+        A dictionary mapping source directories to target directories.
+
+    Raises:
+        FileNotFoundError: If the pyproject.toml file is not found.
+        KeyError: If the [tool.bash2gitlab.map] section is missing.
+    """
+    if not pyproject_path.is_file():
+        raise FileNotFoundError(f"pyproject.toml not found at '{pyproject_path}'")
+
+    data = toml.load(pyproject_path)
+    try:
+        return data["tool"]["bash2gitlab"]["map"]
+    except KeyError as ke:
+        raise KeyError("'[tool.bash2gitlab.map]' section not found in pyproject.toml") from ke
+
+
+def map_deploy(
+    source_to_target_map: dict[str, str],
+    dry_run: bool = False,
+    force: bool = False,
+) -> None:
+    """Copies files from source to target directories based on a map.
+
+    This function iterates through a dictionary mapping source directories to
+    target directories. It copies each file from the source to the corresponding
+    target, creating a .hash file to track changes.
+
+    - If a destination file has been modified since the last deployment (hash
+      mismatch), it will be skipped unless 'force' is True.
+    - A .gitignore file with '*' is created in each target directory to
+      prevent accidental check-ins.
+    - All necessary directories are created.
+
+    Args:
+        source_to_target_map: A dictionary where keys are source paths and
+                              values are target paths.
+        dry_run: If True, simulates the deployment without making changes.
+        force: If True, overwrites target files even if they have been modified.
+    """
+    for source_base, target_base in source_to_target_map.items():
+        source_base_path = Path(source_base).resolve()
+        target_base_path = Path(target_base).resolve()
+
+        if not source_base_path.is_dir():
+            print(f"Warning: Source directory '{source_base_path}' does not exist. Skipping.")
+            continue
+
+        print(f"\nProcessing map: '{source_base_path}' -> '{target_base_path}'")
+
+        # Create target base directory and .gitignore if they don't exist
+        if not target_base_path.exists():
+            print(f"Target directory '{target_base_path}' does not exist.")
+            if not dry_run:
+                print(f"Creating directory: {target_base_path}")
+                target_base_path.mkdir(parents=True, exist_ok=True)
+
+        gitignore_path = target_base_path / ".gitignore"
+        if not gitignore_path.exists():
+            if not dry_run:
+                print(f"Creating .gitignore in '{target_base_path}'")
+                with open(gitignore_path, "w") as f:
+                    f.write("*\n")
+            else:
+                print(f"DRY RUN: Would create .gitignore in '{target_base_path}'")
+
+        for root, _, files in os.walk(source_base_path):
+            source_root_path = Path(root)
+
+            for filename in files:
+                source_file_path = source_root_path / filename
+                relative_path = source_file_path.relative_to(source_base_path)
+                target_file_path = target_base_path / relative_path
+                hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
+
+                # Ensure parent directory of the target file exists
+                if not target_file_path.parent.exists():
+                    print(f"Target directory '{target_file_path.parent}' does not exist.")
+                    if not dry_run:
+                        print(f"Creating directory: {target_file_path.parent}")
+                        target_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Calculate source file hash
+                with open(source_file_path, "rb") as f:
+                    source_hash = hashlib.sha256(f.read()).hexdigest()
+
+                # Check for modifications at the destination
+                if target_file_path.exists():
+                    with open(target_file_path, "rb") as f:
+                        target_hash_actual = hashlib.sha256(f.read()).hexdigest()
+
+                    stored_hash = ""
+                    if hash_file_path.exists():
+                        with open(hash_file_path) as f:
+                            stored_hash = f.read().strip()
+
+                    if stored_hash and target_hash_actual != stored_hash:
+                        print(f"Warning: '{target_file_path}' was modified since last deployment.")
+                        if not force:
+                            print("Skipping copy. Use --force to overwrite.")
+                            continue
+                        else:
+                            print("Forcing overwrite.")
+
+                # Perform copy and write hash
+                if not target_file_path.exists() or source_hash != target_hash_actual:
+                    action = "Copied" if not target_file_path.exists() else "Updated"
+                    print(f"{action}: '{source_file_path}' -> '{target_file_path}'")
+                    if not dry_run:
+                        shutil.copy2(source_file_path, target_file_path)
+                        with open(hash_file_path, "w") as f:
+                            f.write(source_hash)
+                else:
+                    print(f"Unchanged: '{target_file_path}'")
+```
 ## File: py.typed
 ```
 # when type checking dependents, tell type checkers to use this package's types
@@ -2093,7 +2209,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.3"
+__version__ = "0.8.4"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
