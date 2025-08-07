@@ -7,20 +7,6 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 import bash2gitlab.compile_all as compile_all
 
-# --- Fixtures ---
-
-
-@pytest.fixture
-def script_sources_fixture():
-    """Provides a sample dictionary of script sources for testing."""
-    return {
-        "scripts/short_script.sh": "echo 'hello world'",
-        "scripts/multiline_short.sh": "echo 'line 1'\necho 'line 2'\necho 'line 3'",
-        "scripts/long_script.sh": "echo 'line 1'\necho 'line 2'\necho 'line 3'\necho 'line 4'",
-        "scripts/empty.sh": "",
-    }
-
-
 # --- Unit Tests for Core Logic Functions ---
 
 
@@ -64,57 +50,24 @@ def test_extract_script_path(command_line, expected):
     assert compile_all.extract_script_path(command_line) == expected
 
 
-def test_read_bash_script_not_found(script_sources_fixture):
+def test_read_bash_script_not_found():
     """Tests that FileNotFoundError is raised for a missing script."""
     with pytest.raises(FileNotFoundError):
-        compile_all.read_bash_script(Path("nonexistent.sh"), script_sources_fixture)
+        compile_all.read_bash_script(Path("nonexistent.sh"))
 
 
 def test_process_script_list_no_scripts():
     """Tests a list with no scripts to ensure it remains unchanged."""
     script_list = ["echo 'hello'", "ls -la"]
-    result = compile_all.process_script_list(script_list, Path("."), {})
+    result = compile_all.process_script_list(script_list, Path("."))
     assert result == script_list
 
 
 def test_process_script_list_already_literal():
     """Tests that a pre-existing LiteralScalarString is passed through."""
     literal = LiteralScalarString("some existing script")
-    result = compile_all.process_script_list(literal, Path("."), {})
+    result = compile_all.process_script_list(literal, Path("."))
     assert result == [literal]
-
-
-def test_collect_script_sources(tmp_path: Path):
-    """Tests the recursive collection of script sources."""
-    scripts_dir = tmp_path / "scripts"
-    (scripts_dir / "subdir").mkdir(parents=True)
-    (scripts_dir / "script1.sh").write_text("content1")
-    (scripts_dir / "subdir" / "script2.sh").write_text("content2")
-    (scripts_dir / "empty.sh").write_text("  ")  # whitespace only
-    (scripts_dir / "not_a_script.txt").write_text("ignore me")
-
-    sources = compile_all.collect_script_sources(scripts_dir)
-    assert str(scripts_dir / "script1.sh") in sources
-    assert str(scripts_dir / "subdir" / "script2.sh") in sources
-    assert sources[str(scripts_dir / "script1.sh")] == "content1"
-    assert sources[str(scripts_dir / "subdir" / "script2.sh")] == "content2"
-    assert len(sources) == 2  # empty.sh should be ignored
-
-
-def test_collect_script_sources_not_found():
-    """Tests error handling when the scripts directory doesn't exist."""
-    with pytest.raises(FileNotFoundError):
-        compile_all.collect_script_sources(Path("nonexistent/dir"))
-
-
-def test_collect_script_sources_no_scripts(tmp_path: Path):
-    """Tests error handling when no non-empty scripts are found."""
-    (tmp_path / "scripts").mkdir()
-    with pytest.raises(RuntimeError, match="No non-empty scripts found"):
-        compile_all.collect_script_sources(tmp_path / "scripts")
-
-
-# test_inline_bash_to_yaml.py
 
 
 # --- Fixtures ---

@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
 
 
+def read_bash_script(path: Path) -> str:
+    """Reads a bash script and inlines any sourced files."""
+    logger.debug(f"Reading and inlining script from: {path}")
+
+    # Use the new bash_reader to recursively inline all `source` commands
+    content = inline_bash_source(path)
+
+    if not content.strip():
+        raise ValueError(f"Script is empty or only contains whitespace: {path}")
+
+    lines = content.splitlines()
+    if lines and lines[0].startswith("#!"):
+        logger.debug(f"Stripping shebang from script: {lines[0]}")
+        lines = lines[1:]
+
+    return "\n".join(lines)
+
+
 def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None = None) -> str:
     """
     Reads a bash script and recursively inlines content from sourced files.

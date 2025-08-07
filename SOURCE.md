@@ -4,13 +4,16 @@
 ├── clone2local.py
 ├── compile_all.py
 ├── config.py
+├── detect_drift.py
 ├── init_project.py
-├── logging_config.py
-├── mock_ci_vars.py
 ├── py.typed
 ├── shred_all.py
 ├── update_checker.py
-├── utils.py
+├── utils/
+│   ├── dotenv.py
+│   ├── logging_config.py
+│   ├── mock_ci_vars.py
+│   └── utils.py
 ├── watch_files.py
 ├── __about__.py
 └── __main__.py
@@ -35,6 +38,24 @@ logger = logging.getLogger(__name__)
 # - (?P<path>[\w./\\-]+) - Captures the file path.
 # - \s*$        - Optional whitespace until the end of the line.
 SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
+
+
+def read_bash_script(path: Path) -> str:
+    """Reads a bash script and inlines any sourced files."""
+    logger.debug(f"Reading and inlining script from: {path}")
+
+    # Use the new bash_reader to recursively inline all `source` commands
+    content = inline_bash_source(path)
+
+    if not content.strip():
+        raise ValueError(f"Script is empty or only contains whitespace: {path}")
+
+    lines = content.splitlines()
+    if lines and lines[0].startswith("#!"):
+        logger.debug(f"Stripping shebang from script: {lines[0]}")
+        lines = lines[1:]
+
+    return "\n".join(lines)
 
 
 def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None = None) -> str:
@@ -314,18 +335,6 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
         raise
 
     logger.info("Successfully cloned directories into %s", clone_path)
-
-
-def clone2local_handler(args) -> None:
-    """
-    Argparse handler for the clone2local command.
-
-    This handler remains compatible with the new archive-based fetch function.
-    """
-    # This function now calls the new implementation, preserving the call stack.
-    if str(args.repo_url).startswith("ssh"):
-        return clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir)
-    return fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir)
 ```
 ## File: compile_all.py
 ```python
@@ -336,7 +345,6 @@ import difflib
 import io
 import logging
 import multiprocessing
-import re
 import shlex
 import sys
 from pathlib import Path
@@ -347,64 +355,20 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from bash2gitlab.bash_reader import inline_bash_source
-from bash2gitlab.utils import remove_leading_blank_lines
+from bash2gitlab.bash_reader import read_bash_script
+from bash2gitlab.utils.dotenv import parse_env_file
+from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
 
 logger = logging.getLogger(__name__)
 
-BANNER = """# DO NOT EDIT
+BANNER = f"""# DO NOT EDIT
 # This is a compiled file, compiled with bash2gitlab
 # Recompile instead of editing this file.
+#
+# Compiled with the command: 
+#     {' '.join(sys.argv)}
 
 """
-
-
-def short_path(path: Path) -> str:
-    """
-    Return the path relative to the current working directory if possible.
-    Otherwise, return the absolute path.
-
-    Args:
-        path (Path): The path to format for debugging.
-
-    Returns:
-        str: Relative path or absolute path as a fallback.
-    """
-    try:
-        return str(path.relative_to(Path.cwd()))
-    except ValueError:
-        return str(path.resolve())
-
-
-def parse_env_file(file_content: str) -> dict[str, str]:
-    """
-    Parses a .env-style file content into a dictionary.
-    Handles lines like 'KEY=VALUE' and 'export KEY=VALUE'.
-
-    Args:
-        file_content (str): The content of the variables file.
-
-    Returns:
-        dict[str, str]: A dictionary of the parsed variables.
-    """
-    variables = {}
-    logger.debug("Parsing global variables file.")
-    for line in file_content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        # Regex to handle 'export KEY=VALUE', 'KEY=VALUE', etc.
-        match = re.match(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$", line)
-        if match:
-            key = match.group("key")
-            value = match.group("value").strip()
-            # Remove matching quotes from the value
-            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-                value = value[1:-1]
-            variables[key] = value
-            logger.debug(f"Found global variable: {key}")
-    return variables
 
 
 def extract_script_path(command_line: str) -> str | None:
@@ -444,42 +408,9 @@ def extract_script_path(command_line: str) -> str | None:
     return None
 
 
-# def read_bash_script(path: Path, script_sources: dict[str, str]) -> str:
-#     """Reads a bash script's content from the pre-collected source map and strips the shebang if present."""
-#     if str(path) not in script_sources:
-#         raise FileNotFoundError(f"Script not found in source map: {path}")
-#     logger.debug(f"Reading script from source map: {path}")
-#     content = script_sources[str(path)].strip()
-#     if not content:
-#         raise ValueError(f"Script is empty: {path}")
-#
-#     lines = content.splitlines()
-#     if lines and lines[0].startswith("#!"):
-#         logger.debug(f"Stripping shebang from script: {lines[0]}")
-#         lines = lines[1:]
-#     return "\n".join(lines)
-
-
-def read_bash_script(path: Path, _script_sources: dict[str, str]) -> str:
-    """Reads a bash script and inlines any sourced files."""
-    logger.debug(f"Reading and inlining script from: {path}")
-
-    # Use the new bash_reader to recursively inline all `source` commands
-    content = inline_bash_source(path)
-
-    if not content.strip():
-        raise ValueError(f"Script is empty or only contains whitespace: {path}")
-
-    lines = content.splitlines()
-    if lines and lines[0].startswith("#!"):
-        logger.debug(f"Stripping shebang from script: {lines[0]}")
-        lines = lines[1:]
-
-    return "\n".join(lines)
-
-
 def process_script_list(
-    script_list: Union[list[Any], str], scripts_root: Path, script_sources: dict[str, str]
+    script_list: Union[list[Any], str],
+    scripts_root: Path,
 ) -> Union[list[Any], LiteralScalarString]:
     """
     Processes a list of script lines, inlining any shell script references
@@ -508,7 +439,7 @@ def process_script_list(
             rel_path = script_path_str.strip().lstrip("./")
             script_path = scripts_root / rel_path
             try:
-                bash_code = read_bash_script(script_path, script_sources)
+                bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
 
                 # Check if this specific script is long
@@ -540,12 +471,12 @@ def process_script_list(
         return processed_items
 
 
-def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, str]) -> int:
+def process_job(job_data: dict, scripts_root: Path) -> int:
     """Processes a single job definition to inline scripts."""
     found = 0
     for script_key in ["script", "before_script", "after_script", "pre_get_sources_script"]:
         if script_key in job_data:
-            result = process_script_list(job_data[script_key], scripts_root, script_sources)
+            result = process_script_list(job_data[script_key], scripts_root)
             if result != job_data[script_key]:
                 job_data[script_key] = result
                 found += 1
@@ -555,7 +486,6 @@ def process_job(job_data: dict, scripts_root: Path, script_sources: dict[str, st
 def inline_gitlab_scripts(
     gitlab_ci_yaml: str,
     scripts_root: Path,
-    script_sources: dict[str, str],
     global_vars: dict[str, str],
     uncompiled_path: Path,  # Path to look for job_name_variables.sh files
 ) -> tuple[int, str]:
@@ -583,25 +513,23 @@ def inline_gitlab_scripts(
     for name in ["after_script", "before_script"]:
         if name in data:
             logger.info(f"Processing top-level '{name}' section, even though gitlab has deprecated them.")
-            result = process_script_list(data[name], scripts_root, script_sources)
+            result = process_script_list(data[name], scripts_root)
             if result != data[name]:
                 data[name] = result
                 inlined_count += 1
 
     # Process all jobs and top-level script lists (which are often used for anchors)
     for job_name, job_data in data.items():
-        # --- MODIFICATION START ---
         # Handle top-level keys that are lists of scripts. This pattern is commonly
         # used to create reusable script blocks with YAML anchors, e.g.:
         # .my-script-template: &my-script-anchor
         #   - ./scripts/my-script.sh
         if isinstance(job_data, list):
             logger.debug(f"Processing top-level list key '{job_name}', potentially a script anchor.")
-            result = process_script_list(job_data, scripts_root, script_sources)
+            result = process_script_list(job_data, scripts_root)
             if result != job_data:
                 data[job_name] = result
                 inlined_count += 1
-        # --- MODIFICATION END ---
         elif isinstance(job_data, dict):
             # Look for and process job-specific variables file
             safe_job_name = job_name.replace(":", "_")
@@ -630,17 +558,17 @@ def inline_gitlab_scripts(
                 or "pre_get_sources_script" in job_data
             ):
                 logger.info(f"Processing job: {job_name}")
-                inlined_count += process_job(job_data, scripts_root, script_sources)
+                inlined_count += process_job(job_data, scripts_root)
             if "hooks" in job_data:
                 if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
                     logger.info(f"Processing pre_get_sources_script: {job_name}")
-                    inlined_count += process_job(job_data["hooks"], scripts_root, script_sources)
+                    inlined_count += process_job(job_data["hooks"], scripts_root)
             if "run" in job_data:
                 if isinstance(job_data["run"], list):
                     for item in job_data["run"]:
                         if isinstance(item, dict) and "script" in item:
                             logger.info(f"Processing run/script: {job_name}")
-                            inlined_count += process_job(item, scripts_root, script_sources)
+                            inlined_count += process_job(item, scripts_root)
 
     # --- Reorder top-level keys for consistent output ---
     logger.debug("Reordering top-level keys in the final YAML.")
@@ -659,32 +587,6 @@ def inline_gitlab_scripts(
     out_stream = io.StringIO()
     yaml.dump(ordered_data, out_stream)  # Dump the reordered data
     return inlined_count, out_stream.getvalue()
-
-
-def collect_script_sources(scripts_dir: Path) -> dict[str, str]:
-    """Recursively finds all .sh files and reads them into a dictionary."""
-    if not scripts_dir.is_dir():
-        raise FileNotFoundError(f"Scripts directory not found: {scripts_dir}")
-
-    script_sources = {}
-    for script_file in scripts_dir.glob("**/*.sh"):
-        content = script_file.read_text(encoding="utf-8").strip()
-        if not content:
-            logger.warning(f"Script is empty and will be ignored: {script_file}")
-            continue
-        script_sources[str(script_file)] = content
-
-    for script_file in scripts_dir.glob("**/*.ps1"):
-        content = script_file.read_text(encoding="utf-8").strip()
-        if not content:
-            logger.warning(f"Script is empty and will be ignored: {script_file}")
-            continue
-        script_sources[str(script_file)] = content
-
-    if not script_sources:
-        raise RuntimeError(f"No non-empty scripts found in '{scripts_dir}'.")
-
-    return script_sources
 
 
 def write_yaml_and_hash(
@@ -823,7 +725,6 @@ def _compile_single_file(
     source_path: Path,
     output_file: Path,
     scripts_path: Path,
-    script_sources: dict[str, str],
     variables: dict[str, str],
     uncompiled_path: Path,
     dry_run: bool,
@@ -835,9 +736,7 @@ def _compile_single_file(
     """
     logger.info(f"Processing {label}: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
-    inlined_for_file, compiled_text = inline_gitlab_scripts(
-        raw_text, scripts_path, script_sources, variables, uncompiled_path
-    )
+    inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
     final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
     written = write_compiled_file(output_file, final_content, dry_run)
     return inlined_for_file, int(written)
@@ -876,8 +775,6 @@ def process_uncompiled_directory(
         if templates_dir.is_dir():
             output_templates_dir.mkdir(parents=True, exist_ok=True)
 
-    script_sources = collect_script_sources(scripts_path)
-
     global_vars = {}
     global_vars_path = uncompiled_path / "global_variables.sh"
     if global_vars_path.is_file():
@@ -913,17 +810,17 @@ def process_uncompiled_directory(
 
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
-            (src, out, scripts_path, script_sources, vars, uncompiled_path, dry_run, label)
-            for src, out, vars, label in files_to_process
+            (src, out, scripts_path, variables, uncompiled_path, dry_run, label)
+            for src, out, variables, label in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
             results = pool.starmap(_compile_single_file, args_list)
         total_inlined_count += sum(inlined for inlined, _ in results)
         written_files_count += sum(written for _, written in results)
     else:
-        for src, out, vars, label in files_to_process:
+        for src, out, variables, label in files_to_process:
             inlined_for_file, wrote = _compile_single_file(
-                src, out, scripts_path, script_sources, vars, uncompiled_path, dry_run, label
+                src, out, scripts_path, variables, uncompiled_path, dry_run, label
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
@@ -1143,6 +1040,272 @@ def _reset_for_testing(config_path_override: Path | None = None):
     global config
     config = _Config(config_path_override=config_path_override)
 ```
+## File: detect_drift.py
+```python
+"""
+Detects "drift" in compiled files by comparing them against their .hash files.
+
+This module provides functionality to verify the integrity of compiled YAML files
+generated by the main compiler. The compiler creates a `.hash` file for each
+YAML file it writes, containing a base64 encoded snapshot of the file's exact
+content at the time of creation.
+
+This checker iterates through all `.hash` files, decodes their contents, and
+compares them with the current contents of the corresponding compiled files.
+If any discrepancies are found, it indicates that a file has been manually
+edited after compilation. The module will then print a user-friendly diff
+report for each modified file and return a non-zero exit code, which is
+useful for integration into CI/CD pipelines to prevent unintended changes.
+"""
+
+from __future__ import annotations
+
+import base64
+import difflib
+import logging
+import os
+from collections.abc import Generator
+from pathlib import Path
+
+
+# ANSI color codes for pretty printing the diff.
+# This class now checks for NO_COLOR and CI environment variables to automatically
+# disable color and other ANSI escape codes for better accessibility and CI/CD logs.
+class Colors:
+    # The NO_COLOR spec (no-color.org) and the common 'CI' variable for Continuous Integration
+    # environments are used to disable ANSI escape codes.
+    _enabled = "NO_COLOR" not in os.environ and "CI" not in os.environ
+
+    if _enabled:
+        HEADER = "\033[95m"
+        OKBLUE = "\033[94m"
+        OKCYAN = "\033[96m"
+        OKGREEN = "\033[92m"
+        WARNING = "\033[93m"
+        FAIL = "\033[91m"
+        ENDC = "\033[0m"
+        BOLD = "\033[1m"
+        UNDERLINE = "\033[4m"
+        RED_BG = "\033[41m"
+        GREEN_BG = "\033[42m"
+    else:
+        # If colors are disabled, all attributes are empty strings.
+        HEADER, OKBLUE, OKCYAN, OKGREEN, WARNING, FAIL, ENDC, BOLD, UNDERLINE, RED_BG, GREEN_BG = (
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+        )
+
+
+# Setting up a logger for this module. The calling application can configure the handler.
+logger = logging.getLogger(__name__)
+
+
+def _decode_hash_content(hash_file: Path) -> str | None:
+    """
+    Reads and decodes the base64 content of a .hash file.
+
+    Args:
+        hash_file: The path to the .hash file.
+
+    Returns:
+        The decoded string content, or None if an error occurs.
+    """
+    try:
+        last_known_base64 = hash_file.read_text(encoding="utf-8").strip()
+        if not last_known_base64:
+            logger.warning(f"Hash file is empty: {hash_file}")
+            return None
+        last_known_content_bytes = base64.b64decode(last_known_base64)
+        return last_known_content_bytes.decode("utf-8")
+    except (ValueError, TypeError) as e:
+        logger.error(f"Could not decode the .hash file '{hash_file}'. It may be corrupted. Error: {e}")
+        return None
+    except FileNotFoundError:
+        logger.error(f"Hash file not found: {hash_file}")
+        return None
+
+
+def _get_source_file_from_hash(hash_file: Path) -> Path:
+    """
+    Derives the original source file path from a hash file path.
+    Example: /path/to/file.yml.hash -> /path/to/file.yml
+
+    Args:
+        hash_file: The path to the .hash file.
+
+    Returns:
+        The corresponding Path object for the original file.
+    """
+    return Path(str(hash_file).removesuffix(".hash"))
+
+
+def _generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
+    """
+    Generates a colorized (if enabled), unified diff string between two content strings.
+
+    Args:
+        source_content: The current content of the file.
+        decoded_content: The original content from the hash.
+        source_file_path: The path to the source file (for labeling the diff).
+
+    Returns:
+        A formatted and colorized diff string.
+    """
+    diff_lines = difflib.unified_diff(
+        decoded_content.splitlines(),
+        source_content.splitlines(),
+        fromfile=f"{source_file_path} (from hash)",
+        tofile=f"{source_file_path} (current, with manual edits)",
+        lineterm="",
+    )
+
+    colored_diff = []
+    for line in diff_lines:
+        if line.startswith("+"):
+            colored_diff.append(f"{Colors.OKGREEN}{line}{Colors.ENDC}")
+        elif line.startswith("-"):
+            colored_diff.append(f"{Colors.FAIL}{line}{Colors.ENDC}")
+        elif line.startswith("@@"):
+            colored_diff.append(f"{Colors.OKCYAN}{line}{Colors.ENDC}")
+        else:
+            colored_diff.append(line)
+    return "\n".join(colored_diff)
+
+
+def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
+    """
+    Finds all .hash files recursively in the given list of directories.
+
+    Args:
+        search_paths: A list of directories to search in.
+
+    Yields:
+        Path objects for each .hash file found.
+    """
+    for search_path in search_paths:
+        if not search_path.is_dir():
+            logger.warning(f"Search path is not a directory, skipping: {search_path}")
+            continue
+        logger.info(f"Searching for .hash files in: {search_path}")
+        yield from search_path.rglob("*.hash")
+
+
+def check_for_drift(
+    output_path: Path,
+    output_templates_dir: Path | None = None,
+) -> int:
+    """
+    Checks for manual edits (drift) in compiled files by comparing them against their .hash files.
+
+    This function iterates through all `.hash` files in the specified output directories,
+    decodes their contents, and compares them with the current contents of the
+    corresponding compiled files. It prints a diff for any files that have changed.
+
+    Args:
+        output_path: The main output directory containing compiled files (e.g., .gitlab-ci.yml).
+        output_templates_dir: The output directory for compiled templates, if any.
+
+    Returns:
+        int: Returns 0 if no drift is detected.
+             Returns 1 if drift is found or if errors occurred during the check.
+    """
+    drift_detected_count = 0
+    error_count = 0
+    search_paths = [output_path]
+    if output_templates_dir and output_templates_dir.is_dir():
+        search_paths.append(output_templates_dir)
+
+    hash_files = list(find_hash_files(search_paths))
+
+    if not hash_files:
+        logger.warning("No .hash files found to check for drift.")
+        return 0  # No hashes means no drift to detect.
+
+    print(f"Found {len(hash_files)} hash file(s). Checking for drift...")
+
+    for hash_file in hash_files:
+        source_file = _get_source_file_from_hash(hash_file)
+
+        if not source_file.exists():
+            logger.error(f"Drift check failed: Source file '{source_file}' is missing for hash file '{hash_file}'.")
+            error_count += 1
+            continue
+
+        decoded_content = _decode_hash_content(hash_file)
+        if decoded_content is None:
+            # Error already logged in the helper function
+            error_count += 1
+            continue
+
+        try:
+            current_content = source_file.read_text(encoding="utf-8")
+        except OSError as e:
+            logger.error(f"Drift check failed: Could not read source file '{source_file}'. Error: {e}")
+            error_count += 1
+            continue
+
+        if current_content != decoded_content:
+            drift_detected_count += 1
+            diff_text = _generate_pretty_diff(current_content, decoded_content, source_file)
+
+            # Print a clear, formatted report for the user, adapting to color support.
+            if Colors.ENDC:  # Check if colors are enabled
+                print("\n" + f"{Colors.RED_BG}{Colors.BOLD} DRIFT DETECTED IN: {source_file} {Colors.ENDC}")
+            else:
+                print(f"\n--- DRIFT DETECTED IN: {source_file} ---")
+
+            print(diff_text)
+
+            if Colors.ENDC:
+                print(f"{Colors.RED_BG}{' ' * 80}{Colors.ENDC}")
+
+    if drift_detected_count > 0 or error_count > 0:
+        # Print summary, adapting to color support
+        if Colors.ENDC:
+            print("\n" + f"{Colors.HEADER}{Colors.BOLD}{'-' * 25} DRIFT DETECTION SUMMARY {'-' * 25}{Colors.ENDC}")
+            if drift_detected_count > 0:
+                print(f"{Colors.FAIL}  - Found {drift_detected_count} file(s) with manual edits.{Colors.ENDC}")
+            if error_count > 0:
+                print(
+                    f"{Colors.WARNING}  - Encountered {error_count} error(s) during the check (see logs for details).{Colors.ENDC}"
+                )
+        else:
+            print("\n" + "--- DRIFT DETECTION SUMMARY ---")
+            if drift_detected_count > 0:
+                print(f"  - Found {drift_detected_count} file(s) with manual edits.")
+            if error_count > 0:
+                print(f"  - Encountered {error_count} error(s) during the check (see logs for details).")
+
+        print("\n  To resolve, you can either:")
+        print("    1. Revert the manual changes in the files listed above.")
+        print("    2. Update the input files to match and recompile.")
+        print("    3. Recompile and lose any changes to the above files.")
+
+        if Colors.ENDC:
+            print(f"{Colors.HEADER}{Colors.BOLD}{'-' * 79}{Colors.ENDC}")
+        else:
+            print(f"{'-' * 79}")
+
+        return 1
+    else:
+        # Print success message, adapting to color support
+        if Colors.ENDC:
+            print(f"\n{Colors.OKGREEN}Drift detection complete. No drift detected.{Colors.ENDC}")
+        else:
+            print("\nDrift detection complete. No drift detected.")
+
+        print("All compiled files match their hashes.")
+        return 0
+```
 ## File: init_project.py
 ```python
 from __future__ import annotations
@@ -1268,149 +1431,6 @@ def init_handler(args: Any):
         return 1
     return 0
 ```
-## File: logging_config.py
-```python
-"""
-Logging configuration.
-"""
-
-from __future__ import annotations
-
-import os
-from typing import Any
-
-try:
-    import colorlog  # noqa
-
-    # This is only here so that I can see if colorlog is installed
-    # and to keep autofixers from removing an "unused import"
-    if False:  # pylint: disable=using-constant-test
-        assert colorlog  # noqa # nosec
-    colorlog_available = True
-except ImportError:  # no qa
-    colorlog_available = False
-
-
-def generate_config(level: str = "DEBUG") -> dict[str, Any]:
-    """
-    Generate a logging configuration.
-    Args:
-        level: The logging level.
-
-    Returns:
-        dict: The logging configuration.
-    """
-    config: dict[str, Any] = {
-        "version": 1,
-        "disable_existing_loggers": True,
-        "formatters": {
-            "standard": {"format": "[%(levelname)s] %(name)s: %(message)s"},
-            "colored": {
-                "()": "colorlog.ColoredFormatter",
-                "format": "%(log_color)s%(levelname)-8s%(reset)s %(green)s%(message)s",
-            },
-        },
-        "handlers": {
-            "default": {
-                "level": level,
-                "formatter": "colored",
-                "class": "logging.StreamHandler",
-                "stream": "ext://sys.stdout",  # Default is stderr
-            },
-        },
-        "loggers": {
-            "bash2gitlab": {
-                "handlers": ["default"],
-                "level": level,
-                "propagate": False,
-            }
-        },
-    }
-    if not colorlog_available:
-        del config["formatters"]["colored"]
-        config["handlers"]["default"]["formatter"] = "standard"
-
-    if os.environ.get("NO_COLOR") or os.environ.get("CI"):
-        config["handlers"]["default"]["formatter"] = "standard"
-
-    return config
-```
-## File: mock_ci_vars.py
-```python
-from __future__ import annotations
-
-import logging
-
-logger = logging.getLogger(__name__)
-
-
-def generate_mock_ci_variables_script(output_path: str = "mock_ci_variables.sh") -> None:
-    """Generate a shell script exporting mock GitLab CI/CD variables."""
-    ci_vars: dict[str, str] = {
-        "CI": "false",
-        "GITLAB_CI": "false",
-        "CI_API_V4_URL": "https://gitlab.example.com/api/v4",
-        "CI_API_GRAPHQL_URL": "https://gitlab.example.com/api/graphql",
-        "CI_PROJECT_ID": "1234",
-        "CI_PROJECT_NAME": "example-project",
-        "CI_PROJECT_PATH": "group/example-project",
-        "CI_PROJECT_NAMESPACE": "group",
-        "CI_PROJECT_ROOT_NAMESPACE": "group",
-        "CI_PROJECT_URL": "https://gitlab.example.com/group/example-project",
-        "CI_PROJECT_VISIBILITY": "private",
-        "CI_DEFAULT_BRANCH": "main",
-        "CI_COMMIT_SHA": "abcdef1234567890abcdef1234567890abcdef12",
-        "CI_COMMIT_SHORT_SHA": "abcdef12",
-        "CI_COMMIT_BRANCH": "feature-branch",
-        "CI_COMMIT_REF_NAME": "feature-branch",
-        "CI_COMMIT_REF_SLUG": "feature-branch",
-        "CI_COMMIT_BEFORE_SHA": "0000000000000000000000000000000000000000",
-        "CI_COMMIT_MESSAGE": "Add new CI feature",
-        "CI_COMMIT_TITLE": "Add new CI feature",
-        "CI_COMMIT_TIMESTAMP": "2025-07-27T12:00:00Z",
-        "CI_COMMIT_AUTHOR": "Test User <test@example.com>",
-        "CI_PIPELINE_ID": "5678",
-        "CI_PIPELINE_IID": "42",
-        "CI_PIPELINE_SOURCE": "push",
-        "CI_PIPELINE_URL": "https://gitlab.example.com/group/example-project/-/pipelines/5678",
-        "CI_PIPELINE_CREATED_AT": "2025-07-27T12:00:05Z",
-        "CI_JOB_ID": "91011",
-        "CI_JOB_NAME": "test-job",
-        "CI_JOB_STAGE": "test",
-        "CI_JOB_STATUS": "running",
-        "CI_JOB_TOKEN": "xyz-token",
-        "CI_JOB_URL": "https://gitlab.example.com/group/example-project/-/jobs/91011",
-        "CI_JOB_STARTED_AT": "2025-07-27T12:00:10Z",
-        "CI_PROJECT_DIR": "/builds/group/example-project",
-        "CI_BUILDS_DIR": "/builds",
-        "CI_RUNNER_ID": "55",
-        "CI_RUNNER_SHORT_TOKEN": "runner1234567890",
-        "CI_RUNNER_VERSION": "17.3.0",
-        "CI_SERVER_URL": "https://gitlab.example.com",
-        "CI_SERVER_HOST": "gitlab.example.com",
-        "CI_SERVER_PORT": "443",
-        "CI_SERVER_PROTOCOL": "https",
-        "CI_SERVER_NAME": "GitLab",
-        "CI_SERVER_VERSION": "17.2.1",
-        "CI_SERVER_VERSION_MAJOR": "17",
-        "CI_SERVER_VERSION_MINOR": "2",
-        "CI_SERVER_VERSION_PATCH": "1",
-        "CI_REPOSITORY_URL": "https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab.example.com/group/example-project.git",
-    }
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("#!/usr/bin/env bash\n")
-        f.write("# Auto-generated mock CI variables\n\n")
-        for key, val in ci_vars.items():
-            escaped = val.replace('"', '\\"')
-            f.write(f'export {key}="{escaped}"\n')
-
-    logger.info("Wrote %s with %d variables", output_path, len(ci_vars))
-
-
-if __name__ == "__main__":
-    generate_mock_ci_variables_script()
-```
 ## File: py.typed
 ```
 # when type checking dependents, tell type checkers to use this package's types
@@ -1427,7 +1447,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
-from bash2gitlab.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 
 logger = logging.getLogger(__name__)
 
@@ -1931,19 +1951,6 @@ def _update_cache(cache_dir: str, cache_file: str) -> None:
     except (OSError, PermissionError):
         pass
 ```
-## File: utils.py
-```python
-def remove_leading_blank_lines(text: str) -> str:
-    """
-    Removes leading blank lines (including lines with only whitespace) from a string.
-    """
-    lines = text.splitlines()
-    # Find the first non-blank line
-    for i, line in enumerate(lines):
-        if line.strip() != "":
-            return "\n".join(lines[i:])
-    return ""  # All lines were blank
-```
 ## File: watch_files.py
 ```python
 """
@@ -2128,16 +2135,29 @@ import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
-from bash2gitlab.clone2local import clone2local_handler
+from bash2gitlab.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
+from bash2gitlab.detect_drift import check_for_drift
 from bash2gitlab.init_project import init_handler
-from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
 from bash2gitlab.update_checker import check_for_updates
+from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
+
+
+def clone2local_handler(args: argparse.Namespace) -> None:
+    """
+    Argparse handler for the clone2local command.
+
+    This handler remains compatible with the new archive-based fetch function.
+    """
+    # This function now calls the new implementation, preserving the call stack.
+    if str(args.repo_url).startswith("ssh"):
+        return clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir)
+    return fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir)
 
 
 def compile_handler(args: argparse.Namespace):
@@ -2181,6 +2201,13 @@ def compile_handler(args: argparse.Namespace):
     except (FileNotFoundError, RuntimeError, ValueError) as e:
         logger.error(f"❌ An error occurred: {e}")
         sys.exit(1)
+
+
+def drift_handler(args: argparse.Namespace) -> None:
+    if not hasattr(args, "templates_out") or not args.templates_out:
+        check_for_drift(Path(args.out), None)
+    else:
+        check_for_drift(Path(args.out), Path(args.templates_out))
 
 
 def shred_handler(args: argparse.Namespace):
@@ -2252,15 +2279,15 @@ def main() -> int:
     compile_parser.add_argument(
         "--scripts",
         dest="scripts_dir",
-        help="Directory containing bash scripts to inline. (Default: <in>)",
+        help="Directory containing bash scripts to inline.",
     )
     compile_parser.add_argument(
         "--templates-in",
-        help="Input directory for CI templates. (Default: <in>)",
+        help="Input directory for CI templates.",
     )
     compile_parser.add_argument(
         "--templates-out",
-        help="Output directory for compiled CI templates. (Default: <out>)",
+        help="Output directory for compiled CI templates.",
     )
     compile_parser.add_argument(
         "--parallelism",
@@ -2308,6 +2335,26 @@ def main() -> int:
     shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
+
+    # detect drift command
+    # --- Shred Command ---
+    detect_drift_parser = subparsers.add_parser(
+        "detect-drift", help="Detect if generated files have been edited and display what the edits are."
+    )
+    detect_drift_parser.add_argument(
+        "--out",
+        dest="out",
+        help="Output path where generated files are.",
+    )
+    detect_drift_parser.add_argument(
+        "--templates-out",
+        help="Output directory where compiled CI templates are.",
+    )
+    detect_drift_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
+    )
+    detect_drift_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    detect_drift_parser.set_defaults(func=drift_handler)
 
     # --- copy2local Command ---
     clone_parser = subparsers.add_parser(
@@ -2411,4 +2458,220 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+```
+## File: utils\dotenv.py
+```python
+from __future__ import annotations
+
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+
+def parse_env_file(file_content: str) -> dict[str, str]:
+    """
+    Parses a .env-style file content into a dictionary.
+    Handles lines like 'KEY=VALUE' and 'export KEY=VALUE'.
+
+    Args:
+        file_content (str): The content of the variables file.
+
+    Returns:
+        dict[str, str]: A dictionary of the parsed variables.
+    """
+    variables = {}
+    logger.debug("Parsing global variables file.")
+    for line in file_content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+
+        # Regex to handle 'export KEY=VALUE', 'KEY=VALUE', etc.
+        match = re.match(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$", line)
+        if match:
+            key = match.group("key")
+            value = match.group("value").strip()
+            # Remove matching quotes from the value
+            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                value = value[1:-1]
+            variables[key] = value
+            logger.debug(f"Found global variable: {key}")
+    return variables
+```
+## File: utils\logging_config.py
+```python
+"""
+Logging configuration.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+try:
+    import colorlog  # noqa
+
+    # This is only here so that I can see if colorlog is installed
+    # and to keep autofixers from removing an "unused import"
+    if False:  # pylint: disable=using-constant-test
+        assert colorlog  # noqa # nosec
+    colorlog_available = True
+except ImportError:  # no qa
+    colorlog_available = False
+
+
+def generate_config(level: str = "DEBUG") -> dict[str, Any]:
+    """
+    Generate a logging configuration.
+    Args:
+        level: The logging level.
+
+    Returns:
+        dict: The logging configuration.
+    """
+    config: dict[str, Any] = {
+        "version": 1,
+        "disable_existing_loggers": True,
+        "formatters": {
+            "standard": {"format": "[%(levelname)s] %(name)s: %(message)s"},
+            "colored": {
+                "()": "colorlog.ColoredFormatter",
+                "format": "%(log_color)s%(levelname)-8s%(reset)s %(green)s%(message)s",
+            },
+        },
+        "handlers": {
+            "default": {
+                "level": level,
+                "formatter": "colored",
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",  # Default is stderr
+            },
+        },
+        "loggers": {
+            "bash2gitlab": {
+                "handlers": ["default"],
+                "level": level,
+                "propagate": False,
+            }
+        },
+    }
+    if not colorlog_available:
+        del config["formatters"]["colored"]
+        config["handlers"]["default"]["formatter"] = "standard"
+
+    if os.environ.get("NO_COLOR") or os.environ.get("CI"):
+        config["handlers"]["default"]["formatter"] = "standard"
+
+    return config
+```
+## File: utils\mock_ci_vars.py
+```python
+from __future__ import annotations
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def generate_mock_ci_variables_script(output_path: str = "mock_ci_variables.sh") -> None:
+    """Generate a shell script exporting mock GitLab CI/CD variables."""
+    ci_vars: dict[str, str] = {
+        "CI": "false",
+        "GITLAB_CI": "false",
+        "CI_API_V4_URL": "https://gitlab.example.com/api/v4",
+        "CI_API_GRAPHQL_URL": "https://gitlab.example.com/api/graphql",
+        "CI_PROJECT_ID": "1234",
+        "CI_PROJECT_NAME": "example-project",
+        "CI_PROJECT_PATH": "group/example-project",
+        "CI_PROJECT_NAMESPACE": "group",
+        "CI_PROJECT_ROOT_NAMESPACE": "group",
+        "CI_PROJECT_URL": "https://gitlab.example.com/group/example-project",
+        "CI_PROJECT_VISIBILITY": "private",
+        "CI_DEFAULT_BRANCH": "main",
+        "CI_COMMIT_SHA": "abcdef1234567890abcdef1234567890abcdef12",
+        "CI_COMMIT_SHORT_SHA": "abcdef12",
+        "CI_COMMIT_BRANCH": "feature-branch",
+        "CI_COMMIT_REF_NAME": "feature-branch",
+        "CI_COMMIT_REF_SLUG": "feature-branch",
+        "CI_COMMIT_BEFORE_SHA": "0000000000000000000000000000000000000000",
+        "CI_COMMIT_MESSAGE": "Add new CI feature",
+        "CI_COMMIT_TITLE": "Add new CI feature",
+        "CI_COMMIT_TIMESTAMP": "2025-07-27T12:00:00Z",
+        "CI_COMMIT_AUTHOR": "Test User <test@example.com>",
+        "CI_PIPELINE_ID": "5678",
+        "CI_PIPELINE_IID": "42",
+        "CI_PIPELINE_SOURCE": "push",
+        "CI_PIPELINE_URL": "https://gitlab.example.com/group/example-project/-/pipelines/5678",
+        "CI_PIPELINE_CREATED_AT": "2025-07-27T12:00:05Z",
+        "CI_JOB_ID": "91011",
+        "CI_JOB_NAME": "test-job",
+        "CI_JOB_STAGE": "test",
+        "CI_JOB_STATUS": "running",
+        "CI_JOB_TOKEN": "xyz-token",
+        "CI_JOB_URL": "https://gitlab.example.com/group/example-project/-/jobs/91011",
+        "CI_JOB_STARTED_AT": "2025-07-27T12:00:10Z",
+        "CI_PROJECT_DIR": "/builds/group/example-project",
+        "CI_BUILDS_DIR": "/builds",
+        "CI_RUNNER_ID": "55",
+        "CI_RUNNER_SHORT_TOKEN": "runner1234567890",
+        "CI_RUNNER_VERSION": "17.3.0",
+        "CI_SERVER_URL": "https://gitlab.example.com",
+        "CI_SERVER_HOST": "gitlab.example.com",
+        "CI_SERVER_PORT": "443",
+        "CI_SERVER_PROTOCOL": "https",
+        "CI_SERVER_NAME": "GitLab",
+        "CI_SERVER_VERSION": "17.2.1",
+        "CI_SERVER_VERSION_MAJOR": "17",
+        "CI_SERVER_VERSION_MINOR": "2",
+        "CI_SERVER_VERSION_PATCH": "1",
+        "CI_REPOSITORY_URL": "https://gitlab-ci-token:$CI_JOB_TOKEN@gitlab.example.com/group/example-project.git",
+    }
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write("#!/usr/bin/env bash\n")
+        f.write("# Auto-generated mock CI variables\n\n")
+        for key, val in ci_vars.items():
+            escaped = val.replace('"', '\\"')
+            f.write(f'export {key}="{escaped}"\n')
+
+    logger.info("Wrote %s with %d variables", output_path, len(ci_vars))
+
+
+if __name__ == "__main__":
+    generate_mock_ci_variables_script()
+```
+## File: utils\utils.py
+```python
+from pathlib import Path
+
+
+def remove_leading_blank_lines(text: str) -> str:
+    """
+    Removes leading blank lines (including lines with only whitespace) from a string.
+    """
+    lines = text.splitlines()
+    # Find the first non-blank line
+    for i, line in enumerate(lines):
+        if line.strip() != "":
+            return "\n".join(lines[i:])
+    return ""  # All lines were blank
+
+
+def short_path(path: Path) -> str:
+    """
+    Return the path relative to the current working directory if possible.
+    Otherwise, return the absolute path.
+
+    Args:
+        path (Path): The path to format for debugging.
+
+    Returns:
+        str: Relative path or absolute path as a fallback.
+    """
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path.resolve())
 ```

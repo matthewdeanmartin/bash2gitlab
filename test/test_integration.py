@@ -6,7 +6,8 @@ import pytest
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from bash2gitlab.compile_all import extract_script_path, parse_env_file, process_uncompiled_directory
+from bash2gitlab.compile_all import extract_script_path, process_uncompiled_directory
+from bash2gitlab.utils.dotenv import parse_env_file
 
 # Initialize YAML parser for checking output
 yaml = YAML()

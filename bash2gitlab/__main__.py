@@ -30,16 +30,29 @@ import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
-from bash2gitlab.clone2local import clone2local_handler
+from bash2gitlab.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
+from bash2gitlab.detect_drift import check_for_drift
 from bash2gitlab.init_project import init_handler
-from bash2gitlab.logging_config import generate_config
 from bash2gitlab.shred_all import shred_gitlab_ci
 from bash2gitlab.update_checker import check_for_updates
+from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
+
+
+def clone2local_handler(args: argparse.Namespace) -> None:
+    """
+    Argparse handler for the clone2local command.
+
+    This handler remains compatible with the new archive-based fetch function.
+    """
+    # This function now calls the new implementation, preserving the call stack.
+    if str(args.repo_url).startswith("ssh"):
+        return clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir)
+    return fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir)
 
 
 def compile_handler(args: argparse.Namespace):
@@ -83,6 +96,13 @@ def compile_handler(args: argparse.Namespace):
     except (FileNotFoundError, RuntimeError, ValueError) as e:
         logger.error(f"❌ An error occurred: {e}")
         sys.exit(1)
+
+
+def drift_handler(args: argparse.Namespace) -> None:
+    if not hasattr(args, "templates_out") or not args.templates_out:
+        check_for_drift(Path(args.out), None)
+    else:
+        check_for_drift(Path(args.out), Path(args.templates_out))
 
 
 def shred_handler(args: argparse.Namespace):
@@ -154,15 +174,15 @@ def main() -> int:
     compile_parser.add_argument(
         "--scripts",
         dest="scripts_dir",
-        help="Directory containing bash scripts to inline. (Default: <in>)",
+        help="Directory containing bash scripts to inline.",
     )
     compile_parser.add_argument(
         "--templates-in",
-        help="Input directory for CI templates. (Default: <in>)",
+        help="Input directory for CI templates.",
     )
     compile_parser.add_argument(
         "--templates-out",
-        help="Output directory for compiled CI templates. (Default: <out>)",
+        help="Output directory for compiled CI templates.",
     )
     compile_parser.add_argument(
         "--parallelism",
@@ -210,6 +230,26 @@ def main() -> int:
     shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     shred_parser.set_defaults(func=shred_handler)
+
+    # detect drift command
+    # --- Shred Command ---
+    detect_drift_parser = subparsers.add_parser(
+        "detect-drift", help="Detect if generated files have been edited and display what the edits are."
+    )
+    detect_drift_parser.add_argument(
+        "--out",
+        dest="out",
+        help="Output path where generated files are.",
+    )
+    detect_drift_parser.add_argument(
+        "--templates-out",
+        help="Output directory where compiled CI templates are.",
+    )
+    detect_drift_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
+    )
+    detect_drift_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    detect_drift_parser.set_defaults(func=drift_handler)
 
     # --- copy2local Command ---
     clone_parser = subparsers.add_parser(

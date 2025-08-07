@@ -209,15 +209,3 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
         raise
 
     logger.info("Successfully cloned directories into %s", clone_path)
-
-
-def clone2local_handler(args) -> None:
-    """
-    Argparse handler for the clone2local command.
-
-    This handler remains compatible with the new archive-based fetch function.
-    """
-    # This function now calls the new implementation, preserving the call stack.
-    if str(args.repo_url).startswith("ssh"):
-        return clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir)
-    return fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir)

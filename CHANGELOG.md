@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.4] - 2025-08-06
+
+### Added
+
+- Shows command used to generate in the header
+- Added "detect-drift" command, to complement the existing drift detection that runs at compile time.
+
+
 ## [0.8.3] - 2025-08-05
 
 ### Added

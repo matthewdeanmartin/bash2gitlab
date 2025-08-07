@@ -8,7 +8,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
-from bash2gitlab.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-from bash2gitlab.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 
 
 def test_generate_mock_ci_variables_script(tmp_path):

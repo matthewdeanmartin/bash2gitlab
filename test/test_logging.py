@@ -1,4 +1,4 @@
-from bash2gitlab.logging_config import generate_config
+from bash2gitlab.utils.logging_config import generate_config
 
 
 def test_generate_config():
