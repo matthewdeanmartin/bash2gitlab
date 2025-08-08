@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any, Union
 
-from ruamel.yaml import YAML, CommentedMap
+from ruamel.yaml import CommentedMap
 from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
@@ -18,15 +18,25 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
+from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
+
+
+def remove_excess(command: str) -> str:
+    if "bash2gitlab" in command:
+        return command[command.index("bash2gitlab") :]
+    if "b2gl" in command:
+        return command[command.index("b2gl") :]
+    return command
+
 
 BANNER = f"""# DO NOT EDIT
 # This is a compiled file, compiled with bash2gitlab
 # Recompile instead of editing this file.
 #
 # Compiled with the command: 
-#     {' '.join(sys.argv)}
+#     {remove_excess(' '.join(sys.argv))}
 
 """
 
@@ -83,6 +93,8 @@ def process_script_list(
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
+    contains_tagged_scalar = False
+    contains_anchors_or_tags = False
 
     for item in script_list:
         # Check for non-string YAML objects first (like !reference).
@@ -91,6 +103,19 @@ def process_script_list(
                 contains_tagged_scalar = True
             processed_items.append(item)
             continue  # Go to next item
+
+        if not isinstance(item, str):
+            # Any non-plain string (TaggedScalar, Commented* nodes, etc.)
+            # means we must not collapse to a single literal block, or we risk
+            # losing anchors/tags/references semantics.
+            if isinstance(item, TaggedScalar):
+                contains_tagged_scalar = True
+                # ruamel nodes may have .anchor attribute; treat any present anchor as a blocker
+                anchor_val = getattr(getattr(item, "anchor", None), "value", None)
+                if anchor_val:
+                    contains_anchors_or_tags = True
+                    processed_items.append(item)
+                    continue
 
         # It's a string, see if it's a script path.
         script_path_str = extract_script_path(item)
@@ -101,8 +126,13 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
 
-                logger.info(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                logger.debug(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                # --- source-map breadcrumbs for debuggability ---
+                begin_marker = f"# >>> BEGIN inline: {script_path.as_posix()}"
+                end_marker = "# <<< END inline"
+                processed_items.append(begin_marker)
                 processed_items.extend(bash_lines)
+                processed_items.append(end_marker)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
                 processed_items.append(item)
@@ -114,17 +144,19 @@ def process_script_list(
     # Condition to use a literal block `|`:
     # 1. It must NOT contain any special YAML tags.
     # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
-    _ = list(type(_) for _ in processed_items)
-    if not contains_tagged_scalar and len(processed_items) > 5 and all(isinstance(_, str) for _ in processed_items):
-        # We can safely convert to a single string block.
-        final_script_block = "\n".join(map(str, processed_items))
-        logger.info("Formatting script block as a single literal block for clarity.")
+    # Collapse to a single literal block only when we're certain there are no YAML
+    # anchors/tags/references (on any item) and all items are plain strings.
+    only_plain_strings = all(isinstance(_, str) for _ in processed_items)
+    has_yaml_features = contains_tagged_scalar or contains_anchors_or_tags
+
+    if not has_yaml_features and only_plain_strings and len(processed_items) > 5:
+        final_script_block = "\n".join(processed_items)
+        logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)
     else:
-        # We must return a list to preserve YAML tags or because it's short.
-        if contains_tagged_scalar:
-            logger.debug("Preserving script block as a list to support YAML tags (!reference).")
-        return processed_items
+        if has_yaml_features and not only_plain_strings:
+            logger.debug("Preserving script block as a list to retain YAML anchors/tags/references.")
+    return processed_items
 
 
 def process_job(job_data: dict, scripts_root: Path) -> int:
@@ -151,14 +183,12 @@ def inline_gitlab_scripts(
     This version now supports inlining scripts in top-level lists used as YAML anchors.
     """
     inlined_count = 0
-    yaml = YAML()
-    yaml.width = 4096
-    yaml.preserve_quotes = True
+    yaml = get_yaml()
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
     # Merge global variables if provided
     if global_vars:
-        logger.info("Merging global variables into the YAML configuration.")
+        logger.debug("Merging global variables into the YAML configuration.")
         existing_vars = data.get("variables", {})
         merged_vars = global_vars.copy()
         # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
@@ -168,7 +198,7 @@ def inline_gitlab_scripts(
 
     for name in ["after_script", "before_script"]:
         if name in data:
-            logger.info(f"Processing top-level '{name}' section, even though gitlab has deprecated them.")
+            logger.warning(f"Processing top-level '{name}' section, even though gitlab has deprecated them.")
             result = process_script_list(data[name], scripts_root)
             if result != data[name]:
                 data[name] = result
@@ -193,7 +223,7 @@ def inline_gitlab_scripts(
             job_vars_path = uncompiled_path / job_vars_filename
 
             if job_vars_path.is_file():
-                logger.info(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
+                logger.debug(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
                 content = job_vars_path.read_text(encoding="utf-8")
                 job_specific_vars = parse_env_file(content)
 
@@ -213,17 +243,17 @@ def inline_gitlab_scripts(
                 or "after_script" in job_data
                 or "pre_get_sources_script" in job_data
             ):
-                logger.info(f"Processing job: {job_name}")
+                logger.debug(f"Processing job: {job_name}")
                 inlined_count += process_job(job_data, scripts_root)
             if "hooks" in job_data:
                 if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
-                    logger.info(f"Processing pre_get_sources_script: {job_name}")
+                    logger.debug(f"Processing pre_get_sources_script: {job_name}")
                     inlined_count += process_job(job_data["hooks"], scripts_root)
             if "run" in job_data:
                 if isinstance(job_data["run"], list):
                     for item in job_data["run"]:
                         if isinstance(item, dict) and "script" in item:
-                            logger.info(f"Processing run/script: {job_name}")
+                            logger.debug(f"Processing run/script: {job_name}")
                             inlined_count += process_job(item, scripts_root)
 
     # --- Reorder top-level keys for consistent output ---
@@ -323,21 +353,35 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     current_content = output_file.read_text(encoding="utf-8")
 
     # Load both YAML versions to compare their data structures
-    yaml = YAML()
+    # --- Gracefully handle YAML parsing ---
+    yaml = get_yaml()
+
+    last_known_doc = None
+    current_doc = None
+    is_current_corrupt = False
+
+    # First, try to load the last known good version. This should not fail unless the hash is corrupt.
     try:
-        current_doc = yaml.load(current_content)
         last_known_doc = yaml.load(last_known_content)
     except YAMLError as e:
         error_message = (
-            f"ERROR: Could not parse YAML from '{short_path(output_file)}'. It may be corrupted.\n"
+            f"ERROR: Could not parse YAML from the .hash file for '{short_path(output_file)}'. It is corrupted.\n"
             f"Error: {e}\n"
-            "Aborting. Please fix the file syntax or remove it to regenerate."
+            "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
         )
         logger.error(error_message)
         raise SystemExit(1) from e
 
-    # If the loaded documents are not identical, it means a meaningful change was made.
-    if current_doc != last_known_doc:
+    # Next, try to load the current on-disk version. This might fail if manually edited.
+    try:
+        current_doc = yaml.load(current_content)
+    except YAMLError:
+        # The current file is corrupt. Treat this as a manual edit.
+        is_current_corrupt = True
+        logger.warning(f"Could not parse YAML from '{short_path(output_file)}'; it appears to be corrupt.")
+
+    # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
+    if is_current_corrupt or current_doc != last_known_doc:
         # Generate a diff between the *last known good version* and the *current modified version*
         diff = difflib.unified_diff(
             last_known_content.splitlines(keepends=True),
@@ -347,10 +391,17 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         )
         diff_text = "".join(diff)
 
+        corruption_warning = (
+            "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n"
+            if is_current_corrupt
+            else ""
+        )
+
         error_message = (
             f"\n--- MANUAL EDIT DETECTED ---\n"
             f"CANNOT OVERWRITE: The destination file below has been modified:\n"
             f"  {output_file}\n\n"
+            f"{corruption_warning}"
             f"The script detected that its data no longer matches the last generated version.\n"
             f"To prevent data loss, the process has been stopped.\n\n"
             f"--- DETECTED CHANGES ---\n"
@@ -373,7 +424,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
     else:
-        logger.info(f"Content of {short_path(output_file)} is already up to date. Skipping.")
+        logger.debug(f"Content of {short_path(output_file)} is already up to date. Skipping.")
         return False
 
 
@@ -390,7 +441,7 @@ def _compile_single_file(
 
     Returns a tuple of the number of inlined sections and whether a file was written (0 or 1).
     """
-    logger.info(f"Processing {label}: {short_path(source_path)}")
+    logger.debug(f"Processing {label}: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
     inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
     final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text

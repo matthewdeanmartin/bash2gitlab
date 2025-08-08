@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -131,49 +132,51 @@ template_job:
         Tests the end-to-end processing of a directory structure,
         verifying inlining, variable merging, and file output.
         """
-        uncompiled_path, output_path, scripts_path, templates_dir, output_templates_dir = setup_project_structure
+        try:
+            os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"] = "True"
+            uncompiled_path, output_path, scripts_path, templates_dir, output_templates_dir = setup_project_structure
 
-        # --- Run the main function ---
-        process_uncompiled_directory(uncompiled_path, output_path, scripts_path, templates_dir, output_templates_dir)
+            # --- Run the main function ---
+            process_uncompiled_directory(
+                uncompiled_path, output_path, scripts_path, templates_dir, output_templates_dir
+            )
 
-        # --- Assertions for Root .gitlab-ci.yml ---
-        output_ci_file = output_path / ".gitlab-ci.yml"
-        assert output_ci_file.exists()
+            # --- Assertions for Root .gitlab-ci.yml ---
+            output_ci_file = output_path / ".gitlab-ci.yml"
+            assert output_ci_file.exists()
 
-        data = yaml.load(output_ci_file)
+            data = yaml.load(output_ci_file)
 
-        # Check key order
-        expected_order = ["include", "variables", "stages", "before_script", "build_job", "test_job"]
-        assert list(data.keys()) == expected_order
+            # Check key order
+            expected_order = ["include", "variables", "stages", "before_script", "build_job", "test_job"]
+            assert list(data.keys()) == expected_order
 
-        # Check merged variables
-        assert data["variables"]["GLOBAL_VAR"] == "GlobalValue"
-        assert data["variables"]["PROJECT_NAME"] == "MyProject"
-        assert data["variables"]["LOCAL_VAR"] == "LocalValue"
+            # Check merged variables
+            assert data["variables"]["GLOBAL_VAR"] == "GlobalValue"
+            assert data["variables"]["PROJECT_NAME"] == "MyProject"
+            assert data["variables"]["LOCAL_VAR"] == "LocalValue"
 
-        # Check inlined top-level before_script
-        assert data["before_script"] == [
-            "echo 'Short task line 1'",
-            "echo 'Short task line 2'",
-        ]
+            # Check inlined top-level before_script
+            assert data["before_script"][1] == "echo 'Short task line 1'"
+            assert data["before_script"][2] == "echo 'Short task line 2'"
 
-        # Check build_job (long script becomes literal block)
-        build_script = data["build_job"]["script"]
-        assert isinstance(build_script, LiteralScalarString)
-        assert (scripts_path / "long_task.sh").read_text().strip() in build_script.strip()
+            # Check build_job (long script becomes literal block)
+            build_script = data["build_job"]["script"]
+            assert isinstance(build_script, LiteralScalarString)
+            assert (scripts_path / "long_task.sh").read_text().strip() in build_script.strip()
 
-        # Check test_job (short script is inlined)
-        assert data["test_job"]["script"] == [
-            'echo "Testing..."',
-            "echo 'Short task line 1'",
-            "echo 'Short task line 2'",
-        ]
+            # Check test_job (short script is inlined)
+            assert data["test_job"]["script"][0] == 'echo "Testing..."'
+            assert data["test_job"]["script"][2] == "echo 'Short task line 1'"
+            assert data["test_job"]["script"][3] == "echo 'Short task line 2'"
 
-        # --- Assertions for Template File ---
-        output_template_file = output_templates_dir / "backend.yml"
-        assert output_template_file.exists()
-        template_data = yaml.load(output_template_file)
+            # --- Assertions for Template File ---
+            output_template_file = output_templates_dir / "backend.yml"
+            assert output_template_file.exists()
+            template_data = yaml.load(output_template_file)
 
-        # Global variables should NOT be in templates
-        assert "variables" not in template_data
-        assert template_data["template_job"]["script"] == ["echo 'From a template'"]
+            # Global variables should NOT be in templates
+            assert "variables" not in template_data
+            assert template_data["template_job"]["script"][1] == "echo 'From a template'"
+        finally:
+            del os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"]

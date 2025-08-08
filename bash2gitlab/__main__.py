@@ -35,6 +35,7 @@ from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
 from bash2gitlab.detect_drift import check_for_drift
 from bash2gitlab.init_project import init_handler
+from bash2gitlab.map_deploy_command import get_deployment_map, map_deploy
 from bash2gitlab.shred_all import shred_gitlab_ci
 from bash2gitlab.update_checker import check_for_updates
 from bash2gitlab.utils.logging_config import generate_config
@@ -304,6 +305,45 @@ def main() -> int:
     )
     init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     init_parser.set_defaults(func=init_handler)
+
+    # --- map-deploy Command ---
+    map_deploy_parser = subparsers.add_parser(
+        "map-deploy",
+        help="Deploy files from source to target directories based on a mapping in pyproject.toml.",
+    )
+    map_deploy_parser.add_argument(
+        "--pyproject",
+        dest="pyproject_path",
+        default="pyproject.toml",
+        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
+    )
+    map_deploy_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the deployment without copying files.",
+    )
+    map_deploy_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite target files even if they have been modified since the last deployment.",
+    )
+    map_deploy_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
+    )
+    map_deploy_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+
+    def map_deploy_handler(args: argparse.Namespace) -> None:
+
+        pyproject_path = Path(args.pyproject_path)
+        try:
+            mapping = get_deployment_map(pyproject_path)
+        except (FileNotFoundError, KeyError) as e:
+            logger.error(f"❌ {e}")
+            sys.exit(1)
+
+        map_deploy(mapping, dry_run=args.dry_run, force=args.force)
+
+    map_deploy_parser.set_defaults(func=map_deploy_handler)
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()

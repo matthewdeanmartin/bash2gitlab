@@ -19,7 +19,9 @@ def test_yaml_must_preserve_references_and_multiscripts():
         found = 0
         for file in output_root.rglob("*.yml"):
             output = file.read_text(encoding="utf-8")
-            assert ".sh" not in output or ". before_script.sh" in output
+            for line in output.split("\n"):
+                if ">>>" not in line and "<<<" not in line:
+                    assert ".sh" not in line or ". before_script.sh" in line
             assert "echo build" in output
             assert "echo test" in output
             assert "!reference [.echo]" in output

@@ -41,3 +41,7 @@ As soon as you inline all your bash, you lose almost all tooling for bash.
 ## Alternatively, deploy to other repos via "deploy-by-map" (not implemented yet)
 
 ## Execute bash locally
+
+## Fix bugs in your bash locally
+
+## Run the commit2central to copy local changes back to the centralized repo

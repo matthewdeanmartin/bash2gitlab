@@ -101,8 +101,13 @@ def _get_source_file_from_hash(hash_file: Path) -> Path:
     Returns:
         The corresponding Path object for the original file.
     """
-    return Path(str(hash_file).removesuffix(".hash"))
-
+    s = str(hash_file)
+    if hasattr(s, "removesuffix"):  # Python 3.9+
+        return Path(s.removesuffix(".hash"))
+    else:  # Python < 3.9
+        if s.endswith(".hash"):
+            return Path(s[: -len(".hash")])
+        return Path(s)
 
 def _generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
     """

@@ -5,10 +5,10 @@ import logging
 import re
 from pathlib import Path
 
-from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -114,8 +114,7 @@ def shred_script_block(
     if not script_content:
         return None, None
 
-    yaml = YAML()
-    yaml.width = 4096
+    yaml = get_yaml()
 
     # This block will handle converting CommentedSeq and its contents (which may include
     # CommentedMap objects) into a simple list of strings.
@@ -255,9 +254,7 @@ def shred_gitlab_ci(
         output_yaml_path = output_yaml_path / input_yaml_path.name
 
     logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
-    yaml = YAML()
-    yaml.width = 4096
-    yaml.preserve_quotes = True
+    yaml = get_yaml()
     yaml.indent(mapping=2, sequence=4, offset=2)
     data = yaml.load(input_yaml_path)
 

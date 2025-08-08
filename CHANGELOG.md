@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.5] - unreleased
+
+### Changed
+
+- Discourage excessive quotes
+
+### Fixed
+
+- Gracefully degrade if someone changes generated yaml to invalid yaml.
+
+### Added
+
+- Map deploy started.
+
 ## [0.8.4] - 2025-08-06
 
 ### Added

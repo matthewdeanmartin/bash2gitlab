@@ -14,7 +14,9 @@
 │   ├── dotenv.py
 │   ├── logging_config.py
 │   ├── mock_ci_vars.py
-│   └── utils.py
+│   ├── parse_bash.py
+│   ├── utils.py
+│   └── yaml_factory.py
 ├── watch_files.py
 ├── __about__.py
 └── __main__.py
@@ -25,6 +27,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -39,6 +42,38 @@ logger = logging.getLogger(__name__)
 # - (?P<path>[\w./\\-]+) - Captures the file path.
 # - \s*$        - Optional whitespace until the end of the line.
 SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
+
+
+class SourceSecurityError(RuntimeError):
+    pass
+
+
+def _is_relative_to(child: Path, parent: Path) -> bool:
+    """Py<3.9-compatible variant of Path.is_relative_to()."""
+    try:
+        child.relative_to(parent)
+        return True
+    except Exception:
+        return False
+
+
+def _secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
+    """
+    Resolve 'user_path' (which may contain ../ and symlinks) against base_dir,
+    then ensure the final real path is inside allowed_root.
+    """
+    # Normalize separators and strip quotes/whitespace
+    user_path = user_path.strip().strip('"').strip("'").replace("\\", "/")
+
+    # Resolve relative to the including script's directory
+    candidate = (base_dir / user_path).resolve(strict=True)
+
+    # Ensure the real path (after following symlinks) is within allowed_root
+    allowed_root = allowed_root.resolve(strict=True)
+    if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS"):
+        if not _is_relative_to(candidate, allowed_root):
+            raise SourceSecurityError(f"Refusing to source '{candidate}': escapes allowed root '{allowed_root}'.")
+    return candidate
 
 
 def read_bash_script(path: Path) -> str:
@@ -59,7 +94,14 @@ def read_bash_script(path: Path) -> str:
     return "\n".join(lines)
 
 
-def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None = None) -> str:
+def inline_bash_source(
+    main_script_path: Path,
+    processed_files: set[Path] | None = None,
+    *,
+    allowed_root: Path | None = None,
+    max_depth: int = 64,
+    _depth: int = 0,
+) -> str:
     """
     Reads a bash script and recursively inlines content from sourced files.
 
@@ -67,10 +109,17 @@ def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None
     and replaces them with the content of the specified script. It handles
     nested sourcing and prevents infinite loops from circular dependencies.
 
+    Safely inline bash sources by confining resolution to 'allowed_root' (default: CWD).
+    Blocks directory traversal and symlink escapes. Detects cycles and runaway depth.
+
     Args:
         main_script_path: The absolute path to the main bash script to process.
         processed_files: A set used internally to track already processed files
                          to prevent circular sourcing. Should not be set manually.
+        allowed_root: Root to prevent parent traversal
+        max_depth: Depth
+        _depth: For recusion
+
 
     Returns:
         A string containing the script content with all sourced files inlined.
@@ -78,16 +127,27 @@ def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None
     Raises:
         FileNotFoundError: If the main_script_path or any sourced script does not exist.
     """
-    # Initialize the set to track processed files on the first call
     if processed_files is None:
         processed_files = set()
 
-    # Resolve the absolute path to handle relative paths correctly
-    main_script_path = main_script_path.resolve()
+    if allowed_root is None:
+        allowed_root = Path.cwd()
 
-    # Prevent circular sourcing by checking if the file has been processed
+    # Normalize and security-check the entry script itself
+    try:
+        main_script_path = _secure_join(
+            base_dir=main_script_path.parent if main_script_path.is_absolute() else Path.cwd(),
+            user_path=str(main_script_path),
+            allowed_root=allowed_root,
+        )
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Script not found: {main_script_path}") from None
+
+    if _depth > max_depth:
+        raise RecursionError(f"Max include depth ({max_depth}) exceeded at {main_script_path}")
+
     if main_script_path in processed_files:
-        logger.warning(f"Circular source detected and skipped: {main_script_path}")
+        logger.warning("Circular source detected and skipped: %s", main_script_path)
         return ""
 
     # Check if the script exists before trying to read it
@@ -97,7 +157,7 @@ def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None
     logger.debug(f"Processing script: {main_script_path}")
     processed_files.add(main_script_path)
 
-    final_content_lines = []
+    final_content_lines: list[str] = []
     try:
         with main_script_path.open("r", encoding="utf-8") as f:
             for line in f:
@@ -105,20 +165,40 @@ def inline_bash_source(main_script_path: Path, processed_files: set[Path] | None
                 if match:
                     # A source command was found, process the sourced file
                     sourced_script_name = match.group("path")
-                    # Resolve the path relative to the current script's directory
-                    sourced_script_path = (main_script_path.parent / sourced_script_name).resolve()
+                    try:
+                        sourced_script_path = _secure_join(
+                            base_dir=main_script_path.parent,
+                            user_path=sourced_script_name,
+                            allowed_root=allowed_root,
+                        )
+                    except (FileNotFoundError, SourceSecurityError) as e:
+                        logger.error(
+                            "Blocked or missing source '%s' included from '%s': %s",
+                            sourced_script_name,
+                            main_script_path,
+                            e,
+                        )
+                        raise
 
-                    logger.info(f"Inlining sourced file: {sourced_script_name} -> {sourced_script_path}")
-
-                    # Recursively call the function to inline the nested script
-                    inlined_content = inline_bash_source(sourced_script_path, processed_files)
-                    final_content_lines.append(inlined_content)
+                    logger.info(
+                        "Inlining sourced file: %s -> %s",
+                        sourced_script_name,
+                        sourced_script_path,
+                    )
+                    inlined = inline_bash_source(
+                        sourced_script_path,
+                        processed_files,
+                        allowed_root=allowed_root,
+                        max_depth=max_depth,
+                        _depth=_depth + 1,
+                    )
+                    final_content_lines.append(inlined)
                 else:
                     # This line is not a source command, so keep it as is
                     final_content_lines.append(line)
-    except Exception as e:
-        logger.error(f"Failed to read or process {main_script_path}: {e}")
-        # Re-raise the exception to notify the caller of the failure
+    except Exception:
+        # Propagate after logging context
+        logger.exception("Failed to read or process %s", main_script_path)
         raise
 
     return "".join(final_content_lines)
@@ -337,7 +417,7 @@ import sys
 from pathlib import Path
 from typing import Any, Union
 
-from ruamel.yaml import YAML, CommentedMap
+from ruamel.yaml import CommentedMap
 from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
@@ -345,15 +425,25 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
+from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
+
+
+def remove_excess(command: str) -> str:
+    if "bash2gitlab" in command:
+        return command[command.index("bash2gitlab") :]
+    if "b2gl" in command:
+        return command[command.index("b2gl") :]
+    return command
+
 
 BANNER = f"""# DO NOT EDIT
 # This is a compiled file, compiled with bash2gitlab
 # Recompile instead of editing this file.
 #
 # Compiled with the command: 
-#     {' '.join(sys.argv)}
+#     {remove_excess(' '.join(sys.argv))}
 
 """
 
@@ -410,6 +500,8 @@ def process_script_list(
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
+    contains_tagged_scalar = False
+    contains_anchors_or_tags = False
 
     for item in script_list:
         # Check for non-string YAML objects first (like !reference).
@@ -418,6 +510,19 @@ def process_script_list(
                 contains_tagged_scalar = True
             processed_items.append(item)
             continue  # Go to next item
+
+        if not isinstance(item, str):
+            # Any non-plain string (TaggedScalar, Commented* nodes, etc.)
+            # means we must not collapse to a single literal block, or we risk
+            # losing anchors/tags/references semantics.
+            if isinstance(item, TaggedScalar):
+                contains_tagged_scalar = True
+                # ruamel nodes may have .anchor attribute; treat any present anchor as a blocker
+                anchor_val = getattr(getattr(item, "anchor", None), "value", None)
+                if anchor_val:
+                    contains_anchors_or_tags = True
+                    processed_items.append(item)
+                    continue
 
         # It's a string, see if it's a script path.
         script_path_str = extract_script_path(item)
@@ -428,8 +533,13 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
 
-                logger.info(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                logger.debug(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                # --- source-map breadcrumbs for debuggability ---
+                begin_marker = f"# >>> BEGIN inline: {script_path.as_posix()}"
+                end_marker = "# <<< END inline"
+                processed_items.append(begin_marker)
                 processed_items.extend(bash_lines)
+                processed_items.append(end_marker)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
                 processed_items.append(item)
@@ -441,17 +551,19 @@ def process_script_list(
     # Condition to use a literal block `|`:
     # 1. It must NOT contain any special YAML tags.
     # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
-    _ = list(type(_) for _ in processed_items)
-    if not contains_tagged_scalar and len(processed_items) > 5 and all(isinstance(_, str) for _ in processed_items):
-        # We can safely convert to a single string block.
-        final_script_block = "\n".join(map(str, processed_items))
-        logger.info("Formatting script block as a single literal block for clarity.")
+    # Collapse to a single literal block only when we're certain there are no YAML
+    # anchors/tags/references (on any item) and all items are plain strings.
+    only_plain_strings = all(isinstance(_, str) for _ in processed_items)
+    has_yaml_features = contains_tagged_scalar or contains_anchors_or_tags
+
+    if not has_yaml_features and only_plain_strings and len(processed_items) > 5:
+        final_script_block = "\n".join(processed_items)
+        logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)
     else:
-        # We must return a list to preserve YAML tags or because it's short.
-        if contains_tagged_scalar:
-            logger.debug("Preserving script block as a list to support YAML tags (!reference).")
-        return processed_items
+        if has_yaml_features and not only_plain_strings:
+            logger.debug("Preserving script block as a list to retain YAML anchors/tags/references.")
+    return processed_items
 
 
 def process_job(job_data: dict, scripts_root: Path) -> int:
@@ -478,14 +590,12 @@ def inline_gitlab_scripts(
     This version now supports inlining scripts in top-level lists used as YAML anchors.
     """
     inlined_count = 0
-    yaml = YAML()
-    yaml.width = 4096
-    yaml.preserve_quotes = True
+    yaml = get_yaml()
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
     # Merge global variables if provided
     if global_vars:
-        logger.info("Merging global variables into the YAML configuration.")
+        logger.debug("Merging global variables into the YAML configuration.")
         existing_vars = data.get("variables", {})
         merged_vars = global_vars.copy()
         # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
@@ -495,7 +605,7 @@ def inline_gitlab_scripts(
 
     for name in ["after_script", "before_script"]:
         if name in data:
-            logger.info(f"Processing top-level '{name}' section, even though gitlab has deprecated them.")
+            logger.warning(f"Processing top-level '{name}' section, even though gitlab has deprecated them.")
             result = process_script_list(data[name], scripts_root)
             if result != data[name]:
                 data[name] = result
@@ -520,7 +630,7 @@ def inline_gitlab_scripts(
             job_vars_path = uncompiled_path / job_vars_filename
 
             if job_vars_path.is_file():
-                logger.info(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
+                logger.debug(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
                 content = job_vars_path.read_text(encoding="utf-8")
                 job_specific_vars = parse_env_file(content)
 
@@ -540,17 +650,17 @@ def inline_gitlab_scripts(
                 or "after_script" in job_data
                 or "pre_get_sources_script" in job_data
             ):
-                logger.info(f"Processing job: {job_name}")
+                logger.debug(f"Processing job: {job_name}")
                 inlined_count += process_job(job_data, scripts_root)
             if "hooks" in job_data:
                 if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
-                    logger.info(f"Processing pre_get_sources_script: {job_name}")
+                    logger.debug(f"Processing pre_get_sources_script: {job_name}")
                     inlined_count += process_job(job_data["hooks"], scripts_root)
             if "run" in job_data:
                 if isinstance(job_data["run"], list):
                     for item in job_data["run"]:
                         if isinstance(item, dict) and "script" in item:
-                            logger.info(f"Processing run/script: {job_name}")
+                            logger.debug(f"Processing run/script: {job_name}")
                             inlined_count += process_job(item, scripts_root)
 
     # --- Reorder top-level keys for consistent output ---
@@ -650,21 +760,35 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     current_content = output_file.read_text(encoding="utf-8")
 
     # Load both YAML versions to compare their data structures
-    yaml = YAML()
+    # --- Gracefully handle YAML parsing ---
+    yaml = get_yaml()
+
+    last_known_doc = None
+    current_doc = None
+    is_current_corrupt = False
+
+    # First, try to load the last known good version. This should not fail unless the hash is corrupt.
     try:
-        current_doc = yaml.load(current_content)
         last_known_doc = yaml.load(last_known_content)
     except YAMLError as e:
         error_message = (
-            f"ERROR: Could not parse YAML from '{short_path(output_file)}'. It may be corrupted.\n"
+            f"ERROR: Could not parse YAML from the .hash file for '{short_path(output_file)}'. It is corrupted.\n"
             f"Error: {e}\n"
-            "Aborting. Please fix the file syntax or remove it to regenerate."
+            "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
         )
         logger.error(error_message)
         raise SystemExit(1) from e
 
-    # If the loaded documents are not identical, it means a meaningful change was made.
-    if current_doc != last_known_doc:
+    # Next, try to load the current on-disk version. This might fail if manually edited.
+    try:
+        current_doc = yaml.load(current_content)
+    except YAMLError:
+        # The current file is corrupt. Treat this as a manual edit.
+        is_current_corrupt = True
+        logger.warning(f"Could not parse YAML from '{short_path(output_file)}'; it appears to be corrupt.")
+
+    # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
+    if is_current_corrupt or current_doc != last_known_doc:
         # Generate a diff between the *last known good version* and the *current modified version*
         diff = difflib.unified_diff(
             last_known_content.splitlines(keepends=True),
@@ -674,10 +798,17 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         )
         diff_text = "".join(diff)
 
+        corruption_warning = (
+            "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n"
+            if is_current_corrupt
+            else ""
+        )
+
         error_message = (
             f"\n--- MANUAL EDIT DETECTED ---\n"
             f"CANNOT OVERWRITE: The destination file below has been modified:\n"
             f"  {output_file}\n\n"
+            f"{corruption_warning}"
             f"The script detected that its data no longer matches the last generated version.\n"
             f"To prevent data loss, the process has been stopped.\n\n"
             f"--- DETECTED CHANGES ---\n"
@@ -700,7 +831,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
     else:
-        logger.info(f"Content of {short_path(output_file)} is already up to date. Skipping.")
+        logger.debug(f"Content of {short_path(output_file)} is already up to date. Skipping.")
         return False
 
 
@@ -717,7 +848,7 @@ def _compile_single_file(
 
     Returns a tuple of the number of inlined sections and whether a file was written (0 or 1).
     """
-    logger.info(f"Processing {label}: {short_path(source_path)}")
+    logger.debug(f"Processing {label}: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
     inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
     final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
@@ -1560,10 +1691,10 @@ import logging
 import re
 from pathlib import Path
 
-from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -1669,8 +1800,7 @@ def shred_script_block(
     if not script_content:
         return None, None
 
-    yaml = YAML()
-    yaml.width = 4096
+    yaml = get_yaml()
 
     # This block will handle converting CommentedSeq and its contents (which may include
     # CommentedMap objects) into a simple list of strings.
@@ -1810,9 +1940,7 @@ def shred_gitlab_ci(
         output_yaml_path = output_yaml_path / input_yaml_path.name
 
     logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
-    yaml = YAML()
-    yaml.width = 4096
-    yaml.preserve_quotes = True
+    yaml = get_yaml()
     yaml.indent(mapping=2, sequence=4, offset=2)
     data = yaml.load(input_yaml_path)
 
@@ -2256,6 +2384,7 @@ from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
 from bash2gitlab.detect_drift import check_for_drift
 from bash2gitlab.init_project import init_handler
+from bash2gitlab.map_deploy_command import get_deployment_map, map_deploy
 from bash2gitlab.shred_all import shred_gitlab_ci
 from bash2gitlab.update_checker import check_for_updates
 from bash2gitlab.utils.logging_config import generate_config
@@ -2526,6 +2655,45 @@ def main() -> int:
     init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     init_parser.set_defaults(func=init_handler)
 
+    # --- map-deploy Command ---
+    map_deploy_parser = subparsers.add_parser(
+        "map-deploy",
+        help="Deploy files from source to target directories based on a mapping in pyproject.toml.",
+    )
+    map_deploy_parser.add_argument(
+        "--pyproject",
+        dest="pyproject_path",
+        default="pyproject.toml",
+        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
+    )
+    map_deploy_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the deployment without copying files.",
+    )
+    map_deploy_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite target files even if they have been modified since the last deployment.",
+    )
+    map_deploy_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
+    )
+    map_deploy_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+
+    def map_deploy_handler(args: argparse.Namespace) -> None:
+
+        pyproject_path = Path(args.pyproject_path)
+        try:
+            mapping = get_deployment_map(pyproject_path)
+        except (FileNotFoundError, KeyError) as e:
+            logger.error(f"❌ {e}")
+            sys.exit(1)
+
+        map_deploy(mapping, dry_run=args.dry_run, force=args.force)
+
+    map_deploy_parser.set_defaults(func=map_deploy_handler)
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -2758,6 +2926,81 @@ def generate_mock_ci_variables_script(output_path: str = "mock_ci_variables.sh")
 if __name__ == "__main__":
     generate_mock_ci_variables_script()
 ```
+## File: utils\parse_bash.py
+```python
+from __future__ import annotations
+
+import re
+import shlex
+from pathlib import Path
+
+_EXECUTORS = {"bash", "sh", "pwsh"}
+_DOT_SOURCE = {"source", "."}
+_VALID_SUFFIXES = {".sh", ".ps1"}
+_ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def extract_script_path(cmd_line: str) -> str | None:
+    """
+    Return a *safe-to-inline* script path or ``None``.
+    A path is safe when:
+
+        • there are **no interpreter flags**
+        • there are **no extra positional arguments**
+        • there are **no leading ENV=val assignments**
+
+    Examples that return a path
+    ---------------------------
+    ./build.sh
+    bash build.sh
+    source utils/helpers.sh
+    . scripts/deploy.ps1          # pwsh default
+
+    Examples that return ``None``
+    ------------------------------
+    bash -e build.sh
+    FOO=bar ./build.sh
+    ./build.sh arg1 arg2
+    pwsh -NoProfile run.ps1
+    """
+    try:
+        tokens = shlex.split(cmd_line, posix=True)
+    except ValueError:
+        return None  # malformed quoting
+
+    if not tokens:
+        return None
+
+    # ── Disallow leading VAR=val assignments ────────────────────────────────
+    if _ENV_ASSIGN_RE.match(tokens[0]):
+        return None
+
+    # Case A ─ plain script call ------------------------------------------------
+    if len(tokens) == 1 and _is_script(tokens[0]):
+        return Path(tokens[0]).as_posix()
+
+    # Case B ─ executor + script ------------------------------------------------
+    if len(tokens) == 2 and _is_executor(tokens[0]) and _is_script(tokens[1]):
+        return Path(tokens[1]).as_posix()
+
+    # Case C ─ dot-source -------------------------------------------------------
+    if len(tokens) == 2 and tokens[0] in _DOT_SOURCE and _is_script(tokens[1]):
+        return Path(tokens[1]).as_posix()
+
+    # Anything else is unsafe to inline
+    return None
+
+
+# ───────────────────────── helper predicates ────────────────────────────────
+def _is_executor(tok: str) -> bool:
+    """True if token is bash/sh/pwsh *without leading dash*."""
+    return tok in _EXECUTORS
+
+
+def _is_script(tok: str) -> bool:
+    """True if token ends with .sh or .ps1 and is not an option flag."""
+    return not tok.startswith("-") and Path(tok).suffix.lower() in _VALID_SUFFIXES
+```
 ## File: utils\utils.py
 ```python
 from pathlib import Path
@@ -2790,4 +3033,19 @@ def short_path(path: Path) -> str:
         return str(path.relative_to(Path.cwd()))
     except ValueError:
         return str(path.resolve())
+```
+## File: utils\yaml_factory.py
+```python
+import functools
+
+from ruamel.yaml import YAML
+
+
+@functools.lru_cache(maxsize=1)
+def get_yaml() -> YAML:
+    y = YAML()
+    y.width = 4096
+    y.preserve_quotes = True
+    y.default_style = None
+    return y
 ```

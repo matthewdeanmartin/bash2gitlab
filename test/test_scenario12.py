@@ -18,8 +18,12 @@ def test_yaml_it_src_to_out_12_powershell():
 
         for file in output_root.rglob("*.yml"):
             output = file.read_text(encoding="utf-8")
-            assert ".ps1" not in output
+            for line in output.split("\n"):
+                if ">>>" not in line and "<<<" not in line:
+                    assert ".ps1" not in line
 
         for file in output_root.rglob("*.yaml"):
             output = file.read_text(encoding="utf-8")
-            assert ".ps1" not in output
+            for line in output.split("\n"):
+                if ">>>" not in line and "<<<" not in line:
+                    assert ".ps1" not in line
