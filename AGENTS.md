@@ -13,7 +13,7 @@ This repository uses Python and Markdown. Follow these rules when modifying any 
 
 ## Tests and Checks
 - Run `make check` before committing. It runs formatting, unit tests, security checks, and pre-commit hooks.
-- After `make check`, run `tox` to verify cross-version compatibility.
+- After `make check`, run `tox -e py38,py313,py314` to verify the lowest, current, and upcoming Python versions.
 - For quick iterations you may run `pre-commit run --files <file>`.
 
 ## Environment
