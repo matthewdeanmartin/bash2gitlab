@@ -93,6 +93,7 @@ dev = [
     "ruff>=0.12.0; python_version >= '3.8'",
     "pylint; python_version >= '3.8'",
     "bandit; python_version >= '3.8'",
+    "pre-commit; python_version >= '3.8'",
 
     # testing tools
     "pytest; python_version >= '3.8'",
