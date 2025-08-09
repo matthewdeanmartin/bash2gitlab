@@ -19,8 +19,8 @@ def prepare_environment(tmp_path: Path):
     source_dir.mkdir()
     target_dir.mkdir()
 
-    source_file = source_dir / "file.txt"
-    target_file = target_dir / "file.txt"
+    source_file = source_dir / "file.sh"
+    target_file = target_dir / "file.sh"
     content = "original"
     source_file.write_text(content)
     target_file.write_text(content)
@@ -82,3 +82,20 @@ def test_commit_map_force_overwrites_local_changes(prepare_environment):
 
     assert env["source_file"].read_text() == "modified"
     assert env["hash_path"].read_text() == _hash("modified")
+
+
+def test_commit_map_ignores_unsupported_files(tmp_path: Path):
+    """Files with unsupported extensions are left untouched."""
+    source_dir = tmp_path / "source"
+    target_dir = tmp_path / "target"
+    source_dir.mkdir()
+    target_dir.mkdir()
+
+    target_file = target_dir / "ignore.txt"
+    target_file.write_text("content")
+    hash_path = target_file.with_suffix(target_file.suffix + ".hash")
+    hash_path.write_text(_hash("content"))
+
+    commit_map({str(source_dir): str(target_dir)})
+
+    assert not (source_dir / "ignore.txt").exists()
