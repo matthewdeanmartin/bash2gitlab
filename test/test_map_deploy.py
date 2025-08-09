@@ -17,8 +17,8 @@ def setup_test_environment(tmp_path: Path):
     source_java.mkdir(parents=True)
 
     # Source files
-    (source_angular / "script1.js").write_text("console.log('angular');")
-    (source_java / "script2.java").write_text('System.out.println("java");')
+    (source_angular / "script1.sh").write_text("echo 'angular'")
+    (source_java / "script2.yml").write_text("name: java")
 
     # Target directories
     target_angular = tmp_path / "dest" / "angular_app"
@@ -62,16 +62,28 @@ def test_initial_deployment(setup_test_environment):
     map_deploy(deployment_map)
 
     # Check Angular deployment
-    target_angular_file = tmp_path / "dest" / "angular_app" / "script1.js"
+    target_angular_file = tmp_path / "dest" / "angular_app" / "script1.sh"
     assert target_angular_file.exists()
     assert (tmp_path / "dest" / "angular_app" / ".gitignore").exists()
-    assert (tmp_path / "dest" / "angular_app" / "script1.js.hash").exists()
+    assert (tmp_path / "dest" / "angular_app" / "script1.sh.hash").exists()
 
     # Check Java deployment
-    target_java_file = tmp_path / "dest" / "java_app" / "deep" / "script2.java"
+    target_java_file = tmp_path / "dest" / "java_app" / "deep" / "script2.yml"
     assert target_java_file.exists()
     assert (tmp_path / "dest" / "java_app" / ".gitignore").exists()
-    assert (tmp_path / "dest" / "java_app" / "deep" / "script2.java.hash").exists()
+    assert (tmp_path / "dest" / "java_app" / "deep" / "script2.yml.hash").exists()
+
+
+def test_skips_unsupported_extensions(setup_test_environment):
+    """Files with unsupported extensions are ignored during deployment."""
+    tmp_path, pyproject_path = setup_test_environment
+    (tmp_path / "src" / "angular" / "ignore.txt").write_text("skip me")
+    deployment_map = get_deployment_map(pyproject_path)
+
+    map_deploy(deployment_map)
+
+    assert not (tmp_path / "dest" / "angular_app" / "ignore.txt").exists()
+    assert not (tmp_path / "dest" / "angular_app" / "ignore.txt.hash").exists()
 
 
 def test_unchanged_redeployment(setup_test_environment):
@@ -82,7 +94,7 @@ def test_unchanged_redeployment(setup_test_environment):
     map_deploy(deployment_map)  # First run
 
     # Capture last modified times
-    target_angular_file = tmp_path / "dest" / "angular_app" / "script1.js"
+    target_angular_file = tmp_path / "dest" / "angular_app" / "script1.sh"
     mtime_before = target_angular_file.stat().st_mtime
 
     map_deploy(deployment_map)  # Second run
@@ -97,7 +109,7 @@ def test_modified_destination_skip(setup_test_environment):
     deployment_map = get_deployment_map(pyproject_path)
     map_deploy(deployment_map)
 
-    target_file = tmp_path / "dest" / "angular_app" / "script1.js"
+    target_file = tmp_path / "dest" / "angular_app" / "script1.sh"
     original_content = target_file.read_text()
 
     # Modify the destination file
@@ -116,8 +128,8 @@ def test_modified_destination_force(setup_test_environment):
     deployment_map = get_deployment_map(pyproject_path)
     map_deploy(deployment_map)
 
-    target_file = tmp_path / "dest" / "angular_app" / "script1.js"
-    original_content = (tmp_path / "src" / "angular" / "script1.js").read_text()
+    target_file = tmp_path / "dest" / "angular_app" / "script1.sh"
+    original_content = (tmp_path / "src" / "angular" / "script1.sh").read_text()
 
     # Modify the destination file
     target_file.write_text("console.log('modified');")

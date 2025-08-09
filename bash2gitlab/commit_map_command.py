@@ -8,6 +8,9 @@ from pathlib import Path
 __all__ = ["commit_map"]
 
 
+_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+
+
 def commit_map(
     source_to_target_map: dict[str, str],
     dry_run: bool = False,
@@ -49,6 +52,9 @@ def commit_map(
                     continue
 
                 target_file_path = target_root_path / filename
+                if target_file_path.suffix.lower() not in _VALID_SUFFIXES:
+                    continue
+
                 relative_path = target_file_path.relative_to(target_base_path)
                 source_file_path = source_base_path / relative_path
                 hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")

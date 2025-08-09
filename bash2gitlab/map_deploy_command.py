@@ -7,6 +7,8 @@ from pathlib import Path
 
 import toml
 
+_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+
 
 def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
     """Parses the pyproject.toml file to get the deployment map.
@@ -85,6 +87,9 @@ def map_deploy(
 
             for filename in files:
                 source_file_path = source_root_path / filename
+                if source_file_path.suffix.lower() not in _VALID_SUFFIXES:
+                    continue
+
                 relative_path = source_file_path.relative_to(source_base_path)
                 target_file_path = target_base_path / relative_path
                 hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
