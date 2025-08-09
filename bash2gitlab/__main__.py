@@ -31,6 +31,7 @@ import argcomplete
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.clone2local import clone_repository_ssh, fetch_repository_archive
+from bash2gitlab.commit_map_command import commit_map
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
 from bash2gitlab.detect_drift import check_for_drift
@@ -344,6 +345,48 @@ def main() -> int:
         map_deploy(mapping, dry_run=args.dry_run, force=args.force)
 
     map_deploy_parser.set_defaults(func=map_deploy_handler)
+
+    # --- commit-map Command ---
+    commit_map_parser = subparsers.add_parser(
+        "commit-map",
+        help=(
+            "Copy changed files from deployed directories back to their source"
+            " locations based on a mapping in pyproject.toml."
+        ),
+    )
+    commit_map_parser.add_argument(
+        "--pyproject",
+        dest="pyproject_path",
+        default="pyproject.toml",
+        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
+    )
+    commit_map_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the commit without copying files.",
+    )
+    commit_map_parser.add_argument(
+        "--force",
+        action="store_true",
+        help=("Overwrite source files even if they have been modified since the last " "deployment."),
+    )
+    commit_map_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
+    )
+    commit_map_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+
+    def commit_map_handler(args: argparse.Namespace) -> None:
+
+        pyproject_path = Path(args.pyproject_path)
+        try:
+            mapping = get_deployment_map(pyproject_path)
+        except (FileNotFoundError, KeyError) as e:
+            logger.error(f"❌ {e}")
+            sys.exit(1)
+
+        commit_map(mapping, dry_run=args.dry_run, force=args.force)
+
+    commit_map_parser.set_defaults(func=commit_map_handler)
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
