@@ -15,10 +15,10 @@ Make changes
 make check
 ```
 
-Check for python compatibility
+Check Python compatibility across the lowest supported, current, and upcoming versions:
 
 ```bash
-tox
+tox -e py38,py313,py314
 ```
 
 ## Scope
