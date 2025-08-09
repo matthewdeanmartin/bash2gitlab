@@ -1,3 +1,7 @@
+"""
+A tool for making development of centralized yaml gitlab templates more pleasant.
+"""
+
 __all__ = ["process_uncompiled_directory", "__version__", "shred_gitlab_ci"]
 
 from bash2gitlab.__about__ import __version__

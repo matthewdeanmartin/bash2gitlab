@@ -1,3 +1,5 @@
+"""Take a gitlab template with inline yaml and split it up into yaml and shell commands. Useful for project initialization"""
+
 from __future__ import annotations
 
 import io

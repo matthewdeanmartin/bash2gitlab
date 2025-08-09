@@ -67,7 +67,7 @@ pre-commit: .build_history/pre-commit
 
 .build_history/bandit: .build_history $(FILES)
 	@echo "Security checks"
-	$(VENV)  bandit bash2gitlab -r
+	$(VENV)  bandit bash2gitlab -r --quiet
 	@touch .build_history/bandit
 
 .PHONY: bandit
@@ -114,8 +114,10 @@ check_md:
 
 check_spelling:
 	$(VENV) pylint bash2gitlab --enable C0402 --rcfile=.pylintrc_spell
+	$(VENV) pylint docs --enable C0402 --rcfile=.pylintrc_spell
 	$(VENV) codespell README.md --ignore-words=private_dictionary.txt
 	$(VENV) codespell bash2gitlab --ignore-words=private_dictionary.txt
+	$(VENV) codespell docs --ignore-words=private_dictionary.txt
 
 check_changelog:
 	# pipx install keepachangelog-manager

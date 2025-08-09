@@ -1,3 +1,5 @@
+"""Copy from many repos relevant shell scripts changes back to the central repo."""
+
 from __future__ import annotations
 
 import hashlib
@@ -65,7 +67,7 @@ def commit_map(
 
                 stored_hash = ""
                 if hash_file_path.exists():
-                    with open(hash_file_path) as f:
+                    with open(hash_file_path, encoding="utf-8") as f:
                         stored_hash = f.read().strip()
 
                 source_hash_actual = ""
@@ -93,5 +95,5 @@ def commit_map(
                     source_file_path.parent.mkdir(parents=True, exist_ok=True)
 
                 shutil.copy2(target_file_path, source_file_path)
-                with open(hash_file_path, "w") as f:
+                with open(hash_file_path, "w", encoding="utf-8") as f:
                     f.write(target_hash)

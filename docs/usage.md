@@ -318,7 +318,7 @@ bash2gitlab compile --in . --out ./compiled --scripts ./scripts
 **Q: Can I run this in CI?**
 Yes, but you would have to commit changes for remote repositories to use the new files. Use `compile` in a job to
 produce final YAML artifacts as a quality gate or in CI mode to fail the build when changes would have been made. (
-feature pending implemenation)
+feature pending implementation)
 
 **Q: Will it merge template YAML?**
 No. It focuses on shell inlining/extraction. Use your existing YAML includes/extends patterns.

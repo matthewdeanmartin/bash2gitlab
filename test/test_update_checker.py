@@ -1,7 +1,7 @@
 import os
 from unittest import mock
 
-from bash2gitlab.update_checker import YELLOW, _can_use_color, check_for_updates, reset_cache
+from bash2gitlab.utils.update_checker import YELLOW, _can_use_color, check_for_updates, reset_cache
 
 
 def test_finds_newer_version():
@@ -31,9 +31,9 @@ def test_handles_nonexistent_package(capsys):
 
 def test_caching_works():
     """Test that the function caches results and respects the TTL."""
-    pkg = "pytest"
+    pkg = "pylint"
     reset_cache(pkg)
-    v = "6.0.0"
+    v = "1.0.0"
     ttl = 10  # 10 second cache
 
     # I don't think this is mocking time correctly.
@@ -83,7 +83,7 @@ def test_prerelease_check_finds_newer():
         assert "A new version of pandas is available" in result
 
 
-@mock.patch("bash2gitlab.update_checker._can_use_color", return_value=True)
+@mock.patch("bash2gitlab.utils.update_checker._can_use_color", return_value=True)
 def test_color_output_enabled(mock_color):
     """Test that ANSI color codes are present when color is enabled."""
     reset_cache("requests")
@@ -95,8 +95,8 @@ def test_color_output_enabled(mock_color):
 @mock.patch.dict(os.environ, {"CI": "true"})
 def test_color_output_disabled_in_ci():
     """Test that color is disabled when a CI environment variable is set."""
-    reset_cache("requests")
+    reset_cache("httpx")
     assert not _can_use_color()
-    result = check_for_updates(package_name="requests", current_version="2.0.0")
+    result = check_for_updates(package_name="httpx", current_version="0.1.0")
     assert result is not None
     assert YELLOW not in result, "Output should not have color in CI"

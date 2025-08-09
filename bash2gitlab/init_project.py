@@ -1,3 +1,5 @@
+"""Interactively setup a config file"""
+
 from __future__ import annotations
 
 import logging

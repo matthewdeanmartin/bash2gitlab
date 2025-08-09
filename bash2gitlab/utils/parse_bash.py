@@ -1,3 +1,5 @@
+"""Parser for detecting scripts that are safe to inline without changing semantics"""
+
 from __future__ import annotations
 
 import re

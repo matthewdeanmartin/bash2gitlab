@@ -1,3 +1,5 @@
+"""Command to inline bash or powershell into gitlab pipeline yaml."""
+
 from __future__ import annotations
 
 import base64
@@ -63,7 +65,7 @@ def extract_script_path(command_line: str) -> str | None:
     path_found = None
     for i, token in enumerate(tokens):
         path = Path(token)
-        if path.suffix == ".sh" or path.suffix == ".ps1":
+        if path.suffix in (".sh", ".ps1"):
             # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
             if i > 0 and tokens[i - 1] in executors:
                 path_found = str(path).replace("\\", "/")
@@ -153,9 +155,8 @@ def process_script_list(
         final_script_block = "\n".join(processed_items)
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)
-    else:
-        if has_yaml_features and not only_plain_strings:
-            logger.debug("Preserving script block as a list to retain YAML anchors/tags/references.")
+    if has_yaml_features and not only_plain_strings:
+        logger.debug("Preserving script block as a list to retain YAML anchors/tags/references.")
     return processed_items
 
 
@@ -423,9 +424,9 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         logger.info(f"Content of {short_path(output_file)} has changed (reformatted or updated). Writing new version.")
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
-    else:
-        logger.debug(f"Content of {short_path(output_file)} is already up to date. Skipping.")
-        return False
+
+    logger.debug(f"Content of {short_path(output_file)} is already up to date. Skipping.")
+    return False
 
 
 def _compile_single_file(

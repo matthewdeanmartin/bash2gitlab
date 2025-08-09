@@ -24,6 +24,7 @@ class SourceSecurityError(RuntimeError):
 
 def _is_relative_to(child: Path, parent: Path) -> bool:
     """Py<3.9-compatible variant of Path.is_relative_to()."""
+    # pylint: disable=broad-exception-caught
     try:
         child.relative_to(parent)
         return True
@@ -92,7 +93,7 @@ def inline_bash_source(
                          to prevent circular sourcing. Should not be set manually.
         allowed_root: Root to prevent parent traversal
         max_depth: Depth
-        _depth: For recusion
+        _depth: For recursion
 
 
     Returns:

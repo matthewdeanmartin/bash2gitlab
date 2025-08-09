@@ -12,7 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.8.5] - unreleased
+## [0.8.6] - 2025-08-09
+
+### Changed
+
+- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files. 
+
+### Added
+
+- Map commit CLI available.
+
+## [0.8.5] - 2025-08-08
 
 ### Changed
 

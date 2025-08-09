@@ -104,10 +104,10 @@ def _get_source_file_from_hash(hash_file: Path) -> Path:
     s = str(hash_file)
     if hasattr(s, "removesuffix"):  # Python 3.9+
         return Path(s.removesuffix(".hash"))
-    else:  # Python < 3.9
-        if s.endswith(".hash"):
-            return Path(s[: -len(".hash")])
-        return Path(s)
+    # Python < 3.9
+    if s.endswith(".hash"):
+        return Path(s[: -len(".hash")])
+    return Path(s)
 
 
 def _generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
@@ -258,12 +258,12 @@ def check_for_drift(
             print(f"{'-' * 79}")
 
         return 1
-    else:
-        # Print success message, adapting to color support
-        if Colors.ENDC:
-            print(f"\n{Colors.OKGREEN}Drift detection complete. No drift detected.{Colors.ENDC}")
-        else:
-            print("\nDrift detection complete. No drift detected.")
 
-        print("All compiled files match their hashes.")
-        return 0
+    # Else, print success message, adapting to color support
+    if Colors.ENDC:
+        print(f"\n{Colors.OKGREEN}Drift detection complete. No drift detected.{Colors.ENDC}")
+    else:
+        print("\nDrift detection complete. No drift detected.")
+
+    print("All compiled files match their hashes.")
+    return 0

@@ -1,3 +1,5 @@
+"""Copy from a central repos relevant shell scripts changes to many dependent repos for debugging."""
+
 from __future__ import annotations
 
 import hashlib
@@ -77,7 +79,7 @@ def map_deploy(
         if not gitignore_path.exists():
             if not dry_run:
                 print(f"Creating .gitignore in '{target_base_path}'")
-                with open(gitignore_path, "w") as f:
+                with open(gitignore_path, "w", encoding="utf-8") as f:
                     f.write("*\n")
             else:
                 print(f"DRY RUN: Would create .gitignore in '{target_base_path}'")
@@ -112,7 +114,7 @@ def map_deploy(
 
                     stored_hash = ""
                     if hash_file_path.exists():
-                        with open(hash_file_path) as f:
+                        with open(hash_file_path, encoding="utf-8") as f:
                             stored_hash = f.read().strip()
 
                     if stored_hash and target_hash_actual != stored_hash:
@@ -120,8 +122,7 @@ def map_deploy(
                         if not force:
                             print("Skipping copy. Use --force to overwrite.")
                             continue
-                        else:
-                            print("Forcing overwrite.")
+                        print("Forcing overwrite.")
 
                 # Perform copy and write hash
                 if not target_file_path.exists() or source_hash != target_hash_actual:
@@ -129,7 +130,7 @@ def map_deploy(
                     print(f"{action}: '{source_file_path}' -> '{target_file_path}'")
                     if not dry_run:
                         shutil.copy2(source_file_path, target_file_path)
-                        with open(hash_file_path, "w") as f:
+                        with open(hash_file_path, "w", encoding="utf-8") as f:
                             f.write(source_hash)
                 else:
                     print(f"Unchanged: '{target_file_path}'")

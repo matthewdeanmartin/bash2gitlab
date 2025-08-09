@@ -69,6 +69,7 @@ def check_for_updates(
     Returns:
         A formatted message string if an update is available, else None.
     """
+    # pylint: disable=broad-exception-caught
     try:
         cache_dir = os.path.join(tempfile.gettempdir(), "python_update_checker")
         cache_file = os.path.join(cache_dir, f"{package_name}_cache.json")
@@ -207,7 +208,7 @@ def _update_cache(cache_dir: str, cache_file: str) -> None:
     """Creates or updates the cache file with the current timestamp."""
     try:
         os.makedirs(cache_dir, exist_ok=True)
-        with open(cache_file, "w") as f:
+        with open(cache_file, "w", encoding="utf-8") as f:
             f.write(json.dumps({"last_check": time.time()}))
     except (OSError, PermissionError):
         pass

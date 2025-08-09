@@ -1,3 +1,5 @@
+"""TOML based configuration. A way to communicate command arguments without using CLI switches."""
+
 from __future__ import annotations
 
 import logging
@@ -69,12 +71,12 @@ class _Config:
                 data = tomllib.load(f)
 
             if config_path.name == "pyproject.toml":
-                config = data.get("tool", {}).get("bash2gitlab", {})
+                file_config = data.get("tool", {}).get("bash2gitlab", {})
             else:
-                config = data
+                file_config = data
 
             logger.info(f"Loaded configuration from {config_path}")
-            return config
+            return file_config
 
         except tomllib.TOMLDecodeError as e:
             logger.error(f"Error decoding TOML file {config_path}: {e}")
@@ -85,13 +87,13 @@ class _Config:
 
     def _load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
-        config = {}
+        file_config = {}
         for key, value in os.environ.items():
             if key.startswith(self._ENV_VAR_PREFIX):
                 config_key = key[len(self._ENV_VAR_PREFIX) :].lower()
-                config[config_key] = value
+                file_config[config_key] = value
                 logger.debug(f"Loaded from environment: {config_key}")
-        return config
+        return file_config
 
     def _get_str(self, key: str) -> str | None:
         """Gets a string value, respecting precedence."""
@@ -197,5 +199,6 @@ def _reset_for_testing(config_path_override: Path | None = None):
     Resets the singleton config instance. For testing purposes only.
     Allows specifying a direct path to a config file.
     """
+    # pylint: disable=global-statement
     global config
     config = _Config(config_path_override=config_path_override)

@@ -1,21 +1,23 @@
 """
+Handles CLI interactions for bash2gitlab
 
-❯ bash2gitlab compile --help
-usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--scripts SCRIPTS_DIR] [--templates-in TEMPLATES_IN]
-                           [--templates-out TEMPLATES_OUT] [-v]
+usage: bash2gitlab [-h] [--version] {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map} ...
+
+A tool for making development of centralized yaml gitlab templates more pleasant.
+
+positional arguments:
+  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map}
+    compile             Compile an uncompiled directory into a standard GitLab CI structure.
+    shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
+    detect-drift        Detect if generated files have been edited and display what the edits are.
+    copy2local          Copy folder(s) from a repo to local, for testing bash in the dependent repo
+    init                Initialize a new bash2gitlab project and config file.
+    map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
+    commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
 
 options:
   -h, --help            show this help message and exit
-  --in INPUT_DIR        Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.
-  --out OUTPUT_DIR      Output directory for the compiled GitLab CI files.
-  --scripts SCRIPTS_DIR
-                        Directory containing bash scripts to inline. (Default: <in>)
-  --templates-in TEMPLATES_IN
-                        Input directory for CI templates. (Default: <in>)
-  --templates-out TEMPLATES_OUT
-                        Output directory for compiled CI templates. (Default: <out>)
-  -v, --verbose         Enable verbose (DEBUG) logging output.
-
+  --version             show program's version number and exit
 """
 
 from __future__ import annotations
@@ -38,8 +40,9 @@ from bash2gitlab.detect_drift import check_for_drift
 from bash2gitlab.init_project import init_handler
 from bash2gitlab.map_deploy_command import get_deployment_map, map_deploy
 from bash2gitlab.shred_all import shred_gitlab_ci
-from bash2gitlab.update_checker import check_for_updates
+from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
+from bash2gitlab.utils.update_checker import check_for_updates
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
@@ -180,7 +183,7 @@ def main() -> int:
     """Main CLI entry point."""
     check_for_updates(__about__.__title__, __about__.__version__)
 
-    parser = argparse.ArgumentParser(
+    parser = SmartParser(
         prog=__about__.__title__,
         description=root_doc,
         formatter_class=argparse.RawTextHelpFormatter,

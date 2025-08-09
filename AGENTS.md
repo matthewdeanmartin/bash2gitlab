@@ -2,9 +2,6 @@
 
 This repository uses Python and Markdown. Follow these rules when modifying any files:
 
-## Searches
-- Prefer `rg` for finding code or text. Avoid `grep -R` and `ls -R`.
-
 ## Style
 - Python is formatted with `isort` and `black`.
 - Linting is managed by `ruff` and `pylint`.

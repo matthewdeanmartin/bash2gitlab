@@ -1,3 +1,5 @@
+"""A command to copy just some of a centralized repo's bash commands to a local repo for debugging."""
+
 from __future__ import annotations
 
 import logging
@@ -67,7 +69,7 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
 
             try:
                 # Use a simple open to verify existence without a full download.
-                # nosec: B310 - URL is constructed from trusted inputs in this context.
+                # URL is constructed from trusted inputs in this context.
                 with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec: B310
                     # The 'with' block itself confirms a 2xx status.
                     logger.info("Confirmed repository archive exists at: %s", archive_url)
@@ -81,7 +83,7 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
                 raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
 
             logger.info("Downloading archive to %s", archive_path)
-            # nosec: B310 - URL is validated above.
+            # URL is validated above.
             urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
 
             # 3. Unzip the downloaded archive.
@@ -169,7 +171,7 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
 
             # 2. Clone the repository.
             # We clone the specific branch directly to be more efficient.
-            # nosec: B603, B607 - repo_url is a variable, but is intended to be a trusted source.
+            # repo_url is a variable, but is intended to be a trusted source.
             subprocess.run(  # nosec: B603, B607
                 ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
                 check=True,

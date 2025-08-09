@@ -1,3 +1,5 @@
+"""Cache and centralize the YAML object"""
+
 import functools
 
 from ruamel.yaml import YAML

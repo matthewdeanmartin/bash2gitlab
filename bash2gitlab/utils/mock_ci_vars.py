@@ -1,3 +1,5 @@
+"""Helper file for mocking common CI/CD variables"""
+
 from __future__ import annotations
 
 import logging
