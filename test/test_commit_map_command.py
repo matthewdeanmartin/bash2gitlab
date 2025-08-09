@@ -1,6 +1,6 @@
 # test_commit_map_command.py
-from pathlib import Path
 import hashlib
+from pathlib import Path
 
 import pytest
 

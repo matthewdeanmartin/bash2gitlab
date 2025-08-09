@@ -126,9 +126,9 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
 
-                logger.debug(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                logger.debug(f"Inlining script '{Path(rel_path).as_posix()}' ({len(bash_lines)} lines).")
                 # --- source-map breadcrumbs for debuggability ---
-                begin_marker = f"# >>> BEGIN inline: {script_path.as_posix()}"
+                begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
                 end_marker = "# <<< END inline"
                 processed_items.append(begin_marker)
                 processed_items.extend(bash_lines)

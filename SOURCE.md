@@ -2,6 +2,7 @@
 ```
 ├── bash_reader.py
 ├── clone2local.py
+├── commit_map_command.py
 ├── compile_all.py
 ├── config.py
 ├── detect_drift.py
@@ -403,6 +404,100 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
 
     logger.info("Successfully cloned directories into %s", clone_path)
 ```
+## File: commit_map_command.py
+```python
+from __future__ import annotations
+
+import hashlib
+import os
+import shutil
+from pathlib import Path
+
+__all__ = ["commit_map"]
+
+
+def commit_map(
+    source_to_target_map: dict[str, str],
+    dry_run: bool = False,
+    force: bool = False,
+) -> None:
+    """Copy modified deployed files back to their source directories.
+
+    This function performs the inverse of :func:`bash2gitlab.map_deploy_command.map_deploy`.
+    For every mapping of ``source`` to ``target`` directories it traverses the
+    deployed ``target`` directory and copies changed files back to the
+    corresponding ``source`` directory. Change detection relies on ``.hash``
+    files created during deployment. A file is copied back when the content of
+    the deployed file differs from the stored hash. After a successful copy the
+    ``.hash`` file is updated to reflect the new content hash.
+
+    Args:
+        source_to_target_map: Mapping of source directories to deployed target
+            directories.
+        dry_run: If ``True`` the operation is only simulated and no files are
+            written.
+        force: If ``True`` a source file is overwritten even if it was modified
+            locally since the last deployment.
+    """
+    for source_base, target_base in source_to_target_map.items():
+        source_base_path = Path(source_base).resolve()
+        target_base_path = Path(target_base).resolve()
+
+        if not target_base_path.is_dir():
+            print(f"Warning: Target directory '{target_base_path}' does not exist. Skipping.")
+            continue
+
+        print(f"\nProcessing map: '{target_base_path}' -> '{source_base_path}'")
+
+        for root, _, files in os.walk(target_base_path):
+            target_root_path = Path(root)
+
+            for filename in files:
+                if filename == ".gitignore" or filename.endswith(".hash"):
+                    continue
+
+                target_file_path = target_root_path / filename
+                relative_path = target_file_path.relative_to(target_base_path)
+                source_file_path = source_base_path / relative_path
+                hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
+
+                # Calculate hash of the deployed file
+                with open(target_file_path, "rb") as f:
+                    target_hash = hashlib.sha256(f.read()).hexdigest()
+
+                stored_hash = ""
+                if hash_file_path.exists():
+                    with open(hash_file_path) as f:
+                        stored_hash = f.read().strip()
+
+                source_hash_actual = ""
+                if source_file_path.exists():
+                    with open(source_file_path, "rb") as f:
+                        source_hash_actual = hashlib.sha256(f.read()).hexdigest()
+
+                if stored_hash and target_hash == stored_hash:
+                    print(f"Unchanged: '{target_file_path}'")
+                    continue
+
+                if stored_hash and source_hash_actual and source_hash_actual != stored_hash and not force:
+                    print(f"Warning: '{source_file_path}' was modified in source since last deployment.")
+                    print("Skipping copy. Use --force to overwrite.")
+                    continue
+
+                action = "Copied" if not source_file_path.exists() else "Updated"
+                print(f"{action}: '{target_file_path}' -> '{source_file_path}'")
+
+                if dry_run:
+                    continue
+
+                if not source_file_path.parent.exists():
+                    print(f"Creating directory: {source_file_path.parent}")
+                    source_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                shutil.copy2(target_file_path, source_file_path)
+                with open(hash_file_path, "w") as f:
+                    f.write(target_hash)
+```
 ## File: compile_all.py
 ```python
 from __future__ import annotations
@@ -533,9 +628,9 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
 
-                logger.debug(f"Inlining script '{script_path}' ({len(bash_lines)} lines).")
+                logger.debug(f"Inlining script '{Path(rel_path).as_posix()}' ({len(bash_lines)} lines).")
                 # --- source-map breadcrumbs for debuggability ---
-                begin_marker = f"# >>> BEGIN inline: {script_path.as_posix()}"
+                begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
                 end_marker = "# <<< END inline"
                 processed_items.append(begin_marker)
                 processed_items.extend(bash_lines)
@@ -1259,7 +1354,13 @@ def _get_source_file_from_hash(hash_file: Path) -> Path:
     Returns:
         The corresponding Path object for the original file.
     """
-    return Path(str(hash_file).removesuffix(".hash"))
+    s = str(hash_file)
+    if hasattr(s, "removesuffix"):  # Python 3.9+
+        return Path(s.removesuffix(".hash"))
+    else:  # Python < 3.9
+        if s.endswith(".hash"):
+            return Path(s[: -len(".hash")])
+        return Path(s)
 
 
 def _generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
@@ -2337,7 +2438,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.4"
+__version__ = "0.8.5"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -2380,6 +2481,7 @@ import argcomplete
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.clone2local import clone_repository_ssh, fetch_repository_archive
+from bash2gitlab.commit_map_command import commit_map
 from bash2gitlab.compile_all import process_uncompiled_directory
 from bash2gitlab.config import config
 from bash2gitlab.detect_drift import check_for_drift
@@ -2443,7 +2545,10 @@ def compile_handler(args: argparse.Namespace):
 
         logger.info("✅ GitLab CI processing complete.")
 
-    except (FileNotFoundError, RuntimeError, ValueError) as e:
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        sys.exit(10)
+    except (RuntimeError, ValueError) as e:
         logger.error(f"❌ An error occurred: {e}")
         sys.exit(1)
 
@@ -2488,7 +2593,37 @@ def shred_handler(args: argparse.Namespace):
 
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
-        sys.exit(1)
+        sys.exit(10)
+
+
+def commit_map_handler(args: argparse.Namespace) -> None:
+
+    pyproject_path = Path(args.pyproject_path)
+    try:
+        mapping = get_deployment_map(pyproject_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        sys.exit(10)
+    except KeyError as ke:
+        logger.error(f"❌ {ke}")
+        sys.exit(11)
+
+    commit_map(mapping, dry_run=args.dry_run, force=args.force)
+
+
+def map_deploy_handler(args: argparse.Namespace) -> None:
+
+    pyproject_path = Path(args.pyproject_path)
+    try:
+        mapping = get_deployment_map(pyproject_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        sys.exit(10)
+    except KeyError as ke:
+        logger.error(f"❌ {ke}")
+        sys.exit(11)
+
+    map_deploy(mapping, dry_run=args.dry_run, force=args.force)
 
 
 def main() -> int:
@@ -2681,18 +2816,38 @@ def main() -> int:
     )
     map_deploy_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
-    def map_deploy_handler(args: argparse.Namespace) -> None:
-
-        pyproject_path = Path(args.pyproject_path)
-        try:
-            mapping = get_deployment_map(pyproject_path)
-        except (FileNotFoundError, KeyError) as e:
-            logger.error(f"❌ {e}")
-            sys.exit(1)
-
-        map_deploy(mapping, dry_run=args.dry_run, force=args.force)
-
     map_deploy_parser.set_defaults(func=map_deploy_handler)
+
+    # --- commit-map Command ---
+    commit_map_parser = subparsers.add_parser(
+        "commit-map",
+        help=(
+            "Copy changed files from deployed directories back to their source"
+            " locations based on a mapping in pyproject.toml."
+        ),
+    )
+    commit_map_parser.add_argument(
+        "--pyproject",
+        dest="pyproject_path",
+        default="pyproject.toml",
+        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
+    )
+    commit_map_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the commit without copying files.",
+    )
+    commit_map_parser.add_argument(
+        "--force",
+        action="store_true",
+        help=("Overwrite source files even if they have been modified since the last " "deployment."),
+    )
+    commit_map_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
+    )
+    commit_map_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+
+    commit_map_parser.set_defaults(func=commit_map_handler)
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()

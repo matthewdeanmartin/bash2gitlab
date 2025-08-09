@@ -55,7 +55,7 @@ bash2gitlab shred --in original/.gitlab-ci.yml --out src
 ## Name
 
 Gitlab runners expect bash, sh or powershell. To use another shell, you have to use bash to execute a script in the other
-shell.
+shell. Best efforts are made to support powershell, but haven't been tested.
 
 ## Special files
 
@@ -76,7 +76,3 @@ This approach can't handle invocations that...
 ## Formatting and comments
 
 No particular guarantees that the compiled will have comments.
-
-## Not ready yet
-
-- Powershell is supported by gitlab, but not by this library... yet.

@@ -95,7 +95,10 @@ def compile_handler(args: argparse.Namespace):
 
         logger.info("✅ GitLab CI processing complete.")
 
-    except (FileNotFoundError, RuntimeError, ValueError) as e:
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        sys.exit(10)
+    except (RuntimeError, ValueError) as e:
         logger.error(f"❌ An error occurred: {e}")
         sys.exit(1)
 
@@ -140,7 +143,37 @@ def shred_handler(args: argparse.Namespace):
 
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
-        sys.exit(1)
+        sys.exit(10)
+
+
+def commit_map_handler(args: argparse.Namespace) -> None:
+
+    pyproject_path = Path(args.pyproject_path)
+    try:
+        mapping = get_deployment_map(pyproject_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        sys.exit(10)
+    except KeyError as ke:
+        logger.error(f"❌ {ke}")
+        sys.exit(11)
+
+    commit_map(mapping, dry_run=args.dry_run, force=args.force)
+
+
+def map_deploy_handler(args: argparse.Namespace) -> None:
+
+    pyproject_path = Path(args.pyproject_path)
+    try:
+        mapping = get_deployment_map(pyproject_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        sys.exit(10)
+    except KeyError as ke:
+        logger.error(f"❌ {ke}")
+        sys.exit(11)
+
+    map_deploy(mapping, dry_run=args.dry_run, force=args.force)
 
 
 def main() -> int:
@@ -333,17 +366,6 @@ def main() -> int:
     )
     map_deploy_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
-    def map_deploy_handler(args: argparse.Namespace) -> None:
-
-        pyproject_path = Path(args.pyproject_path)
-        try:
-            mapping = get_deployment_map(pyproject_path)
-        except (FileNotFoundError, KeyError) as e:
-            logger.error(f"❌ {e}")
-            sys.exit(1)
-
-        map_deploy(mapping, dry_run=args.dry_run, force=args.force)
-
     map_deploy_parser.set_defaults(func=map_deploy_handler)
 
     # --- commit-map Command ---
@@ -374,17 +396,6 @@ def main() -> int:
         "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
     )
     commit_map_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-
-    def commit_map_handler(args: argparse.Namespace) -> None:
-
-        pyproject_path = Path(args.pyproject_path)
-        try:
-            mapping = get_deployment_map(pyproject_path)
-        except (FileNotFoundError, KeyError) as e:
-            logger.error(f"❌ {e}")
-            sys.exit(1)
-
-        commit_map(mapping, dry_run=args.dry_run, force=args.force)
 
     commit_map_parser.set_defaults(func=commit_map_handler)
 

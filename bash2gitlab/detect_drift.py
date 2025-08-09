@@ -109,6 +109,7 @@ def _get_source_file_from_hash(hash_file: Path) -> Path:
             return Path(s[: -len(".hash")])
         return Path(s)
 
+
 def _generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
     """
     Generates a colorized (if enabled), unified diff string between two content strings.

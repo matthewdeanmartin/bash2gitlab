@@ -17,5 +17,4 @@
 - Include command to reproduce build copied to header
 
 ## Advanced Features
-- Powershell is supported by gitlab, but not by this library... yet.
 - Validate/lint with API calls to Gitlab.
