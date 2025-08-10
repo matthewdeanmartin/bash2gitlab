@@ -35,6 +35,9 @@ def extract_script_path(cmd_line: str) -> str | None:
     ./build.sh arg1 arg2
     pwsh -NoProfile run.ps1
     """
+    if not isinstance(cmd_line, str):
+        raise Exception()
+
     try:
         tokens = shlex.split(cmd_line, posix=True)
     except ValueError:

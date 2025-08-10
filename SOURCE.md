@@ -17,6 +17,7 @@
 │   ├── mock_ci_vars.py
 │   ├── parse_bash.py
 │   ├── update_checker.py
+│   ├── update_checker2.py
 │   ├── utils.py
 │   └── yaml_factory.py
 ├── watch_files.py
@@ -521,18 +522,18 @@ import difflib
 import io
 import logging
 import multiprocessing
-import shlex
 import sys
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
-from ruamel.yaml import CommentedMap
+from ruamel.yaml import CommentedMap, CommentedSeq
 from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.utils.dotenv import parse_env_file
+from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
 
@@ -557,83 +558,136 @@ BANNER = f"""# DO NOT EDIT
 """
 
 
-def extract_script_path(command_line: str) -> str | None:
-    """
-    Extracts the first shell script path from a shell command line.
+# def extract_script_path(command_line: str) -> str | None:
+#     """
+#     Extracts the first shell script path from a shell command line.
+#
+#     Args:
+#         command_line (str): A shell command line.
+#
+#     Returns:
+#         str | None: The script path if the line is a script invocation; otherwise, None.
+#     """
+#     try:
+#         tokens: list[str] = shlex.split(command_line)
+#     except ValueError:
+#         # Malformed shell syntax
+#         return None
+#
+#     executors = {"bash", "sh", "source", ".", "pwsh"}
+#
+#     parts = 0
+#     path_found = None
+#     for i, token in enumerate(tokens):
+#         path = Path(token)
+#         if path.suffix in (".sh", ".ps1"):
+#             # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
+#             if i > 0 and tokens[i - 1] in executors:
+#                 path_found = str(path).replace("\\", "/")
+#             else:
+#                 path_found = str(path).replace("\\", "/")
+#             parts += 1
+#         elif not token.isspace() and token not in executors:
+#             parts += 1
+#
+#     if path_found and parts == 1:
+#         return path_found
+#     return None
+
+
+def _as_items(
+    seq_or_list: list[TaggedScalar | str] | CommentedSeq | str,
+) -> tuple[list[Any], bool, CommentedSeq | None]:
+    """Normalize input to a Python list of items.
 
     Args:
-        command_line (str): A shell command line.
+        seq_or_list (list[TaggedScalar | str] | CommentedSeq | str): Script block input.
 
     Returns:
-        str | None: The script path if the line is a script invocation; otherwise, None.
+        tuple[list[Any], bool, CommentedSeq | None]:
+            - items as a list for processing,
+            - flag indicating original was a CommentedSeq,
+            - the original CommentedSeq (if any) for potential metadata reuse.
     """
+    if isinstance(seq_or_list, str):
+        return [seq_or_list], False, None
+    if isinstance(seq_or_list, CommentedSeq):
+        # Make a shallow list copy to manipulate while preserving the original node
+        return list(seq_or_list), True, seq_or_list
+    # Already a Python list (possibly containing ruamel nodes)
+    return list(seq_or_list), False, None
+
+
+def _rebuild_seq_like(
+    processed: list[Any],
+    was_commented_seq: bool,
+    original_seq: CommentedSeq | None,
+) -> list[Any] | CommentedSeq:
+    """Rebuild a sequence preserving ruamel type when appropriate.
+
+    Args:
+        processed (list[Any]): Final items after processing.
+        was_commented_seq (bool): True if input was a CommentedSeq.
+        original_seq (CommentedSeq | None): Original node to borrow metadata from.
+
+    Returns:
+        list[Any] | CommentedSeq: A list or a CommentedSeq preserving anchors/comments when possible.
+    """
+    if not was_commented_seq:
+        return processed
+    # Keep ruamel node type to preserve anchors and potential comments.
+    new_seq = CommentedSeq(processed)
+    # Best-effort carry over comment association metadata to reduce churn.
     try:
-        tokens: list[str] = shlex.split(command_line)
-    except ValueError:
-        # Malformed shell syntax
-        return None
-
-    executors = {"bash", "sh", "source", ".", "pwsh"}
-
-    parts = 0
-    path_found = None
-    for i, token in enumerate(tokens):
-        path = Path(token)
-        if path.suffix in (".sh", ".ps1"):
-            # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
-            if i > 0 and tokens[i - 1] in executors:
-                path_found = str(path).replace("\\", "/")
-            else:
-                path_found = str(path).replace("\\", "/")
-            parts += 1
-        elif not token.isspace() and token not in executors:
-            parts += 1
-
-    if path_found and parts == 1:
-        return path_found
-    return None
+        if original_seq is not None and hasattr(original_seq, "ca"):
+            new_seq.ca = original_seq.ca  # type: ignore[misc]
+    # metadata copy is best-effort
+    except Exception:  # nosec
+        pass
+    return new_seq
 
 
 def process_script_list(
-    script_list: Union[list[Any], str],
+    script_list: list[TaggedScalar | str] | CommentedSeq | str,
     scripts_root: Path,
-) -> Union[list[Any], LiteralScalarString]:
+) -> list[Any] | CommentedSeq | LiteralScalarString:
+    """Process a script list, inlining shell files while preserving YAML features.
+
+    The function accepts plain Python lists, ruamel ``CommentedSeq`` nodes, or a single
+    string. It attempts to inline shell script references (e.g., ``bash foo.sh`` or
+    ``./foo.sh``) into the YAML script block. If the resulting content contains only
+    plain strings and exceeds a small threshold, it collapses the block into a single
+    literal scalar string (``|``). If any YAML features such as anchors, tags, or
+    ``TaggedScalar`` nodes are present, it preserves list form to avoid losing semantics.
+
+    Args:
+        script_list (list[TaggedScalar | str] | CommentedSeq | str): YAML script lines.
+        scripts_root (Path): Root directory used to resolve script paths for inlining.
+
+    Returns:
+        list[Any] | CommentedSeq | LiteralScalarString: Processed script block. Returns a
+        ``LiteralScalarString`` when safe to collapse; otherwise returns a list or
+        ``CommentedSeq`` (matching the input style) to preserve YAML features.
     """
-    Processes a list of script lines, inlining any shell script references
-    while preserving other lines like YAML references. It will convert the
-    entire block to a literal scalar string `|` for long scripts, but only
-    if no YAML tags (like !reference) are present.
-    """
-    if isinstance(script_list, str):
-        script_list = [script_list]
+    items, was_commented_seq, original_seq = _as_items(script_list)
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
-    contains_tagged_scalar = False
     contains_anchors_or_tags = False
 
-    for item in script_list:
-        # Check for non-string YAML objects first (like !reference).
+    for item in items:
+        # Non-plain strings: preserve and mark that YAML features exist
         if not isinstance(item, str):
             if isinstance(item, TaggedScalar):
                 contains_tagged_scalar = True
-            processed_items.append(item)
-            continue  # Go to next item
-
-        if not isinstance(item, str):
-            # Any non-plain string (TaggedScalar, Commented* nodes, etc.)
-            # means we must not collapse to a single literal block, or we risk
-            # losing anchors/tags/references semantics.
-            if isinstance(item, TaggedScalar):
-                contains_tagged_scalar = True
-                # ruamel nodes may have .anchor attribute; treat any present anchor as a blocker
                 anchor_val = getattr(getattr(item, "anchor", None), "value", None)
                 if anchor_val:
                     contains_anchors_or_tags = True
-                    processed_items.append(item)
-                    continue
+            # Preserve any non-string node (e.g., TaggedScalar, Commented* nodes)
+            processed_items.append(item)
+            continue
 
-        # It's a string, see if it's a script path.
+        # Plain string: attempt to detect and inline scripts
         script_path_str = extract_script_path(item)
         if script_path_str:
             rel_path = script_path_str.strip().lstrip("./")
@@ -641,37 +695,40 @@ def process_script_list(
             try:
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
-
-                logger.debug(f"Inlining script '{Path(rel_path).as_posix()}' ({len(bash_lines)} lines).")
-                # --- source-map breadcrumbs for debuggability ---
+                logger.debug(
+                    "Inlining script '%s' (%d lines).",
+                    Path(rel_path).as_posix(),
+                    len(bash_lines),
+                )
                 begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
                 end_marker = "# <<< END inline"
                 processed_items.append(begin_marker)
                 processed_items.extend(bash_lines)
                 processed_items.append(end_marker)
             except (FileNotFoundError, ValueError) as e:
-                logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
+                logger.warning(
+                    "Could not inline script '%s': %s. Preserving original line.",
+                    script_path_str,
+                    e,
+                )
                 processed_items.append(item)
         else:
-            # It's a regular command string, preserve it.
             processed_items.append(item)
 
-    # --- Decide on the return format ---
-    # Condition to use a literal block `|`:
-    # 1. It must NOT contain any special YAML tags.
-    # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
-    # Collapse to a single literal block only when we're certain there are no YAML
-    # anchors/tags/references (on any item) and all items are plain strings.
+    # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)
-    has_yaml_features = contains_tagged_scalar or contains_anchors_or_tags
+    has_yaml_features = (
+        contains_tagged_scalar or contains_anchors_or_tags or was_commented_seq and not only_plain_strings
+    )
 
+    # Collapse to literal block only when no YAML features and sufficiently long
     if not has_yaml_features and only_plain_strings and len(processed_items) > 5:
         final_script_block = "\n".join(processed_items)
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)
-    if has_yaml_features and not only_plain_strings:
-        logger.debug("Preserving script block as a list to retain YAML anchors/tags/references.")
-    return processed_items
+
+    # Preserve sequence shape; if input was a CommentedSeq, return one
+    return _rebuild_seq_like(processed_items, was_commented_seq, original_seq)
 
 
 def process_job(job_data: dict, scripts_root: Path) -> int:
@@ -1817,7 +1874,9 @@ import io
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
+from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
@@ -1826,6 +1885,20 @@ from bash2gitlab.utils.yaml_factory import get_yaml
 logger = logging.getLogger(__name__)
 
 SHEBANG = "#!/bin/bash"
+
+
+def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
+    buf = io.StringIO()
+    # Temporarily suppress doc markers, then restore whatever was set globally
+    prev_start, prev_end = yaml.explicit_start, yaml.explicit_end
+    try:
+        yaml.explicit_start = False
+        yaml.explicit_end = False
+        yaml.dump(node, buf)
+    finally:
+        yaml.explicit_start, yaml.explicit_end = prev_start, prev_end
+    # Trim a single trailing newline that ruamel usually adds
+    return buf.getvalue().rstrip("\n")
 
 
 def create_script_filename(job_name: str, script_key: str) -> str:
@@ -1898,7 +1971,7 @@ def shred_variables_block(
 
 
 def shred_script_block(
-    script_content: list[str] | str,
+    script_content: list[str | Any] | str,
     job_name: str,
     script_key: str,
     scripts_output_path: Path,
@@ -1942,12 +2015,9 @@ def shred_script_block(
             elif item is not None:
                 # Any non-string item (like a CommentedMap that ruamel parsed from "key: value")
                 # should be dumped back into a string representation.
-                with io.StringIO() as string_stream:
-                    yaml.dump(item, string_stream)
-                    # The dump might include '...' at the end, remove it and any trailing newline.
-                    item_as_string = string_stream.getvalue().replace("...", "").strip()
-                    if item_as_string:
-                        processed_lines.append(item_as_string)
+                item_as_string = dump_inline_no_doc_markers(yaml, item)
+                if item_as_string:
+                    processed_lines.append(item_as_string)
 
     # Filter out empty or whitespace-only lines from the final list
     script_lines = [line for line in processed_lines if line and line.strip()]
@@ -2824,7 +2894,7 @@ def generate_config(level: str = "DEBUG") -> dict[str, Any]:
     """
     config: dict[str, Any] = {
         "version": 1,
-        "disable_existing_loggers": True,
+        "disable_existing_loggers": False,
         "formatters": {
             "standard": {"format": "[%(levelname)s] %(name)s: %(message)s"},
             "colored": {
@@ -2974,6 +3044,9 @@ def extract_script_path(cmd_line: str) -> str | None:
     ./build.sh arg1 arg2
     pwsh -NoProfile run.ps1
     """
+    if not isinstance(cmd_line, str):
+        raise Exception()
+
     try:
         tokens = shlex.split(cmd_line, posix=True)
     except ValueError:
@@ -3014,27 +3087,23 @@ def _is_script(tok: str) -> bool:
 ```
 ## File: utils\update_checker.py
 ```python
-"""
-A reusable Python submodule to check for package updates on PyPI using only stdlib.
+"""Improved update checker utility for bash2gitlab (standalone module).
 
-This module provides a function to check if a newer version of a specified
-package is available on PyPI. It is designed to be fault-tolerant, efficient,
-and dependency-light with the following features:
+Key improvements over prior version:
+- Clear public API with docstrings and type hints
+- Robust networking with timeouts, retries, and explicit User-Agent
+- Safe, simple JSON cache with TTL to avoid frequent network calls
+- Correct prerelease handling using packaging.version
+- Optional colorized output that respects NO_COLOR/CI/TERM and TTY
+- Non-invasive logging: caller may pass a logger or rely on a safe default
+- Narrow exception surface with custom error types
 
-- Uses only the Python standard library for networking (urllib).
-- Caches results to limit network requests. Cache lifetime is configurable.
-- Provides a function to manually reset the cache.
-- Stores the cache in an OS-appropriate temporary directory.
-- Logs a warning if the package is not found on PyPI (404).
-- Provides optional colorized output for terminals that support it.
-- Uses the `packaging` library for robust version parsing and comparison.
-- Includes an option to check for pre-releases (e.g., alpha, beta, rc).
+Public functions:
+- check_for_updates(package_name, current_version, ...)
+- reset_cache(package_name)
 
-Requirements:
-- packaging: `pip install packaging`
-
-To use, simply import and call the `check_for_updates` function.
-
+Return contract:
+- Returns a user-facing message string when an update is available; otherwise None.
 """
 
 from __future__ import annotations
@@ -3045,189 +3114,594 @@ import os
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
+from typing import Callable
 from urllib import error, request
 
-# The 'packaging' library is highly recommended for robust version handling.
-from packaging import version
+from packaging import version as _version
 
-# --- ANSI Color Codes ---
-YELLOW = "\033[93m"
-GREEN = "\033[92m"
-ENDC = "\033[0m"
+__all__ = [
+    "check_for_updates",
+    "reset_cache",
+    "PackageNotFoundError",
+    "NetworkError",
+]
 
 
-# --- Custom Exception ---
 class PackageNotFoundError(Exception):
-    """Custom exception for when a package is not found on PyPI."""
+    """Raised when the package does not exist on PyPI (HTTP 404)."""
+
+
+class NetworkError(Exception):
+    """Raised when a network error occurs while contacting PyPI."""
+
+
+@dataclass(frozen=True)
+class _Color:
+    YELLOW: str = "\033[93m"
+    GREEN: str = "\033[92m"
+    ENDC: str = "\033[0m"
+
+
+def _get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
+    """Get a warning logging function.
+
+    Args:
+        user_logger (logging.Logger | None): Logger instance or None.
+
+    Returns:
+        Callable[[str], None]: Logger warning method or built-in print.
+    """
+    if isinstance(user_logger, logging.Logger):
+        return user_logger.warning
+    return print
+
+
+def _can_use_color() -> bool:
+    """Determine if color output is allowed.
+
+    Returns:
+        bool: True if output can be colorized.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("CI"):
+        return False
+    if os.environ.get("TERM") == "dumb":
+        return False
+    try:
+        return sys.stdout.isatty()
+    except Exception:
+        return False
+
+
+def _cache_paths(package_name: str) -> tuple[str, str]:
+    """Compute cache directory and file path for a package.
+
+    Args:
+        package_name (str): Name of the package.
+
+    Returns:
+        tuple[str, str]: Cache directory and file path.
+    """
+    cache_dir = os.path.join(tempfile.gettempdir(), "python_update_checker")
+    cache_file = os.path.join(cache_dir, f"{package_name}_cache.json")
+    return cache_dir, cache_file
+
+
+def _is_fresh(cache_file: str, ttl_seconds: int) -> bool:
+    """Check if cache file is fresh.
+
+    Args:
+        cache_file (str): Path to cache file.
+        ttl_seconds (int): TTL in seconds.
+
+    Returns:
+        bool: True if cache is within TTL.
+    """
+    try:
+        if os.path.exists(cache_file):
+            last_check_time = os.path.getmtime(cache_file)
+            return (time.time() - last_check_time) < ttl_seconds
+    except (OSError, PermissionError):
+        return False
+    return False
+
+
+def _save_cache(cache_dir: str, cache_file: str, payload: dict) -> None:
+    """Save data to cache.
+
+    Args:
+        cache_dir (str): Cache directory.
+        cache_file (str): Cache file path.
+        payload (dict): Data to store.
+    """
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        with open(cache_file, "w", encoding="utf-8") as f:
+            json.dump({"last_check": time.time(), **payload}, f)
+    except (OSError, PermissionError):
+        pass
+
+
+def reset_cache(package_name: str) -> None:
+    """Remove cache entry for a given package.
+
+    Args:
+        package_name (str): Package name to clear from cache.
+    """
+    _, cache_file = _cache_paths(package_name)
+    try:
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+    except (OSError, PermissionError):
+        pass
+
+
+def _fetch_pypi_json(url: str, timeout: float) -> dict:
+    """Fetch JSON metadata from PyPI.
+
+    Args:
+        url (str): URL to fetch.
+        timeout (float): Timeout in seconds.
+
+    Returns:
+        dict: Parsed JSON data.
+    """
+    req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
+    with request.urlopen(req, timeout=timeout) as resp:  # nosec
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _get_latest_version_from_pypi(
+    package_name: str,
+    *,
+    include_prereleases: bool,
+    timeout: float = 5.0,
+    retries: int = 2,
+    backoff: float = 0.5,
+) -> str | None:
+    """Get latest version from PyPI.
+
+    Args:
+        package_name (str): Package name.
+        include_prereleases (bool): Whether to include prereleases.
+        timeout (float): Request timeout.
+        retries (int): Number of retries.
+        backoff (float): Backoff factor between retries.
+
+    Returns:
+        str | None: Latest version string, None if unavailable.
+
+    Raises:
+        PackageNotFoundError: If the package does not exist.
+        NetworkError: If network error occurs after retries.
+    """
+    url = f"https://pypi.org/pypi/{package_name}/json"
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            data = _fetch_pypi_json(url, timeout)
+            releases = data.get("releases", {})
+            if not releases:
+                info_ver = data.get("info", {}).get("version")
+                return str(info_ver) if info_ver else None
+            parsed: list[_version.Version] = []
+            for v_str in releases.keys():
+                try:
+                    v = _version.parse(v_str)
+                except _version.InvalidVersion:
+                    continue
+                if v.is_prerelease and not include_prereleases:
+                    continue
+                parsed.append(v)
+            if not parsed:
+                return None
+            return str(max(parsed))
+        except error.HTTPError as e:
+            if e.code == 404:
+                raise PackageNotFoundError from e
+            last_err = e
+        except (error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+            last_err = e
+        time.sleep(backoff * (attempt + 1))
+    raise NetworkError(str(last_err))
+
+
+def _format_update_message(
+    package_name: str,
+    current: _version.Version,
+    latest: _version.Version,
+) -> str:
+    """Format the update notification message.
+
+    Args:
+        package_name (str): Package name.
+        current (_version.Version): Current version.
+        latest (_version.Version): Latest version.
+
+    Returns:
+        str: Formatted update message.
+    """
+    pypi_url = f"https://pypi.org/project/{package_name}/"
+    if _can_use_color():
+        c = _Color()
+        return (
+            f"{c.YELLOW}A new version of {package_name} is available: {c.GREEN}{latest}{c.YELLOW} "
+            f"(you are using {current}).\n"
+            f"Please upgrade using your preferred package manager.\n"
+            f"More info: {pypi_url}{c.ENDC}"
+        )
+    return (
+        f"A new version of {package_name} is available: {latest} (you are using {current}).\n"
+        f"Please upgrade using your preferred package manager.\n"
+        f"More info: {pypi_url}"
+    )
 
 
 def check_for_updates(
     package_name: str,
     current_version: str,
     logger: logging.Logger | None = None,
+    *,
     cache_ttl_seconds: int = 86400,
     include_prereleases: bool = False,
 ) -> str | None:
-    """
-    Checks for a new version of a package on PyPI.
-
-    If an update is available, it returns a formatted message string.
-    Otherwise, it returns None. It fails fast and silently on errors.
+    """Check PyPI for a newer version of a package.
 
     Args:
-        package_name: The name of the package as it appears on PyPI.
-        current_version: The current version string of the running application.
-        logger: An optional logging.Logger instance. Used ONLY to log a
-                warning if the package is not found on PyPI.
-        cache_ttl_seconds: The number of seconds to cache the result.
-        include_prereleases: If True, include alpha/beta/rc versions.
+        package_name (str): The PyPI package name to check.
+        current_version (str): The currently installed version string.
+        logger (logging.Logger | None): Optional logger for warnings.
+        cache_ttl_seconds (int): Cache time-to-live in seconds.
+        include_prereleases (bool): Whether to consider prereleases newer.
 
     Returns:
-        A formatted message string if an update is available, else None.
+        str | None: Formatted update message if update available, else None.
     """
-    # pylint: disable=broad-exception-caught
-    try:
-        cache_dir = os.path.join(tempfile.gettempdir(), "python_update_checker")
-        cache_file = os.path.join(cache_dir, f"{package_name}_cache.json")
-
-        if _is_check_recently_done(cache_file, cache_ttl_seconds):
-            return None
-
-        latest_version_str = _get_latest_version_from_pypi(package_name, include_prereleases)
-        if not latest_version_str:
-            return None
-
-        current = version.parse(current_version)
-        latest = version.parse(latest_version_str)
-
-        if latest > current:
-            pypi_url = f"https://pypi.org/project/{package_name}/"
-            use_color = _can_use_color()
-
-            if use_color:
-                message = (
-                    f"{YELLOW}A new version of {package_name} is available: {GREEN}{latest}{YELLOW} "
-                    f"(you are using {current}).\n"
-                    f"Please upgrade using your preferred package manager.\n"
-                    f"More info: {pypi_url}{ENDC}"
-                )
-            else:
-                message = (
-                    f"A new version of {package_name} is available: {latest} "
-                    f"(you are using {current}).\n"
-                    f"Please upgrade using your preferred package manager.\n"
-                    f"More info: {pypi_url}"
-                )
-            _update_cache(cache_dir, cache_file)
-            return message
-
-        _update_cache(cache_dir, cache_file)
+    warn = _get_logger(logger)
+    cache_dir, cache_file = _cache_paths(package_name)
+    if _is_fresh(cache_file, cache_ttl_seconds):
         return None
-
+    try:
+        latest_str = _get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
+        if not latest_str:
+            _save_cache(cache_dir, cache_file, {"latest": None})
+            return None
+        current = _version.parse(current_version)
+        latest = _version.parse(latest_str)
+        if latest > current:
+            _save_cache(cache_dir, cache_file, {"latest": latest_str})
+            return _format_update_message(package_name, current, latest)
+        _save_cache(cache_dir, cache_file, {"latest": latest_str})
+        return None
     except PackageNotFoundError:
-        _log = _get_logger(logger)
-        _log(f"WARNING: Package '{package_name}' not found on PyPI.")
+        warn(f"Package '{package_name}' not found on PyPI.")
+        _save_cache(cache_dir, cache_file, {"latest": None})
+        return None
+    except NetworkError:
+        _save_cache(cache_dir, cache_file, {"latest": None})
         return None
     except Exception:
+        _save_cache(cache_dir, cache_file, {"latest": None})
         return None
 
 
-def reset_cache(package_name: str) -> None:
-    """
-    Deletes the cache file for a specific package, forcing a fresh check
-    on the next run. Fails silently if the file cannot be removed.
+if __name__ == "__main__":
+    msg = check_for_updates("bash2gitlab", "0.0.0")
+    if msg:
+        print(msg)
+    else:
+        print("No update message (cached or up-to-date).")
+```
+## File: utils\update_checker2.py
+```python
+"""Improved update checker utility for bash2gitlab (standalone module).
+
+Key improvements over prior version:
+- Clear public API with docstrings and type hints
+- Robust networking with timeouts, retries, and explicit User-Agent
+- Safe, simple JSON cache with TTL to avoid frequent network calls
+- Correct prerelease handling using packaging.version
+- Optional colorized output that respects NO_COLOR/CI/TERM and TTY
+- Non-invasive logging: caller may pass a logger or rely on a safe default
+- Narrow exception surface with custom error types
+
+Public functions:
+- check_for_updates(package_name, current_version, ...)
+- reset_cache(package_name)
+
+Return contract:
+- Returns a user-facing message string when an update is available; otherwise None.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+import tempfile
+import time
+from dataclasses import dataclass
+from typing import Callable
+from urllib import error, request
+
+from packaging import version as _version
+
+__all__ = [
+    "check_for_updates",
+    "reset_cache",
+    "PackageNotFoundError",
+    "NetworkError",
+]
+
+
+class PackageNotFoundError(Exception):
+    """Raised when the package does not exist on PyPI (HTTP 404)."""
+
+
+class NetworkError(Exception):
+    """Raised when a network error occurs while contacting PyPI."""
+
+
+@dataclass(frozen=True)
+class _Color:
+    YELLOW: str = "\033[93m"
+    GREEN: str = "\033[92m"
+    ENDC: str = "\033[0m"
+
+
+def _get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
+    """Get a warning logging function.
 
     Args:
-        package_name: The name of the package whose cache should be reset.
+        user_logger (logging.Logger | None): Logger instance or None.
+
+    Returns:
+        Callable[[str], None]: Logger warning method or built-in print.
     """
-    try:
-        cache_dir = os.path.join(tempfile.gettempdir(), "python_update_checker")
-        cache_file = os.path.join(cache_dir, f"{package_name}_cache.json")
-        if os.path.exists(cache_file):
-            os.remove(cache_file)
-    except (OSError, PermissionError):
-        # Fail silently if cache cannot be removed
-        pass
-
-
-def _get_logger(logger: logging.Logger | None):
-    """Returns a callable for logging or printing."""
-    if logger:
-        return logger.warning  # Use warning level for 404s
+    if isinstance(user_logger, logging.Logger):
+        return user_logger.warning
     return print
 
 
 def _can_use_color() -> bool:
+    """Determine if color output is allowed.
+
+    Returns:
+        bool: True if output can be colorized.
     """
-    Checks if the terminal supports color. Returns False if in a CI environment,
-    if NO_COLOR is set, or if the terminal is 'dumb'.
-    """
-    if "NO_COLOR" in os.environ:
+    if os.environ.get("NO_COLOR"):
         return False
-    if "CI" in os.environ and os.environ["CI"]:
+    if os.environ.get("CI"):
         return False
     if os.environ.get("TERM") == "dumb":
         return False
-    return sys.stdout.isatty()
+    try:
+        return sys.stdout.isatty()
+    except Exception:
+        return False
 
 
-def _is_check_recently_done(cache_file: str, ttl_seconds: int) -> bool:
-    """Checks if an update check was performed within the TTL."""
+def _cache_paths(package_name: str) -> tuple[str, str]:
+    """Compute cache directory and file path for a package.
+
+    Args:
+        package_name (str): Name of the package.
+
+    Returns:
+        tuple[str, str]: Cache directory and file path.
+    """
+    cache_dir = os.path.join(tempfile.gettempdir(), "python_update_checker")
+    cache_file = os.path.join(cache_dir, f"{package_name}_cache.json")
+    return cache_dir, cache_file
+
+
+def _is_fresh(cache_file: str, ttl_seconds: int) -> bool:
+    """Check if cache file is fresh.
+
+    Args:
+        cache_file (str): Path to cache file.
+        ttl_seconds (int): TTL in seconds.
+
+    Returns:
+        bool: True if cache is within TTL.
+    """
     try:
         if os.path.exists(cache_file):
             last_check_time = os.path.getmtime(cache_file)
-            if (time.time() - last_check_time) < ttl_seconds:
-                return True
+            return (time.time() - last_check_time) < ttl_seconds
     except (OSError, PermissionError):
         return False
     return False
 
 
-def _get_latest_version_from_pypi(package_name: str, include_prereleases: bool) -> str | None:
+def _save_cache(cache_dir: str, cache_file: str, payload: dict) -> None:
+    """Save data to cache.
+
+    Args:
+        cache_dir (str): Cache directory.
+        cache_file (str): Cache file path.
+        payload (dict): Data to store.
     """
-    Fetches the latest version string of a package from PyPI's JSON API.
-    Raises PackageNotFoundError for 404 errors.
-    """
-    url = f"https://pypi.org/pypi/{package_name}/json"
-    try:
-        req = request.Request(url, headers={"User-Agent": "python-update-checker/1.1"})
-        with request.urlopen(req, timeout=10) as response:  # nosec
-            data = json.loads(response.read().decode("utf-8"))
-
-        releases = data.get("releases", {})
-        if not releases:
-            return data.get("info", {}).get("version")
-
-        all_versions: list[version.Version] = []
-        for v_str in releases.keys():
-            try:
-                parsed_v = version.parse(v_str)
-                if not parsed_v.is_prerelease or include_prereleases:
-                    all_versions.append(parsed_v)
-            except version.InvalidVersion:
-                continue
-
-        if not all_versions:
-            return None
-
-        return str(max(all_versions))
-
-    except error.HTTPError as e:
-        if e.code == 404:
-            raise PackageNotFoundError from e
-        return None
-    except (error.URLError, json.JSONDecodeError, TimeoutError, OSError):
-        return None
-
-
-def _update_cache(cache_dir: str, cache_file: str) -> None:
-    """Creates or updates the cache file with the current timestamp."""
     try:
         os.makedirs(cache_dir, exist_ok=True)
         with open(cache_file, "w", encoding="utf-8") as f:
-            f.write(json.dumps({"last_check": time.time()}))
+            json.dump({"last_check": time.time(), **payload}, f)
     except (OSError, PermissionError):
         pass
+
+
+def reset_cache(package_name: str) -> None:
+    """Remove cache entry for a given package.
+
+    Args:
+        package_name (str): Package name to clear from cache.
+    """
+    _, cache_file = _cache_paths(package_name)
+    try:
+        if os.path.exists(cache_file):
+            os.remove(cache_file)
+    except (OSError, PermissionError):
+        pass
+
+
+def _fetch_pypi_json(url: str, timeout: float) -> dict:
+    """Fetch JSON metadata from PyPI.
+
+    Args:
+        url (str): URL to fetch.
+        timeout (float): Timeout in seconds.
+
+    Returns:
+        dict: Parsed JSON data.
+    """
+    req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
+    with request.urlopen(req, timeout=timeout) as resp:  # nosec
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _get_latest_version_from_pypi(
+    package_name: str,
+    *,
+    include_prereleases: bool,
+    timeout: float = 5.0,
+    retries: int = 2,
+    backoff: float = 0.5,
+) -> str | None:
+    """Get latest version from PyPI.
+
+    Args:
+        package_name (str): Package name.
+        include_prereleases (bool): Whether to include prereleases.
+        timeout (float): Request timeout.
+        retries (int): Number of retries.
+        backoff (float): Backoff factor between retries.
+
+    Returns:
+        str | None: Latest version string, None if unavailable.
+
+    Raises:
+        PackageNotFoundError: If the package does not exist.
+        NetworkError: If network error occurs after retries.
+    """
+    url = f"https://pypi.org/pypi/{package_name}/json"
+    last_err: Exception | None = None
+    for attempt in range(retries + 1):
+        try:
+            data = _fetch_pypi_json(url, timeout)
+            releases = data.get("releases", {})
+            if not releases:
+                info_ver = data.get("info", {}).get("version")
+                return str(info_ver) if info_ver else None
+            parsed: list[_version.Version] = []
+            for v_str in releases.keys():
+                try:
+                    v = _version.parse(v_str)
+                except _version.InvalidVersion:
+                    continue
+                if v.is_prerelease and not include_prereleases:
+                    continue
+                parsed.append(v)
+            if not parsed:
+                return None
+            return str(max(parsed))
+        except error.HTTPError as e:
+            if e.code == 404:
+                raise PackageNotFoundError from e
+            last_err = e
+        except (error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+            last_err = e
+        time.sleep(backoff * (attempt + 1))
+    raise NetworkError(str(last_err))
+
+
+def _format_update_message(
+    package_name: str,
+    current: _version.Version,
+    latest: _version.Version,
+) -> str:
+    """Format the update notification message.
+
+    Args:
+        package_name (str): Package name.
+        current (_version.Version): Current version.
+        latest (_version.Version): Latest version.
+
+    Returns:
+        str: Formatted update message.
+    """
+    pypi_url = f"https://pypi.org/project/{package_name}/"
+    if _can_use_color():
+        c = _Color()
+        return (
+            f"{c.YELLOW}A new version of {package_name} is available: {c.GREEN}{latest}{c.YELLOW} "
+            f"(you are using {current}).\n"
+            f"Please upgrade using your preferred package manager.\n"
+            f"More info: {pypi_url}{c.ENDC}"
+        )
+    return (
+        f"A new version of {package_name} is available: {latest} (you are using {current}).\n"
+        f"Please upgrade using your preferred package manager.\n"
+        f"More info: {pypi_url}"
+    )
+
+
+def check_for_updates(
+    package_name: str,
+    current_version: str,
+    logger: logging.Logger | None = None,
+    *,
+    cache_ttl_seconds: int = 86400,
+    include_prereleases: bool = False,
+) -> str | None:
+    """Check PyPI for a newer version of a package.
+
+    Args:
+        package_name (str): The PyPI package name to check.
+        current_version (str): The currently installed version string.
+        logger (logging.Logger | None): Optional logger for warnings.
+        cache_ttl_seconds (int): Cache time-to-live in seconds.
+        include_prereleases (bool): Whether to consider prereleases newer.
+
+    Returns:
+        str | None: Formatted update message if update available, else None.
+    """
+    warn = _get_logger(logger)
+    cache_dir, cache_file = _cache_paths(package_name)
+    if _is_fresh(cache_file, cache_ttl_seconds):
+        return None
+    try:
+        latest_str = _get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
+        if not latest_str:
+            _save_cache(cache_dir, cache_file, {"latest": None})
+            return None
+        current = _version.parse(current_version)
+        latest = _version.parse(latest_str)
+        if latest > current:
+            _save_cache(cache_dir, cache_file, {"latest": latest_str})
+            return _format_update_message(package_name, current, latest)
+        _save_cache(cache_dir, cache_file, {"latest": latest_str})
+        return None
+    except PackageNotFoundError:
+        warn(f"Package '{package_name}' not found on PyPI.")
+        _save_cache(cache_dir, cache_file, {"latest": None})
+        return None
+    except NetworkError:
+        _save_cache(cache_dir, cache_file, {"latest": None})
+        return None
+    except Exception:
+        _save_cache(cache_dir, cache_file, {"latest": None})
+        return None
+
+
+if __name__ == "__main__":
+    msg = check_for_updates("bash2gitlab", "0.0.0")
+    if msg:
+        print(msg)
+    else:
+        print("No update message (cached or up-to-date).")
 ```
 ## File: utils\utils.py
 ```python
@@ -3277,7 +3751,9 @@ from ruamel.yaml import YAML
 def get_yaml() -> YAML:
     y = YAML()
     y.width = 4096
-    y.preserve_quotes = True
-    y.default_style = None
+    y.preserve_quotes = False  # Maybe minimize quotes?
+    y.default_style = None  # minimize quotes
+    y.explicit_start = False  # no '---'
+    y.explicit_end = False  # no '...'
     return y
 ```

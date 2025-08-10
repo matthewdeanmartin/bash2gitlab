@@ -6,7 +6,9 @@ import io
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
+from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
@@ -15,6 +17,20 @@ from bash2gitlab.utils.yaml_factory import get_yaml
 logger = logging.getLogger(__name__)
 
 SHEBANG = "#!/bin/bash"
+
+
+def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
+    buf = io.StringIO()
+    # Temporarily suppress doc markers, then restore whatever was set globally
+    prev_start, prev_end = yaml.explicit_start, yaml.explicit_end
+    try:
+        yaml.explicit_start = False
+        yaml.explicit_end = False
+        yaml.dump(node, buf)
+    finally:
+        yaml.explicit_start, yaml.explicit_end = prev_start, prev_end
+    # Trim a single trailing newline that ruamel usually adds
+    return buf.getvalue().rstrip("\n")
 
 
 def create_script_filename(job_name: str, script_key: str) -> str:
@@ -87,7 +103,7 @@ def shred_variables_block(
 
 
 def shred_script_block(
-    script_content: list[str] | str,
+    script_content: list[str | Any] | str,
     job_name: str,
     script_key: str,
     scripts_output_path: Path,
@@ -131,12 +147,9 @@ def shred_script_block(
             elif item is not None:
                 # Any non-string item (like a CommentedMap that ruamel parsed from "key: value")
                 # should be dumped back into a string representation.
-                with io.StringIO() as string_stream:
-                    yaml.dump(item, string_stream)
-                    # The dump might include '...' at the end, remove it and any trailing newline.
-                    item_as_string = string_stream.getvalue().replace("...", "").strip()
-                    if item_as_string:
-                        processed_lines.append(item_as_string)
+                item_as_string = dump_inline_no_doc_markers(yaml, item)
+                if item_as_string:
+                    processed_lines.append(item_as_string)
 
     # Filter out empty or whitespace-only lines from the final list
     script_lines = [line for line in processed_lines if line and line.strip()]

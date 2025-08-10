@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Map commit CLI available.
+- Suggestions on incorrect cli command
 
 ## [0.8.5] - 2025-08-08
 

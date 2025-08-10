@@ -1,7 +1,7 @@
 import os
 from unittest import mock
 
-from bash2gitlab.utils.update_checker import YELLOW, _can_use_color, check_for_updates, reset_cache
+from bash2gitlab.utils.update_checker import _can_use_color, _Color, check_for_updates, reset_cache
 
 
 def test_finds_newer_version():
@@ -26,7 +26,7 @@ def test_handles_nonexistent_package(capsys):
     result = check_for_updates(package_name="no-such-package-exists-xyz-abc-123", current_version="1.0.0")
     assert result is None
     captured = capsys.readouterr()
-    assert "WARNING: Package 'no-such-package-exists-xyz-abc-123' not found on PyPI." in captured.out
+    assert "Package 'no-such-package-exists-xyz-abc-123' not found on PyPI." in captured.out
 
 
 def test_caching_works():
@@ -89,7 +89,8 @@ def test_color_output_enabled(mock_color):
     reset_cache("requests")
     result = check_for_updates(package_name="requests", current_version="2.0.0")
     assert result is not None
-    assert YELLOW in result, "Output should contain color codes when enabled"
+    c = _Color()
+    assert c.YELLOW in result, "Output should contain color codes when enabled"
 
 
 @mock.patch.dict(os.environ, {"CI": "true"})
@@ -99,4 +100,5 @@ def test_color_output_disabled_in_ci():
     assert not _can_use_color()
     result = check_for_updates(package_name="httpx", current_version="0.1.0")
     assert result is not None
-    assert YELLOW not in result, "Output should not have color in CI"
+    c = _Color()
+    assert c.YELLOW not in result, "Output should not have color in CI"

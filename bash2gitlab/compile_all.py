@@ -7,18 +7,18 @@ import difflib
 import io
 import logging
 import multiprocessing
-import shlex
 import sys
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
-from ruamel.yaml import CommentedMap
+from ruamel.yaml import CommentedMap, CommentedSeq
 from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.utils.dotenv import parse_env_file
+from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
 
@@ -43,83 +43,136 @@ BANNER = f"""# DO NOT EDIT
 """
 
 
-def extract_script_path(command_line: str) -> str | None:
-    """
-    Extracts the first shell script path from a shell command line.
+# def extract_script_path(command_line: str) -> str | None:
+#     """
+#     Extracts the first shell script path from a shell command line.
+#
+#     Args:
+#         command_line (str): A shell command line.
+#
+#     Returns:
+#         str | None: The script path if the line is a script invocation; otherwise, None.
+#     """
+#     try:
+#         tokens: list[str] = shlex.split(command_line)
+#     except ValueError:
+#         # Malformed shell syntax
+#         return None
+#
+#     executors = {"bash", "sh", "source", ".", "pwsh"}
+#
+#     parts = 0
+#     path_found = None
+#     for i, token in enumerate(tokens):
+#         path = Path(token)
+#         if path.suffix in (".sh", ".ps1"):
+#             # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
+#             if i > 0 and tokens[i - 1] in executors:
+#                 path_found = str(path).replace("\\", "/")
+#             else:
+#                 path_found = str(path).replace("\\", "/")
+#             parts += 1
+#         elif not token.isspace() and token not in executors:
+#             parts += 1
+#
+#     if path_found and parts == 1:
+#         return path_found
+#     return None
+
+
+def _as_items(
+    seq_or_list: list[TaggedScalar | str] | CommentedSeq | str,
+) -> tuple[list[Any], bool, CommentedSeq | None]:
+    """Normalize input to a Python list of items.
 
     Args:
-        command_line (str): A shell command line.
+        seq_or_list (list[TaggedScalar | str] | CommentedSeq | str): Script block input.
 
     Returns:
-        str | None: The script path if the line is a script invocation; otherwise, None.
+        tuple[list[Any], bool, CommentedSeq | None]:
+            - items as a list for processing,
+            - flag indicating original was a CommentedSeq,
+            - the original CommentedSeq (if any) for potential metadata reuse.
     """
+    if isinstance(seq_or_list, str):
+        return [seq_or_list], False, None
+    if isinstance(seq_or_list, CommentedSeq):
+        # Make a shallow list copy to manipulate while preserving the original node
+        return list(seq_or_list), True, seq_or_list
+    # Already a Python list (possibly containing ruamel nodes)
+    return list(seq_or_list), False, None
+
+
+def _rebuild_seq_like(
+    processed: list[Any],
+    was_commented_seq: bool,
+    original_seq: CommentedSeq | None,
+) -> list[Any] | CommentedSeq:
+    """Rebuild a sequence preserving ruamel type when appropriate.
+
+    Args:
+        processed (list[Any]): Final items after processing.
+        was_commented_seq (bool): True if input was a CommentedSeq.
+        original_seq (CommentedSeq | None): Original node to borrow metadata from.
+
+    Returns:
+        list[Any] | CommentedSeq: A list or a CommentedSeq preserving anchors/comments when possible.
+    """
+    if not was_commented_seq:
+        return processed
+    # Keep ruamel node type to preserve anchors and potential comments.
+    new_seq = CommentedSeq(processed)
+    # Best-effort carry over comment association metadata to reduce churn.
     try:
-        tokens: list[str] = shlex.split(command_line)
-    except ValueError:
-        # Malformed shell syntax
-        return None
-
-    executors = {"bash", "sh", "source", ".", "pwsh"}
-
-    parts = 0
-    path_found = None
-    for i, token in enumerate(tokens):
-        path = Path(token)
-        if path.suffix in (".sh", ".ps1"):
-            # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
-            if i > 0 and tokens[i - 1] in executors:
-                path_found = str(path).replace("\\", "/")
-            else:
-                path_found = str(path).replace("\\", "/")
-            parts += 1
-        elif not token.isspace() and token not in executors:
-            parts += 1
-
-    if path_found and parts == 1:
-        return path_found
-    return None
+        if original_seq is not None and hasattr(original_seq, "ca"):
+            new_seq.ca = original_seq.ca  # type: ignore[misc]
+    # metadata copy is best-effort
+    except Exception:  # nosec
+        pass
+    return new_seq
 
 
 def process_script_list(
-    script_list: Union[list[Any], str],
+    script_list: list[TaggedScalar | str] | CommentedSeq | str,
     scripts_root: Path,
-) -> Union[list[Any], LiteralScalarString]:
+) -> list[Any] | CommentedSeq | LiteralScalarString:
+    """Process a script list, inlining shell files while preserving YAML features.
+
+    The function accepts plain Python lists, ruamel ``CommentedSeq`` nodes, or a single
+    string. It attempts to inline shell script references (e.g., ``bash foo.sh`` or
+    ``./foo.sh``) into the YAML script block. If the resulting content contains only
+    plain strings and exceeds a small threshold, it collapses the block into a single
+    literal scalar string (``|``). If any YAML features such as anchors, tags, or
+    ``TaggedScalar`` nodes are present, it preserves list form to avoid losing semantics.
+
+    Args:
+        script_list (list[TaggedScalar | str] | CommentedSeq | str): YAML script lines.
+        scripts_root (Path): Root directory used to resolve script paths for inlining.
+
+    Returns:
+        list[Any] | CommentedSeq | LiteralScalarString: Processed script block. Returns a
+        ``LiteralScalarString`` when safe to collapse; otherwise returns a list or
+        ``CommentedSeq`` (matching the input style) to preserve YAML features.
     """
-    Processes a list of script lines, inlining any shell script references
-    while preserving other lines like YAML references. It will convert the
-    entire block to a literal scalar string `|` for long scripts, but only
-    if no YAML tags (like !reference) are present.
-    """
-    if isinstance(script_list, str):
-        script_list = [script_list]
+    items, was_commented_seq, original_seq = _as_items(script_list)
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
-    contains_tagged_scalar = False
     contains_anchors_or_tags = False
 
-    for item in script_list:
-        # Check for non-string YAML objects first (like !reference).
+    for item in items:
+        # Non-plain strings: preserve and mark that YAML features exist
         if not isinstance(item, str):
             if isinstance(item, TaggedScalar):
                 contains_tagged_scalar = True
-            processed_items.append(item)
-            continue  # Go to next item
-
-        if not isinstance(item, str):
-            # Any non-plain string (TaggedScalar, Commented* nodes, etc.)
-            # means we must not collapse to a single literal block, or we risk
-            # losing anchors/tags/references semantics.
-            if isinstance(item, TaggedScalar):
-                contains_tagged_scalar = True
-                # ruamel nodes may have .anchor attribute; treat any present anchor as a blocker
                 anchor_val = getattr(getattr(item, "anchor", None), "value", None)
                 if anchor_val:
                     contains_anchors_or_tags = True
-                    processed_items.append(item)
-                    continue
+            # Preserve any non-string node (e.g., TaggedScalar, Commented* nodes)
+            processed_items.append(item)
+            continue
 
-        # It's a string, see if it's a script path.
+        # Plain string: attempt to detect and inline scripts
         script_path_str = extract_script_path(item)
         if script_path_str:
             rel_path = script_path_str.strip().lstrip("./")
@@ -127,37 +180,40 @@ def process_script_list(
             try:
                 bash_code = read_bash_script(script_path)
                 bash_lines = bash_code.splitlines()
-
-                logger.debug(f"Inlining script '{Path(rel_path).as_posix()}' ({len(bash_lines)} lines).")
-                # --- source-map breadcrumbs for debuggability ---
+                logger.debug(
+                    "Inlining script '%s' (%d lines).",
+                    Path(rel_path).as_posix(),
+                    len(bash_lines),
+                )
                 begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
                 end_marker = "# <<< END inline"
                 processed_items.append(begin_marker)
                 processed_items.extend(bash_lines)
                 processed_items.append(end_marker)
             except (FileNotFoundError, ValueError) as e:
-                logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
+                logger.warning(
+                    "Could not inline script '%s': %s. Preserving original line.",
+                    script_path_str,
+                    e,
+                )
                 processed_items.append(item)
         else:
-            # It's a regular command string, preserve it.
             processed_items.append(item)
 
-    # --- Decide on the return format ---
-    # Condition to use a literal block `|`:
-    # 1. It must NOT contain any special YAML tags.
-    # 2. Either one of the inlined scripts was long, or the resulting total is long (e.g., > 5 lines).
-    # Collapse to a single literal block only when we're certain there are no YAML
-    # anchors/tags/references (on any item) and all items are plain strings.
+    # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)
-    has_yaml_features = contains_tagged_scalar or contains_anchors_or_tags
+    has_yaml_features = (
+        contains_tagged_scalar or contains_anchors_or_tags or was_commented_seq and not only_plain_strings
+    )
 
+    # Collapse to literal block only when no YAML features and sufficiently long
     if not has_yaml_features and only_plain_strings and len(processed_items) > 5:
         final_script_block = "\n".join(processed_items)
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)
-    if has_yaml_features and not only_plain_strings:
-        logger.debug("Preserving script block as a list to retain YAML anchors/tags/references.")
-    return processed_items
+
+    # Preserve sequence shape; if input was a CommentedSeq, return one
+    return _rebuild_seq_like(processed_items, was_commented_seq, original_seq)
 
 
 def process_job(job_data: dict, scripts_root: Path) -> int:
