@@ -24,7 +24,7 @@ from pathlib import Path
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from bash2gitlab.compile_all import process_uncompiled_directory
+from bash2gitlab.commands.compile_all import run_compile_all
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +39,6 @@ class _RecompileHandler(FileSystemEventHandler):
         *,
         uncompiled_path: Path,
         output_path: Path,
-        scripts_path: Path,
-        templates_dir: Path,
-        output_templates_dir: Path,
         dry_run: bool = False,
         parallelism: int | None = None,
     ) -> None:
@@ -49,9 +46,6 @@ class _RecompileHandler(FileSystemEventHandler):
         self._paths = {
             "uncompiled_path": uncompiled_path,
             "output_path": output_path,
-            "scripts_path": scripts_path,
-            "templates_dir": templates_dir,
-            "output_templates_dir": output_templates_dir,
         }
         self._flags = {"dry_run": dry_run, "parallelism": parallelism}
         self._debounce: float = 0.5  # seconds
@@ -73,7 +67,7 @@ class _RecompileHandler(FileSystemEventHandler):
 
         logger.info("🔄 Source changed; recompiling…")
         try:
-            process_uncompiled_directory(**self._paths, **self._flags)  # type: ignore[arg-type]
+            run_compile_all(**self._paths, **self._flags)  # type: ignore[arg-type]
             logger.info("✅ Recompiled successfully.")
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("❌ Recompilation failed: %s", exc, exc_info=True)
@@ -83,9 +77,6 @@ def start_watch(
     *,
     uncompiled_path: Path,
     output_path: Path,
-    scripts_path: Path,
-    templates_dir: Path,
-    output_templates_dir: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> None:
@@ -97,19 +88,12 @@ def start_watch(
     handler = _RecompileHandler(
         uncompiled_path=uncompiled_path,
         output_path=output_path,
-        scripts_path=scripts_path,
-        templates_dir=templates_dir,
-        output_templates_dir=output_templates_dir,
         dry_run=dry_run,
         parallelism=parallelism,
     )
 
     observer = Observer()
     observer.schedule(handler, str(uncompiled_path), recursive=True)
-    if templates_dir != uncompiled_path:
-        observer.schedule(handler, str(templates_dir), recursive=True)
-    if scripts_path not in (uncompiled_path, templates_dir):
-        observer.schedule(handler, str(scripts_path), recursive=True)
 
     try:
         observer.start()

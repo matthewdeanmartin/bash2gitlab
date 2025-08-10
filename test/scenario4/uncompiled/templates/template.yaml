@@ -1,4 +1,4 @@
 job:
   script:
     # relative to scripts folder
-    - ./test.sh
+    - ./scripts/test.sh

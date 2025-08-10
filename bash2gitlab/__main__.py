@@ -32,14 +32,14 @@ import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
-from bash2gitlab.clone2local import clone_repository_ssh, fetch_repository_archive
-from bash2gitlab.commit_map_command import commit_map
-from bash2gitlab.compile_all import process_uncompiled_directory
+from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
+from bash2gitlab.commands.commit_map import run_commit_map
+from bash2gitlab.commands.compile_all import run_compile_all
+from bash2gitlab.commands.detect_drift import run_detect_drift
+from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
+from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
+from bash2gitlab.commands.shred_all import run_shred_gitlab
 from bash2gitlab.config import config
-from bash2gitlab.detect_drift import check_for_drift
-from bash2gitlab.init_project import init_handler
-from bash2gitlab.map_deploy_command import get_deployment_map, map_deploy
-from bash2gitlab.shred_all import shred_gitlab_ci
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.utils.update_checker import check_for_updates
@@ -48,28 +48,50 @@ from bash2gitlab.watch_files import start_watch
 logger = logging.getLogger(__name__)
 
 
-def clone2local_handler(args: argparse.Namespace) -> None:
+def init_handler(args: argparse.Namespace) -> int:
+    """Handles the `init` command logic."""
+    logger.info("Starting interactive project initializer...")
+    base_path = Path(args.directory).resolve()
+
+    if not base_path.exists():
+        base_path.mkdir(parents=True)
+        logger.info(f"Created project directory: {base_path}")
+    elif (base_path / "bash2gitlab.toml").exists():
+        logger.error(f"A 'bash2gitlab.toml' file already exists in '{base_path}'. Aborting.")
+        return 1
+
+    try:
+        user_config = prompt_for_config()
+        create_config_file(base_path, user_config, args.dry_run)
+    except (KeyboardInterrupt, EOFError):
+        logger.warning("\nInitialization cancelled by user.")
+        return 1
+    return 0
+
+
+def clone2local_handler(args: argparse.Namespace) -> int:
     """
     Argparse handler for the clone2local command.
 
     This handler remains compatible with the new archive-based fetch function.
     """
     # This function now calls the new implementation, preserving the call stack.
+    dry_run = bool(args.dry_run)
+
     if str(args.repo_url).startswith("ssh"):
-        return clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir)
-    return fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir)
+        clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+    else:
+        fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+    return 0
 
 
-def compile_handler(args: argparse.Namespace):
+def compile_handler(args: argparse.Namespace) -> int:
     """Handler for the 'compile' command."""
     logger.info("Starting bash2gitlab compiler...")
 
     # Resolve paths, using sensible defaults if optional paths are not provided
     in_dir = Path(args.input_dir).resolve()
     out_dir = Path(args.output_dir).resolve()
-    scripts_dir = Path(args.scripts_dir).resolve() if args.scripts_dir else in_dir
-    templates_in_dir = Path(args.templates_in).resolve() if args.templates_in else in_dir
-    templates_out_dir = Path(args.templates_out).resolve() if args.templates_out else out_dir
     dry_run = bool(args.dry_run)
     parallelism = args.parallelism
 
@@ -77,21 +99,15 @@ def compile_handler(args: argparse.Namespace):
         start_watch(
             uncompiled_path=in_dir,
             output_path=out_dir,
-            scripts_path=scripts_dir,
-            templates_dir=templates_in_dir,
-            output_templates_dir=templates_out_dir,
             dry_run=dry_run,
             parallelism=parallelism,
         )
-        return
+        return 0
 
     try:
-        process_uncompiled_directory(
+        run_compile_all(
             uncompiled_path=in_dir,
             output_path=out_dir,
-            scripts_path=scripts_dir,
-            templates_dir=templates_in_dir,
-            output_templates_dir=templates_out_dir,
             dry_run=dry_run,
             parallelism=parallelism,
         )
@@ -100,83 +116,82 @@ def compile_handler(args: argparse.Namespace):
 
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
-        sys.exit(10)
+        return 10
     except (RuntimeError, ValueError) as e:
         logger.error(f"❌ An error occurred: {e}")
-        sys.exit(1)
+        return 1
+    return 0
 
 
-def drift_handler(args: argparse.Namespace) -> None:
-    if not hasattr(args, "templates_out") or not args.templates_out:
-        check_for_drift(Path(args.out), None)
-    else:
-        check_for_drift(Path(args.out), Path(args.templates_out))
+def drift_handler(args: argparse.Namespace) -> int:
+    run_detect_drift(Path(args.out))
+    return 0
 
 
-def shred_handler(args: argparse.Namespace):
+def shred_handler(args: argparse.Namespace) -> int:
     """Handler for the 'shred' command."""
     logger.info("Starting bash2gitlab shredder...")
 
     # Resolve the file and directory paths
     in_file = Path(args.input_file).resolve()
     out_file = Path(args.output_file).resolve()
-    if args.scripts_out:
-        scripts_out_dir = Path(args.scripts_out).resolve()
-    else:
-        if out_file.is_file():
-            scripts_out_dir = out_file.parent
-        else:
-            scripts_out_dir = out_file
+
     dry_run = bool(args.dry_run)
 
     try:
-        jobs, scripts = shred_gitlab_ci(
-            input_yaml_path=in_file,
-            output_yaml_path=out_file,
-            scripts_output_path=scripts_out_dir,
-            dry_run=dry_run,
-        )
+        jobs, scripts = run_shred_gitlab(input_yaml_path=in_file, output_yaml_path=out_file, dry_run=dry_run)
 
         if dry_run:
             logger.info(f"DRY RUN: Would have processed {jobs} jobs and created {scripts} script(s).")
         else:
             logger.info(f"✅ Successfully processed {jobs} jobs and created {scripts} script(s).")
             logger.info(f"Modified YAML written to: {out_file}")
-            logger.info(f"Scripts shredded to: {scripts_out_dir}")
-
+        return 0
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
-        sys.exit(10)
+        return 10
 
 
-def commit_map_handler(args: argparse.Namespace) -> None:
+def commit_map_handler(args: argparse.Namespace) -> int:
+    pyproject_path = Path(args.pyproject_path)
+    try:
+        mapping = get_deployment_map(pyproject_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        return 10
+    except KeyError as ke:
+        logger.error(f"❌ {ke}")
+        return 11
+
+    run_commit_map(mapping, dry_run=args.dry_run, force=args.force)
+    return 0
+
+
+def map_deploy_handler(args: argparse.Namespace) -> int:
 
     pyproject_path = Path(args.pyproject_path)
     try:
         mapping = get_deployment_map(pyproject_path)
     except FileNotFoundError as e:
         logger.error(f"❌ {e}")
-        sys.exit(10)
+        return 10
     except KeyError as ke:
         logger.error(f"❌ {ke}")
-        sys.exit(11)
+        return 11
 
-    commit_map(mapping, dry_run=args.dry_run, force=args.force)
+    run_map_deploy(mapping, dry_run=args.dry_run, force=args.force)
+    return 0
 
 
-def map_deploy_handler(args: argparse.Namespace) -> None:
+def add_common_arguments(parser):
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the command without filesystem changes.",
+    )
 
-    pyproject_path = Path(args.pyproject_path)
-    try:
-        mapping = get_deployment_map(pyproject_path)
-    except FileNotFoundError as e:
-        logger.error(f"❌ {e}")
-        sys.exit(10)
-    except KeyError as ke:
-        logger.error(f"❌ {ke}")
-        sys.exit(11)
-
-    map_deploy(mapping, dry_run=args.dry_run, force=args.force)
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
 
 def main() -> int:
@@ -210,31 +225,18 @@ def main() -> int:
         help="Output directory for the compiled GitLab CI files.",
     )
     compile_parser.add_argument(
-        "--scripts",
-        dest="scripts_dir",
-        help="Directory containing bash scripts to inline.",
-    )
-    compile_parser.add_argument(
-        "--templates-in",
-        help="Input directory for CI templates.",
-    )
-    compile_parser.add_argument(
-        "--templates-out",
-        help="Output directory for compiled CI templates.",
-    )
-    compile_parser.add_argument(
         "--parallelism",
         type=int,
         default=config.parallelism,
         help="Number of files to compile in parallel (default: CPU count).",
     )
+
     compile_parser.add_argument(
-        "--dry-run",
+        "--watch",
         action="store_true",
-        help="Simulate the compilation process without writing any files.",
+        help="Watch source directories and auto-recompile on changes.",
     )
-    compile_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    compile_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    add_common_arguments(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
 
     # --- Shred Command ---
@@ -251,22 +253,7 @@ def main() -> int:
         dest="output_file",
         help="Output path for the modified GitLab CI file.",
     )
-    shred_parser.add_argument(
-        "--scripts-out",
-        help="Output directory to save the shredded .sh script files.",
-    )
-    shred_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the shredding process without writing any files.",
-    )
-    compile_parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Watch source directories and auto-recompile on changes.",
-    )
-    shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    add_common_arguments(shred_parser)
     shred_parser.set_defaults(func=shred_handler)
 
     # detect drift command
@@ -279,14 +266,7 @@ def main() -> int:
         dest="out",
         help="Output path where generated files are.",
     )
-    detect_drift_parser.add_argument(
-        "--templates-out",
-        help="Output directory where compiled CI templates are.",
-    )
-    detect_drift_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
-    )
-    detect_drift_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    add_common_arguments(detect_drift_parser)
     detect_drift_parser.set_defaults(func=drift_handler)
 
     # --- copy2local Command ---
@@ -314,8 +294,7 @@ def main() -> int:
         required=True,
         help="Directory to include in the copy.",
     )
-    clone_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    clone_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    add_common_arguments(clone_parser)
     clone_parser.set_defaults(func=clone2local_handler)
 
     # Init Parser
@@ -329,18 +308,7 @@ def main() -> int:
         default=".",
         help="The directory to initialize the project in. Defaults to the current directory.",
     )
-    init_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the initialization process without creating the config file.",
-    )
-    init_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable verbose (DEBUG) logging output.",
-    )
-    init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    add_common_arguments(init_parser)
     init_parser.set_defaults(func=init_handler)
 
     # --- map-deploy Command ---
@@ -355,20 +323,11 @@ def main() -> int:
         help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
     )
     map_deploy_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the deployment without copying files.",
-    )
-    map_deploy_parser.add_argument(
         "--force",
         action="store_true",
         help="Overwrite target files even if they have been modified since the last deployment.",
     )
-    map_deploy_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
-    )
-    map_deploy_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-
+    add_common_arguments(map_deploy_parser)
     map_deploy_parser.set_defaults(func=map_deploy_handler)
 
     # --- commit-map Command ---
@@ -386,19 +345,11 @@ def main() -> int:
         help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
     )
     commit_map_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the commit without copying files.",
-    )
-    commit_map_parser.add_argument(
         "--force",
         action="store_true",
         help=("Overwrite source files even if they have been modified since the last " "deployment."),
     )
-    commit_map_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
-    )
-    commit_map_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    add_common_arguments(commit_map_parser)
 
     commit_map_parser.set_defaults(func=commit_map_handler)
 
@@ -410,9 +361,6 @@ def main() -> int:
     if args.command == "compile":
         args.input_dir = args.input_dir or config.input_dir
         args.output_dir = args.output_dir or config.output_dir
-        args.scripts_dir = args.scripts_dir or config.scripts_dir
-        args.templates_in = args.templates_in or config.templates_in
-        args.templates_out = args.templates_out or config.templates_out
         # Validate required arguments after merging
         if not args.input_dir:
             compile_parser.error("argument --in is required")
@@ -421,7 +369,6 @@ def main() -> int:
     elif args.command == "shred":
         args.input_file = args.input_file or config.input_file
         args.output_file = args.output_file or config.output_file
-        args.scripts_out = args.scripts_out or config.scripts_out
         # Validate required arguments after merging
         if not args.input_file:
             shred_parser.error("argument --in is required")
@@ -444,8 +391,7 @@ def main() -> int:
     logging.config.dictConfig(generate_config(level=log_level))
 
     # Execute the appropriate handler
-    args.func(args)
-    return 0
+    return args.func(args)
 
 
 if __name__ == "__main__":

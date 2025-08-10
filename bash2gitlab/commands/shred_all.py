@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 SHEBANG = "#!/bin/bash"
 
+__all__ = ["run_shred_gitlab"]
+
 
 def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
     buf = io.StringIO()
@@ -241,10 +243,9 @@ def process_shred_job(
     return shredded_count
 
 
-def shred_gitlab_ci(
+def run_shred_gitlab(
     input_yaml_path: Path,
     output_yaml_path: Path,
-    scripts_output_path: Path,
     dry_run: bool = False,
 ) -> tuple[int, int]:
     """
@@ -254,7 +255,6 @@ def shred_gitlab_ci(
     Args:
         input_yaml_path (Path): Path to the input .gitlab-ci.yml file.
         output_yaml_path (Path): Path to write the modified .gitlab-ci.yml file.
-        scripts_output_path (Path): Directory to store the generated .sh files.
         dry_run (bool): If True, simulate the process without writing any files.
 
     Returns:
@@ -280,7 +280,7 @@ def shred_gitlab_ci(
     global_vars_filename = None
     if "variables" in data and isinstance(data.get("variables"), dict):
         logger.info("Processing global variables block.")
-        global_vars_filename = shred_variables_block(data["variables"], "global", scripts_output_path, dry_run)
+        global_vars_filename = shred_variables_block(data["variables"], "global", output_yaml_path.parent, dry_run)
         if global_vars_filename:
             total_files_created += 1
 
@@ -290,7 +290,7 @@ def shred_gitlab_ci(
         if isinstance(value, dict) and "script" in value:
             logger.debug(f"Processing job: {key}")
             jobs_processed += 1
-            total_files_created += process_shred_job(key, value, scripts_output_path, dry_run, global_vars_filename)
+            total_files_created += process_shred_job(key, value, output_yaml_path.parent, dry_run, global_vars_filename)
 
     if total_files_created > 0:
         logger.info(f"Shredded {total_files_created} file(s) from {jobs_processed} job(s).")
@@ -303,7 +303,7 @@ def shred_gitlab_ci(
         logger.info("No script or variable blocks found to shred.")
 
     if not dry_run:
-        scripts_output_path.mkdir(exist_ok=True)
-        generate_mock_ci_variables_script(str(scripts_output_path / "mock_ci_variables.sh"))
+        output_yaml_path.parent.mkdir(exist_ok=True)
+        generate_mock_ci_variables_script(str(output_yaml_path.parent / "mock_ci_variables.sh"))
 
     return jobs_processed, total_files_created

@@ -11,6 +11,8 @@ import toml
 
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
 
+__all__ = ["run_map_deploy", "get_deployment_map"]
+
 
 def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
     """Parses the pyproject.toml file to get the deployment map.
@@ -35,7 +37,7 @@ def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
         raise KeyError("'[tool.bash2gitlab.map]' section not found in pyproject.toml") from ke
 
 
-def map_deploy(
+def run_map_deploy(
     source_to_target_map: dict[str, str],
     dry_run: bool = False,
     force: bool = False,

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commit_map_command import commit_map
+from bash2gitlab.commands.commit_map import run_commit_map
 
 
 def _hash(content: str) -> str:
@@ -40,7 +40,7 @@ def test_commit_map_copies_changes(prepare_environment):
     """Changed target files are copied back to source and hash updated."""
     env = prepare_environment
     env["target_file"].write_text("modified")
-    commit_map({str(env["source_dir"]): str(env["target_dir"])})
+    run_commit_map({str(env["source_dir"]): str(env["target_dir"])})
 
     assert env["source_file"].read_text() == "modified"
     assert env["hash_path"].read_text() == _hash("modified")
@@ -51,7 +51,7 @@ def test_commit_map_dry_run_no_changes(prepare_environment):
     env = prepare_environment
     original_hash = env["hash_path"].read_text()
     env["target_file"].write_text("modified")
-    commit_map({str(env["source_dir"]): str(env["target_dir"])}, dry_run=True)
+    run_commit_map({str(env["source_dir"]): str(env["target_dir"])}, dry_run=True)
 
     assert env["source_file"].read_text() == "original"
     assert env["hash_path"].read_text() == original_hash
@@ -64,7 +64,7 @@ def test_commit_map_skips_local_changes_without_force(prepare_environment, capsy
     env["target_file"].write_text("modified")
     original_hash = env["hash_path"].read_text()
 
-    commit_map({str(env["source_dir"]): str(env["target_dir"])})
+    run_commit_map({str(env["source_dir"]): str(env["target_dir"])})
 
     assert env["source_file"].read_text() == "local"
     assert env["hash_path"].read_text() == original_hash
@@ -78,7 +78,7 @@ def test_commit_map_force_overwrites_local_changes(prepare_environment):
     env["source_file"].write_text("local")
     env["target_file"].write_text("modified")
 
-    commit_map({str(env["source_dir"]): str(env["target_dir"])}, force=True)
+    run_commit_map({str(env["source_dir"]): str(env["target_dir"])}, force=True)
 
     assert env["source_file"].read_text() == "modified"
     assert env["hash_path"].read_text() == _hash("modified")
@@ -96,6 +96,6 @@ def test_commit_map_ignores_unsupported_files(tmp_path: Path):
     hash_path = target_file.with_suffix(target_file.suffix + ".hash")
     hash_path.write_text(_hash("content"))
 
-    commit_map({str(source_dir): str(target_dir)})
+    run_commit_map({str(source_dir): str(target_dir)})
 
     assert not (source_dir / "ignore.txt").exists()

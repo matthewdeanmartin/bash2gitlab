@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bash2gitlab.init_project import DEFAULT_CONFIG, DEFAULT_FLAGS, TOML_TEMPLATE, create_config_file, prompt_for_config
+from bash2gitlab.commands.init_project import (
+    DEFAULT_CONFIG,
+    DEFAULT_FLAGS,
+    TOML_TEMPLATE,
+    create_config_file,
+    prompt_for_config,
+)
 
 
 def test_prompt_for_config_defaults(monkeypatch):
@@ -28,9 +34,6 @@ def test_prompt_for_config_custom_values(monkeypatch):
     user_inputs = [
         "my_src",  # input_dir
         "my_out",  # output_dir
-        "my_scripts",  # scripts_dir
-        "",  # templates_in (default)
-        "my_out/tpl",  # templates_out
         "n",  # verbose
         "yes",  # quiet
     ]
@@ -45,9 +48,6 @@ def test_prompt_for_config_custom_values(monkeypatch):
     expected_config = {
         "input_dir": "my_src",
         "output_dir": "my_out",
-        "scripts_dir": "my_scripts",
-        "templates_in": "templates",  # Default value
-        "templates_out": "my_out/tpl",
         "verbose": False,
         "quiet": True,
     }

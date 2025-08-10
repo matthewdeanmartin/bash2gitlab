@@ -1,15 +1,16 @@
 ## Tree for bash2gitlab
 ```
 ├── bash_reader.py
-├── clone2local.py
-├── commit_map_command.py
-├── compile_all.py
+├── commands/
+│   ├── clone2local.py
+│   ├── commit_map.py
+│   ├── compile_all.py
+│   ├── detect_drift.py
+│   ├── init_project.py
+│   ├── map_deploy.py
+│   └── shred_all.py
 ├── config.py
-├── detect_drift.py
-├── init_project.py
-├── map_deploy_command.py
 ├── py.typed
-├── shred_all.py
 ├── utils/
 │   ├── cli_suggestions.py
 │   ├── dotenv.py
@@ -26,6 +27,8 @@
 
 ## File: bash_reader.py
 ```python
+"""Read a bash script and inline any `source script.sh` patterns."""
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +46,9 @@ logger = logging.getLogger(__name__)
 # - \s+         - At least one whitespace character.
 # - (?P<path>[\w./\\-]+) - Captures the file path.
 # - \s*$        - Optional whitespace until the end of the line.
-SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
+# SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
+# Handle optional comment.
+SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(?:#.*)?$")
 
 
 class SourceSecurityError(RuntimeError):
@@ -206,7 +211,741 @@ def inline_bash_source(
 
     return "".join(final_content_lines)
 ```
-## File: clone2local.py
+## File: config.py
+```python
+"""TOML based configuration. A way to communicate command arguments without using CLI switches."""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+# Use tomllib if available (Python 3.11+), otherwise fall back to tomli
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    try:
+        import tomli as tomllib
+    except ImportError:
+        tomllib = None
+
+logger = logging.getLogger(__name__)
+
+
+class _Config:
+    """
+    Handles loading and accessing configuration settings with a clear precedence:
+    1. Environment Variables (BASH2GITLAB_*)
+    2. Configuration File ('bash2gitlab.toml' or 'pyproject.toml')
+    3. Default values (handled by the consumer, e.g., argparse)
+    """
+
+    _ENV_VAR_PREFIX = "BASH2GITLAB_"
+    _CONFIG_FILES = ["bash2gitlab.toml", "pyproject.toml"]
+
+    def __init__(self, config_path_override: Path | None = None):
+        """
+        Initializes the configuration object.
+
+        Args:
+            config_path_override (Path | None): If provided, this specific config file
+                will be loaded, bypassing the normal search. For testing.
+        """
+        self._config_path_override = config_path_override
+        self._file_config: dict[str, Any] = self._load_file_config()
+        self._env_config: dict[str, str] = self._load_env_config()
+
+    def _find_config_file(self) -> Path | None:
+        """Searches for a configuration file in the current directory and its parents."""
+        current_dir = Path.cwd()
+        for directory in [current_dir, *current_dir.parents]:
+            for filename in self._CONFIG_FILES:
+                config_path = directory / filename
+                if config_path.is_file():
+                    logger.debug(f"Found configuration file: {config_path}")
+                    return config_path
+        return None
+
+    def _load_file_config(self) -> dict[str, Any]:
+        """Loads configuration from the first TOML file found or a test override."""
+        config_path = self._config_path_override or self._find_config_file()
+        if not config_path:
+            return {}
+
+        if not tomllib:
+            logger.warning(
+                "TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11."
+            )
+            return {}
+
+        try:
+            with config_path.open("rb") as f:
+                data = tomllib.load(f)
+
+            if config_path.name == "pyproject.toml":
+                file_config = data.get("tool", {}).get("bash2gitlab", {})
+            else:
+                file_config = data
+
+            logger.info(f"Loaded configuration from {config_path}")
+            return file_config
+
+        except tomllib.TOMLDecodeError as e:
+            logger.error(f"Error decoding TOML file {config_path}: {e}")
+            return {}
+        except OSError as e:
+            logger.error(f"Error reading file {config_path}: {e}")
+            return {}
+
+    def _load_env_config(self) -> dict[str, str]:
+        """Loads configuration from environment variables."""
+        file_config = {}
+        for key, value in os.environ.items():
+            if key.startswith(self._ENV_VAR_PREFIX):
+                config_key = key[len(self._ENV_VAR_PREFIX) :].lower()
+                file_config[config_key] = value
+                logger.debug(f"Loaded from environment: {config_key}")
+        return file_config
+
+    def _get_str(self, key: str) -> str | None:
+        """Gets a string value, respecting precedence."""
+        value = self._env_config.get(key)
+        if value is not None:
+            return value
+
+        value = self._file_config.get(key)
+        return str(value) if value is not None else None
+
+    def _get_bool(self, key: str) -> bool | None:
+        """Gets a boolean value, respecting precedence."""
+        value = self._env_config.get(key)
+        if value is not None:
+            return value.lower() in ("true", "1", "t", "y", "yes")
+
+        value = self._file_config.get(key)
+        if value is not None:
+            if not isinstance(value, bool):
+                logger.warning(f"Config value for '{key}' is not a boolean. Coercing to bool.")
+            return bool(value)
+
+        return None
+
+    def _get_int(self, key: str) -> int | None:
+        """Gets an integer value, respecting precedence."""
+        value = self._env_config.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except ValueError:
+                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
+                return None
+
+        value = self._file_config.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
+                return None
+
+        return None
+
+    # --- Compile Command Properties ---
+    @property
+    def input_dir(self) -> str | None:
+        return self._get_str("input_dir")
+
+    @property
+    def output_dir(self) -> str | None:
+        return self._get_str("output_dir")
+
+    @property
+    def parallelism(self) -> int | None:
+        return self._get_int("parallelism")
+
+    # --- Shred Command Properties ---
+    @property
+    def input_file(self) -> str | None:
+        return self._get_str("input_file")
+
+    @property
+    def output_file(self) -> str | None:
+        return self._get_str("output_file")
+
+    @property
+    def scripts_out(self) -> str | None:
+        return self._get_str("scripts_out")
+
+    # --- Shared Properties ---
+    @property
+    def dry_run(self) -> bool | None:
+        return self._get_bool("dry_run")
+
+    @property
+    def verbose(self) -> bool | None:
+        return self._get_bool("verbose")
+
+    @property
+    def quiet(self) -> bool | None:
+        return self._get_bool("quiet")
+
+
+# Singleton instance for the rest of the application to use.
+config = _Config()
+
+
+def _reset_for_testing(config_path_override: Path | None = None):
+    """
+    Resets the singleton config instance. For testing purposes only.
+    Allows specifying a direct path to a config file.
+    """
+    # pylint: disable=global-statement
+    global config
+    config = _Config(config_path_override=config_path_override)
+```
+## File: py.typed
+```
+# when type checking dependents, tell type checkers to use this package's types
+```
+## File: watch_files.py
+```python
+"""
+Watch mode for bash2gitlab.
+
+Usage (internal):
+    from pathlib import Path
+    from bash2gitlab.watch import start_watch
+
+    start_watch(
+        uncompiled_path=Path("./ci"),
+        output_path=Path("./compiled"),
+        scripts_path=Path("./ci"),
+        templates_dir=Path("./ci/templates"),
+        output_templates_dir=Path("./compiled/templates"),
+        dry_run=False,
+    )
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from pathlib import Path
+
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
+from watchdog.observers import Observer
+
+from bash2gitlab.commands.compile_all import run_compile_all
+
+logger = logging.getLogger(__name__)
+
+
+class _RecompileHandler(FileSystemEventHandler):
+    """
+    Fire the compiler every time a *.yml, *.yaml or *.sh file changes.
+    """
+
+    def __init__(
+        self,
+        *,
+        uncompiled_path: Path,
+        output_path: Path,
+        dry_run: bool = False,
+        parallelism: int | None = None,
+    ) -> None:
+        super().__init__()
+        self._paths = {
+            "uncompiled_path": uncompiled_path,
+            "output_path": output_path,
+        }
+        self._flags = {"dry_run": dry_run, "parallelism": parallelism}
+        self._debounce: float = 0.5  # seconds
+        self._last_run = 0.0
+
+    def on_any_event(self, event: FileSystemEvent) -> None:
+        # Skip directories, temp files, and non-relevant extensions
+        if event.is_directory:
+            return
+        if event.src_path.endswith((".tmp", ".swp", "~")):  # type: ignore[arg-type]
+            return
+        if not event.src_path.endswith((".yml", ".yaml", ".sh")):  # type: ignore[arg-type]
+            return
+
+        now = time.monotonic()
+        if now - self._last_run < self._debounce:
+            return
+        self._last_run = now
+
+        logger.info("🔄 Source changed; recompiling…")
+        try:
+            run_compile_all(**self._paths, **self._flags)  # type: ignore[arg-type]
+            logger.info("✅ Recompiled successfully.")
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("❌ Recompilation failed: %s", exc, exc_info=True)
+
+
+def start_watch(
+    *,
+    uncompiled_path: Path,
+    output_path: Path,
+    dry_run: bool = False,
+    parallelism: int | None = None,
+) -> None:
+    """
+    Start an in-process watchdog that recompiles whenever source files change.
+
+    Blocks forever (Ctrl-C to stop).
+    """
+    handler = _RecompileHandler(
+        uncompiled_path=uncompiled_path,
+        output_path=output_path,
+        dry_run=dry_run,
+        parallelism=parallelism,
+    )
+
+    observer = Observer()
+    observer.schedule(handler, str(uncompiled_path), recursive=True)
+
+    try:
+        observer.start()
+        logger.info("👀 Watching for changes to *.yml, *.yaml, *.sh … (Ctrl-C to quit)")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        logger.info("⏹  Stopping watcher.")
+    finally:
+        observer.stop()
+        observer.join()
+```
+## File: __about__.py
+```python
+"""Metadata for bash2gitlab."""
+
+__all__ = [
+    "__title__",
+    "__version__",
+    "__description__",
+    "__readme__",
+    "__keywords__",
+    "__license__",
+    "__requires_python__",
+    "__status__",
+]
+
+__title__ = "bash2gitlab"
+__version__ = "0.8.7"
+__description__ = "Compile bash to gitlab pipeline yaml"
+__readme__ = "README.md"
+__keywords__ = ["bash", "gitlab"]
+__license__ = "MIT"
+__requires_python__ = ">=3.8"
+__status__ = "4 - Beta"
+```
+## File: __main__.py
+```python
+"""
+Handles CLI interactions for bash2gitlab
+
+usage: bash2gitlab [-h] [--version] {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map} ...
+
+A tool for making development of centralized yaml gitlab templates more pleasant.
+
+positional arguments:
+  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map}
+    compile             Compile an uncompiled directory into a standard GitLab CI structure.
+    shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
+    detect-drift        Detect if generated files have been edited and display what the edits are.
+    copy2local          Copy folder(s) from a repo to local, for testing bash in the dependent repo
+    init                Initialize a new bash2gitlab project and config file.
+    map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
+    commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
+
+options:
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import logging.config
+import sys
+from pathlib import Path
+
+import argcomplete
+
+from bash2gitlab import __about__
+from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
+from bash2gitlab.commands.commit_map import run_commit_map
+from bash2gitlab.commands.compile_all import run_compile_all
+from bash2gitlab.commands.detect_drift import run_detect_drift
+from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
+from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
+from bash2gitlab.commands.shred_all import run_shred_gitlab
+from bash2gitlab.config import config
+from bash2gitlab.utils.cli_suggestions import SmartParser
+from bash2gitlab.utils.logging_config import generate_config
+from bash2gitlab.utils.update_checker import check_for_updates
+from bash2gitlab.watch_files import start_watch
+
+logger = logging.getLogger(__name__)
+
+
+def init_handler(args: argparse.Namespace) -> int:
+    """Handles the `init` command logic."""
+    logger.info("Starting interactive project initializer...")
+    base_path = Path(args.directory).resolve()
+
+    if not base_path.exists():
+        base_path.mkdir(parents=True)
+        logger.info(f"Created project directory: {base_path}")
+    elif (base_path / "bash2gitlab.toml").exists():
+        logger.error(f"A 'bash2gitlab.toml' file already exists in '{base_path}'. Aborting.")
+        return 1
+
+    try:
+        user_config = prompt_for_config()
+        create_config_file(base_path, user_config, args.dry_run)
+    except (KeyboardInterrupt, EOFError):
+        logger.warning("\nInitialization cancelled by user.")
+        return 1
+    return 0
+
+
+def clone2local_handler(args: argparse.Namespace) -> int:
+    """
+    Argparse handler for the clone2local command.
+
+    This handler remains compatible with the new archive-based fetch function.
+    """
+    # This function now calls the new implementation, preserving the call stack.
+    dry_run = bool(args.dry_run)
+
+    if str(args.repo_url).startswith("ssh"):
+        clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+    else:
+        fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+    return 0
+
+
+def compile_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'compile' command."""
+    logger.info("Starting bash2gitlab compiler...")
+
+    # Resolve paths, using sensible defaults if optional paths are not provided
+    in_dir = Path(args.input_dir).resolve()
+    out_dir = Path(args.output_dir).resolve()
+    dry_run = bool(args.dry_run)
+    parallelism = args.parallelism
+
+    if args.watch:
+        start_watch(
+            uncompiled_path=in_dir,
+            output_path=out_dir,
+            dry_run=dry_run,
+            parallelism=parallelism,
+        )
+        return 0
+
+    try:
+        run_compile_all(
+            uncompiled_path=in_dir,
+            output_path=out_dir,
+            dry_run=dry_run,
+            parallelism=parallelism,
+        )
+
+        logger.info("✅ GitLab CI processing complete.")
+
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        return 10
+    except (RuntimeError, ValueError) as e:
+        logger.error(f"❌ An error occurred: {e}")
+        return 1
+    return 0
+
+
+def drift_handler(args: argparse.Namespace) -> int:
+    run_detect_drift(Path(args.out))
+    return 0
+
+
+def shred_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'shred' command."""
+    logger.info("Starting bash2gitlab shredder...")
+
+    # Resolve the file and directory paths
+    in_file = Path(args.input_file).resolve()
+    out_file = Path(args.output_file).resolve()
+
+    dry_run = bool(args.dry_run)
+
+    try:
+        jobs, scripts = run_shred_gitlab(input_yaml_path=in_file, output_yaml_path=out_file, dry_run=dry_run)
+
+        if dry_run:
+            logger.info(f"DRY RUN: Would have processed {jobs} jobs and created {scripts} script(s).")
+        else:
+            logger.info(f"✅ Successfully processed {jobs} jobs and created {scripts} script(s).")
+            logger.info(f"Modified YAML written to: {out_file}")
+        return 0
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        return 10
+
+
+def commit_map_handler(args: argparse.Namespace) -> int:
+    pyproject_path = Path(args.pyproject_path)
+    try:
+        mapping = get_deployment_map(pyproject_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        return 10
+    except KeyError as ke:
+        logger.error(f"❌ {ke}")
+        return 11
+
+    run_commit_map(mapping, dry_run=args.dry_run, force=args.force)
+    return 0
+
+
+def map_deploy_handler(args: argparse.Namespace) -> int:
+
+    pyproject_path = Path(args.pyproject_path)
+    try:
+        mapping = get_deployment_map(pyproject_path)
+    except FileNotFoundError as e:
+        logger.error(f"❌ {e}")
+        return 10
+    except KeyError as ke:
+        logger.error(f"❌ {ke}")
+        return 11
+
+    run_map_deploy(mapping, dry_run=args.dry_run, force=args.force)
+    return 0
+
+
+def add_common_arguments(parser):
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate the command without filesystem changes.",
+    )
+
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+
+
+def main() -> int:
+    """Main CLI entry point."""
+    check_for_updates(__about__.__title__, __about__.__version__)
+
+    parser = SmartParser(
+        prog=__about__.__title__,
+        description=root_doc,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # --- Compile Command ---
+    compile_parser = subparsers.add_parser(
+        "compile", help="Compile an uncompiled directory into a standard GitLab CI structure."
+    )
+    compile_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=not bool(config.input_dir),
+        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
+    )
+    compile_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=not bool(config.output_dir),
+        help="Output directory for the compiled GitLab CI files.",
+    )
+    compile_parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=config.parallelism,
+        help="Number of files to compile in parallel (default: CPU count).",
+    )
+
+    compile_parser.add_argument(
+        "--watch",
+        action="store_true",
+        help="Watch source directories and auto-recompile on changes.",
+    )
+    add_common_arguments(compile_parser)
+    compile_parser.set_defaults(func=compile_handler)
+
+    # --- Shred Command ---
+    shred_parser = subparsers.add_parser(
+        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
+    )
+    shred_parser.add_argument(
+        "--in",
+        dest="input_file",
+        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
+    )
+    shred_parser.add_argument(
+        "--out",
+        dest="output_file",
+        help="Output path for the modified GitLab CI file.",
+    )
+    add_common_arguments(shred_parser)
+    shred_parser.set_defaults(func=shred_handler)
+
+    # detect drift command
+    # --- Shred Command ---
+    detect_drift_parser = subparsers.add_parser(
+        "detect-drift", help="Detect if generated files have been edited and display what the edits are."
+    )
+    detect_drift_parser.add_argument(
+        "--out",
+        dest="out",
+        help="Output path where generated files are.",
+    )
+    add_common_arguments(detect_drift_parser)
+    detect_drift_parser.set_defaults(func=drift_handler)
+
+    # --- copy2local Command ---
+    clone_parser = subparsers.add_parser(
+        "copy2local",
+        help="Copy folder(s) from a repo to local, for testing bash in the dependent repo",
+    )
+    clone_parser.add_argument(
+        "--repo-url",
+        required=True,
+        help="Repository URL to copy.",
+    )
+    clone_parser.add_argument(
+        "--branch",
+        required=True,
+        help="Branch to copy.",
+    )
+    clone_parser.add_argument(
+        "--copy-dir",
+        required=True,
+        help="Destination directory for the copy.",
+    )
+    clone_parser.add_argument(
+        "--source-dir",
+        required=True,
+        help="Directory to include in the copy.",
+    )
+    add_common_arguments(clone_parser)
+    clone_parser.set_defaults(func=clone2local_handler)
+
+    # Init Parser
+    init_parser = subparsers.add_parser(
+        "init",
+        help="Initialize a new bash2gitlab project and config file.",
+    )
+    init_parser.add_argument(
+        "directory",
+        nargs="?",
+        default=".",
+        help="The directory to initialize the project in. Defaults to the current directory.",
+    )
+    add_common_arguments(init_parser)
+    init_parser.set_defaults(func=init_handler)
+
+    # --- map-deploy Command ---
+    map_deploy_parser = subparsers.add_parser(
+        "map-deploy",
+        help="Deploy files from source to target directories based on a mapping in pyproject.toml.",
+    )
+    map_deploy_parser.add_argument(
+        "--pyproject",
+        dest="pyproject_path",
+        default="pyproject.toml",
+        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
+    )
+    map_deploy_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite target files even if they have been modified since the last deployment.",
+    )
+    add_common_arguments(map_deploy_parser)
+    map_deploy_parser.set_defaults(func=map_deploy_handler)
+
+    # --- commit-map Command ---
+    commit_map_parser = subparsers.add_parser(
+        "commit-map",
+        help=(
+            "Copy changed files from deployed directories back to their source"
+            " locations based on a mapping in pyproject.toml."
+        ),
+    )
+    commit_map_parser.add_argument(
+        "--pyproject",
+        dest="pyproject_path",
+        default="pyproject.toml",
+        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
+    )
+    commit_map_parser.add_argument(
+        "--force",
+        action="store_true",
+        help=("Overwrite source files even if they have been modified since the last " "deployment."),
+    )
+    add_common_arguments(commit_map_parser)
+
+    commit_map_parser.set_defaults(func=commit_map_handler)
+
+    argcomplete.autocomplete(parser)
+    args = parser.parse_args()
+
+    # --- Configuration Precedence: CLI > ENV > TOML ---
+    # Merge string/path arguments
+    if args.command == "compile":
+        args.input_dir = args.input_dir or config.input_dir
+        args.output_dir = args.output_dir or config.output_dir
+        # Validate required arguments after merging
+        if not args.input_dir:
+            compile_parser.error("argument --in is required")
+        if not args.output_dir:
+            compile_parser.error("argument --out is required")
+    elif args.command == "shred":
+        args.input_file = args.input_file or config.input_file
+        args.output_file = args.output_file or config.output_file
+        # Validate required arguments after merging
+        if not args.input_file:
+            shred_parser.error("argument --in is required")
+        if not args.output_file:
+            shred_parser.error("argument --out is required")
+
+    # Merge boolean flags
+    args.verbose = args.verbose or config.verbose or False
+    args.quiet = args.quiet or config.quiet or False
+    if hasattr(args, "dry_run"):
+        args.dry_run = args.dry_run or config.dry_run or False
+
+    # --- Setup Logging ---
+    if args.verbose:
+        log_level = "DEBUG"
+    elif args.quiet:
+        log_level = "CRITICAL"
+    else:
+        log_level = "INFO"
+    logging.config.dictConfig(generate_config(level=log_level))
+
+    # Execute the appropriate handler
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+## File: commands\clone2local.py
 ```python
 """A command to copy just some of a centralized repo's bash commands to a local repo for debugging."""
 
@@ -223,8 +962,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["fetch_repository_archive", "clone_repository_ssh"]
 
-def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
+
+def fetch_repository_archive(
+    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
+) -> None:
     """Fetches and extracts a specific directory from a repository archive.
 
     This function avoids using Git by downloading the repository as a ZIP archive.
@@ -238,6 +981,7 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
         source_dir: A single directory path (relative to the repo root) to
             extract and copy to the clone_dir.
         clone_dir: The destination directory. This directory must be empty.
+        dry_run: Simulate action
 
     Raises:
         FileExistsError: If the clone_dir exists and is not empty.
@@ -262,7 +1006,8 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
     if clone_path.exists() and any(clone_path.iterdir()):
         raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
     # Ensure the directory exists, but don't error if it's already there (as long as it's empty)
-    clone_path.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        clone_path.mkdir(parents=True, exist_ok=True)
 
     try:
         # Use a temporary directory that cleans itself up automatically.
@@ -270,7 +1015,8 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
             temp_path = Path(temp_dir)
             archive_path = temp_path / "repo.zip"
             unzip_root = temp_path / "unzipped"
-            unzip_root.mkdir()
+            if not dry_run:
+                unzip_root.mkdir()
 
             # 2. Construct the archive URL and check for its existence.
             archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
@@ -294,10 +1040,15 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
 
             logger.info("Downloading archive to %s", archive_path)
             # URL is validated above.
-            urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
+            if not dry_run:
+                urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
 
             # 3. Unzip the downloaded archive.
             logger.info("Extracting archive to %s", unzip_root)
+            if dry_run:
+                # Nothing left meaningful to dry run
+                return
+
             with zipfile.ZipFile(archive_path, "r") as zf:
                 zf.extractall(unzip_root)
 
@@ -339,7 +1090,9 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
     logger.info("Successfully fetched directories into %s", clone_path)
 
 
-def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
+def clone_repository_ssh(
+    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
+) -> None:
     """Clones a repo via Git and copies a specific directory.
 
     This function is designed for SSH or authenticated HTTPS URLs that require
@@ -352,6 +1105,7 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
         branch: The name of the branch to check out (e.g., 'main', 'develop').
         source_dir: A single directory path (relative to the repo root) to copy.
         clone_dir: The destination directory. This directory must be empty.
+        dry_run: Simulate action
 
     Raises:
         FileExistsError: If the clone_dir exists and is not empty.
@@ -371,7 +1125,8 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
     # 1. Validate that the destination directory is empty.
     if clone_path.exists() and any(clone_path.iterdir()):
         raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
-    clone_path.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        clone_path.mkdir(parents=True, exist_ok=True)
 
     try:
         # Use a temporary directory for the full clone, which will be auto-cleaned.
@@ -382,11 +1137,15 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
             # 2. Clone the repository.
             # We clone the specific branch directly to be more efficient.
             # repo_url is a variable, but is intended to be a trusted source.
-            subprocess.run(  # nosec: B603, B607
-                ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
-                check=True,
-                capture_output=True,  # Capture stdout/stderr to hide git's noisy output
-            )
+            command = ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)]
+            if dry_run:
+                logger.info(f"Would have run {' '.join(command)}")
+            else:
+                subprocess.run(  # nosec: B603, B607
+                    ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
+                    check=True,
+                    capture_output=True,  # Capture stdout/stderr to hide git's noisy output
+                )
 
             logger.info("Clone successful. Copying specified directories.")
             # 3. Copy the specified directory to the final destination.
@@ -396,7 +1155,7 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
             if repo_source_dir.is_dir():
                 logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
                 shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
-            else:
+            elif not dry_run:
                 logger.warning("Directory '%s' not found in repository, skipping.", source_dir)
 
     except Exception as e:
@@ -408,24 +1167,27 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
 
     logger.info("Successfully cloned directories into %s", clone_path)
 ```
-## File: commit_map_command.py
+## File: commands\commit_map.py
 ```python
 """Copy from many repos relevant shell scripts changes back to the central repo."""
 
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 from pathlib import Path
 
-__all__ = ["commit_map"]
+__all__ = ["run_commit_map"]
 
 
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
 
+logger = logging.getLogger(__name__)
 
-def commit_map(
+
+def run_commit_map(
     source_to_target_map: dict[str, str],
     dry_run: bool = False,
     force: bool = False,
@@ -510,7 +1272,7 @@ def commit_map(
                 with open(hash_file_path, "w", encoding="utf-8") as f:
                     f.write(target_hash)
 ```
-## File: compile_all.py
+## File: commands\compile_all.py
 ```python
 """Command to inline bash or powershell into gitlab pipeline yaml."""
 
@@ -521,6 +1283,7 @@ import difflib
 import io
 import logging
 import multiprocessing
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -537,6 +1300,21 @@ from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["run_compile_all"]
+
+
+def _normalize_for_compare(text: str) -> str:
+    # Normalize line endings
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Trim trailing whitespace per line
+    text = "\n".join(line.rstrip() for line in text.splitlines())
+    # Ensure exactly one newline at EOF
+    if not text.endswith("\n"):
+        text += "\n"
+    # Collapse multiple blank lines at EOF to one (optional)
+    text = re.sub(r"\n{3,}$", "\n\n", text)
+    return text
 
 
 def remove_excess(command: str) -> str:
@@ -555,43 +1333,6 @@ BANNER = f"""# DO NOT EDIT
 #     {remove_excess(' '.join(sys.argv))}
 
 """
-
-
-# def extract_script_path(command_line: str) -> str | None:
-#     """
-#     Extracts the first shell script path from a shell command line.
-#
-#     Args:
-#         command_line (str): A shell command line.
-#
-#     Returns:
-#         str | None: The script path if the line is a script invocation; otherwise, None.
-#     """
-#     try:
-#         tokens: list[str] = shlex.split(command_line)
-#     except ValueError:
-#         # Malformed shell syntax
-#         return None
-#
-#     executors = {"bash", "sh", "source", ".", "pwsh"}
-#
-#     parts = 0
-#     path_found = None
-#     for i, token in enumerate(tokens):
-#         path = Path(token)
-#         if path.suffix in (".sh", ".ps1"):
-#             # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
-#             if i > 0 and tokens[i - 1] in executors:
-#                 path_found = str(path).replace("\\", "/")
-#             else:
-#                 path_found = str(path).replace("\\", "/")
-#             parts += 1
-#         elif not token.isspace() and token not in executors:
-#             parts += 1
-#
-#     if path_found and parts == 1:
-#         return path_found
-#     return None
 
 
 def _as_items(
@@ -865,27 +1606,67 @@ def write_yaml_and_hash(
     logger.debug(f"Updated hash file: {short_path(hash_file)}")
 
 
+def _unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
+    """Return a unified diff between *old* and *new* content with filenames.
+
+    keepends=True preserves newline structure for line-accurate diffs in logs.
+    """
+    return "".join(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            fromfile=f"{path} ({from_label})",
+            tofile=f"{path} ({to_label})",
+        )
+    )
+
+
+def _diff_stats(diff_text: str) -> tuple[int, int, int]:
+    """Compute (changed_lines, insertions, deletions) from unified diff text.
+
+    We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
+    """
+    ins = del_ = 0
+    for line in diff_text.splitlines():
+        if not line:
+            continue
+        # Skip headers/hunks
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        # Pure additions/deletions in unified diff start with '+' or '-'
+        if line.startswith("+"):
+            ins += 1
+        elif line.startswith("-"):
+            del_ += 1
+    return ins + del_, ins, del_
+
+
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
     """
     Writes a compiled file safely. If the destination file was manually edited in a meaningful way
     (i.e., the YAML data structure changed), it aborts with a descriptive error and a diff.
 
-    Args:
-        output_file: The path to the destination file.
-        new_content: The full, new content to be written.
-        dry_run: If True, simulate without writing.
-
-    Returns:
-        True if a file was written or would be written in a dry run, False otherwise.
-
-    Raises:
-        SystemExit: If the destination file has been manually modified.
+    Returns True if a file was written (or would be in dry run), False otherwise.
     """
     if dry_run:
         logger.info(f"[DRY RUN] Would evaluate writing to {short_path(output_file)}")
-        # In dry run, we report as if a change would happen if there is one.
-        if not output_file.exists() or output_file.read_text(encoding="utf-8") != new_content:
-            logger.info(f"[DRY RUN] Changes detected for {short_path(output_file)}.")
+        if not output_file.exists():
+            logger.info(f"[DRY RUN] Would create {short_path(output_file)} ({len(new_content.splitlines())} lines).")
+            return True
+        current_content = output_file.read_text(encoding="utf-8")
+
+        current_norm = _normalize_for_compare(current_content)
+        new_norm = _normalize_for_compare(new_content)
+
+        if current_norm == new_norm:
+            logger.debug("No textual changes after normalization. Skipping write.")
+            return False
+
+        if current_content != new_content:
+            diff_text = _unified_diff(current_content, new_content, output_file)
+            changed, ins, rem = _diff_stats(diff_text)
+            logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
+            logger.debug(diff_text)
             return True
         logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")
         return False
@@ -910,8 +1691,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # Decode the last known content from the hash file
     last_known_base64 = hash_file.read_text(encoding="utf-8").strip()
     try:
-        last_known_content_bytes = base64.b64decode(last_known_base64)
-        last_known_content = last_known_content_bytes.decode("utf-8")
+        last_known_content = base64.b64decode(last_known_base64).decode("utf-8")
     except (ValueError, TypeError) as e:
         error_message = (
             f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\n"
@@ -924,44 +1704,27 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     current_content = output_file.read_text(encoding="utf-8")
 
     # Load both YAML versions to compare their data structures
-    # --- Gracefully handle YAML parsing ---
     yaml = get_yaml()
-
-    last_known_doc = None
-    current_doc = None
-    is_current_corrupt = False
-
-    # First, try to load the last known good version. This should not fail unless the hash is corrupt.
     try:
         last_known_doc = yaml.load(last_known_content)
     except YAMLError as e:
-        error_message = (
-            f"ERROR: Could not parse YAML from the .hash file for '{short_path(output_file)}'. It is corrupted.\n"
-            f"Error: {e}\n"
-            "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
+        logger.error(
+            "ERROR: Could not parse YAML from the .hash file for '%s'. It is corrupted. Error: %s",
+            short_path(output_file),
+            e,
         )
-        logger.error(error_message)
         raise SystemExit(1) from e
 
-    # Next, try to load the current on-disk version. This might fail if manually edited.
     try:
         current_doc = yaml.load(current_content)
+        is_current_corrupt = False
     except YAMLError:
-        # The current file is corrupt. Treat this as a manual edit.
         is_current_corrupt = True
-        logger.warning(f"Could not parse YAML from '{short_path(output_file)}'; it appears to be corrupt.")
+        logger.warning("Could not parse YAML from '%s'; it appears to be corrupt.", short_path(output_file))
 
     # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
     if is_current_corrupt or current_doc != last_known_doc:
-        # Generate a diff between the *last known good version* and the *current modified version*
-        diff = difflib.unified_diff(
-            last_known_content.splitlines(keepends=True),
-            current_content.splitlines(keepends=True),
-            fromfile=f"{output_file} (last known good)",
-            tofile=f"{output_file} (current, with manual edits)",
-        )
-        diff_text = "".join(diff)
-
+        diff_text = _unified_diff(last_known_content, current_content, output_file, "last known good", "current")
         corruption_warning = (
             "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n"
             if is_current_corrupt
@@ -991,11 +1754,22 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # If we reach here, the current file is valid (or just reformatted).
     # Now, we check if the *newly generated* content is different from the current content.
     if new_content != current_content:
-        logger.info(f"Content of {short_path(output_file)} has changed (reformatted or updated). Writing new version.")
+        # NEW: log diff + counts before writing
+        diff_text = _unified_diff(current_content, new_content, output_file)
+        changed, ins, rem = _diff_stats(diff_text)
+        logger.info(
+            "Rewriting %s: %d lines changed (+%d, -%d).",
+            short_path(output_file),
+            changed,
+            ins,
+            rem,
+        )
+        logger.debug(diff_text)
+
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
 
-    logger.debug(f"Content of {short_path(output_file)} is already up to date. Skipping.")
+    logger.debug("Content of %s is already up to date. Skipping.", short_path(output_file))
     return False
 
 
@@ -1020,12 +1794,9 @@ def _compile_single_file(
     return inlined_for_file, int(written)
 
 
-def process_uncompiled_directory(
+def run_compile_all(
     uncompiled_path: Path,
     output_path: Path,
-    scripts_path: Path,
-    templates_dir: Path,
-    output_templates_dir: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> int:
@@ -1036,9 +1807,6 @@ def process_uncompiled_directory(
     Args:
         uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
-        scripts_path (Path): Optionally put all bash files into a script folder.
-        templates_dir (Path): Optionally put all yaml files into a template folder.
-        output_templates_dir (Path): Optionally put all compiled template files into an output template folder.
         dry_run (bool): If True, simulate the process without writing any files.
         parallelism (int | None): Maximum number of processes to use for parallel compilation.
 
@@ -1050,8 +1818,6 @@ def process_uncompiled_directory(
 
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
-        if templates_dir.is_dir():
-            output_templates_dir.mkdir(parents=True, exist_ok=True)
 
     global_vars = {}
     global_vars_path = uncompiled_path / "global_variables.sh"
@@ -1071,14 +1837,14 @@ def process_uncompiled_directory(
         output_root_yaml = output_path / root_yaml.name
         files_to_process.append((root_yaml, output_root_yaml, global_vars, "root file"))
 
-    if templates_dir.is_dir():
-        template_files = list(templates_dir.rglob("*.yml")) + list(templates_dir.rglob("*.yaml"))
+    if uncompiled_path.is_dir():
+        template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
         if not template_files:
-            logger.warning(f"No template YAML files found in {templates_dir}")
+            logger.warning(f"No template YAML files found in {uncompiled_path}")
 
         for template_path in template_files:
-            relative_path = template_path.relative_to(templates_dir)
-            output_file = output_templates_dir / relative_path
+            relative_path = template_path.relative_to(uncompiled_path)
+            output_file = output_path / relative_path
             files_to_process.append((template_path, output_file, {}, "template file"))
 
     total_files = len(files_to_process)
@@ -1088,7 +1854,7 @@ def process_uncompiled_directory(
 
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
-            (src, out, scripts_path, variables, uncompiled_path, dry_run, label)
+            (src, out, uncompiled_path, variables, uncompiled_path, dry_run, label)
             for src, out, variables, label in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
@@ -1098,7 +1864,7 @@ def process_uncompiled_directory(
     else:
         for src, out, variables, label in files_to_process:
             inlined_for_file, wrote = _compile_single_file(
-                src, out, scripts_path, variables, uncompiled_path, dry_run, label
+                src, out, uncompiled_path, variables, uncompiled_path, dry_run, label
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
@@ -1114,214 +1880,7 @@ def process_uncompiled_directory(
 
     return total_inlined_count
 ```
-## File: config.py
-```python
-"""TOML based configuration. A way to communicate command arguments without using CLI switches."""
-
-from __future__ import annotations
-
-import logging
-import os
-import sys
-from pathlib import Path
-from typing import Any
-
-# Use tomllib if available (Python 3.11+), otherwise fall back to tomli
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomli as tomllib
-    except ImportError:
-        tomllib = None
-
-logger = logging.getLogger(__name__)
-
-
-class _Config:
-    """
-    Handles loading and accessing configuration settings with a clear precedence:
-    1. Environment Variables (BASH2GITLAB_*)
-    2. Configuration File ('bash2gitlab.toml' or 'pyproject.toml')
-    3. Default values (handled by the consumer, e.g., argparse)
-    """
-
-    _ENV_VAR_PREFIX = "BASH2GITLAB_"
-    _CONFIG_FILES = ["bash2gitlab.toml", "pyproject.toml"]
-
-    def __init__(self, config_path_override: Path | None = None):
-        """
-        Initializes the configuration object.
-
-        Args:
-            config_path_override (Path | None): If provided, this specific config file
-                will be loaded, bypassing the normal search. For testing.
-        """
-        self._config_path_override = config_path_override
-        self._file_config: dict[str, Any] = self._load_file_config()
-        self._env_config: dict[str, str] = self._load_env_config()
-
-    def _find_config_file(self) -> Path | None:
-        """Searches for a configuration file in the current directory and its parents."""
-        current_dir = Path.cwd()
-        for directory in [current_dir, *current_dir.parents]:
-            for filename in self._CONFIG_FILES:
-                config_path = directory / filename
-                if config_path.is_file():
-                    logger.debug(f"Found configuration file: {config_path}")
-                    return config_path
-        return None
-
-    def _load_file_config(self) -> dict[str, Any]:
-        """Loads configuration from the first TOML file found or a test override."""
-        config_path = self._config_path_override or self._find_config_file()
-        if not config_path:
-            return {}
-
-        if not tomllib:
-            logger.warning(
-                "TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11."
-            )
-            return {}
-
-        try:
-            with config_path.open("rb") as f:
-                data = tomllib.load(f)
-
-            if config_path.name == "pyproject.toml":
-                file_config = data.get("tool", {}).get("bash2gitlab", {})
-            else:
-                file_config = data
-
-            logger.info(f"Loaded configuration from {config_path}")
-            return file_config
-
-        except tomllib.TOMLDecodeError as e:
-            logger.error(f"Error decoding TOML file {config_path}: {e}")
-            return {}
-        except OSError as e:
-            logger.error(f"Error reading file {config_path}: {e}")
-            return {}
-
-    def _load_env_config(self) -> dict[str, str]:
-        """Loads configuration from environment variables."""
-        file_config = {}
-        for key, value in os.environ.items():
-            if key.startswith(self._ENV_VAR_PREFIX):
-                config_key = key[len(self._ENV_VAR_PREFIX) :].lower()
-                file_config[config_key] = value
-                logger.debug(f"Loaded from environment: {config_key}")
-        return file_config
-
-    def _get_str(self, key: str) -> str | None:
-        """Gets a string value, respecting precedence."""
-        value = self._env_config.get(key)
-        if value is not None:
-            return value
-
-        value = self._file_config.get(key)
-        return str(value) if value is not None else None
-
-    def _get_bool(self, key: str) -> bool | None:
-        """Gets a boolean value, respecting precedence."""
-        value = self._env_config.get(key)
-        if value is not None:
-            return value.lower() in ("true", "1", "t", "y", "yes")
-
-        value = self._file_config.get(key)
-        if value is not None:
-            if not isinstance(value, bool):
-                logger.warning(f"Config value for '{key}' is not a boolean. Coercing to bool.")
-            return bool(value)
-
-        return None
-
-    def _get_int(self, key: str) -> int | None:
-        """Gets an integer value, respecting precedence."""
-        value = self._env_config.get(key)
-        if value is not None:
-            try:
-                return int(value)
-            except ValueError:
-                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
-                return None
-
-        value = self._file_config.get(key)
-        if value is not None:
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
-                return None
-
-        return None
-
-    # --- Compile Command Properties ---
-    @property
-    def input_dir(self) -> str | None:
-        return self._get_str("input_dir")
-
-    @property
-    def output_dir(self) -> str | None:
-        return self._get_str("output_dir")
-
-    @property
-    def scripts_dir(self) -> str | None:
-        return self._get_str("scripts_dir")
-
-    @property
-    def templates_in(self) -> str | None:
-        return self._get_str("templates_in")
-
-    @property
-    def templates_out(self) -> str | None:
-        return self._get_str("templates_out")
-
-    @property
-    def parallelism(self) -> int | None:
-        return self._get_int("parallelism")
-
-    # --- Shred Command Properties ---
-    @property
-    def input_file(self) -> str | None:
-        return self._get_str("input_file")
-
-    @property
-    def output_file(self) -> str | None:
-        return self._get_str("output_file")
-
-    @property
-    def scripts_out(self) -> str | None:
-        return self._get_str("scripts_out")
-
-    # --- Shared Properties ---
-    @property
-    def dry_run(self) -> bool | None:
-        return self._get_bool("dry_run")
-
-    @property
-    def verbose(self) -> bool | None:
-        return self._get_bool("verbose")
-
-    @property
-    def quiet(self) -> bool | None:
-        return self._get_bool("quiet")
-
-
-# Singleton instance for the rest of the application to use.
-config = _Config()
-
-
-def _reset_for_testing(config_path_override: Path | None = None):
-    """
-    Resets the singleton config instance. For testing purposes only.
-    Allows specifying a direct path to a config file.
-    """
-    # pylint: disable=global-statement
-    global config
-    config = _Config(config_path_override=config_path_override)
-```
-## File: detect_drift.py
+## File: commands\detect_drift.py
 ```python
 """
 Detects "drift" in compiled files by comparing them against their .hash files.
@@ -1347,6 +1906,8 @@ import logging
 import os
 from collections.abc import Generator
 from pathlib import Path
+
+__all__ = ["run_detect_drift"]
 
 
 # ANSI color codes for pretty printing the diff.
@@ -1486,9 +2047,8 @@ def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
         yield from search_path.rglob("*.hash")
 
 
-def check_for_drift(
+def run_detect_drift(
     output_path: Path,
-    output_templates_dir: Path | None = None,
 ) -> int:
     """
     Checks for manual edits (drift) in compiled files by comparing them against their .hash files.
@@ -1499,7 +2059,6 @@ def check_for_drift(
 
     Args:
         output_path: The main output directory containing compiled files (e.g., .gitlab-ci.yml).
-        output_templates_dir: The output directory for compiled templates, if any.
 
     Returns:
         int: Returns 0 if no drift is detected.
@@ -1508,8 +2067,6 @@ def check_for_drift(
     drift_detected_count = 0
     error_count = 0
     search_paths = [output_path]
-    if output_templates_dir and output_templates_dir.is_dir():
-        search_paths.append(output_templates_dir)
 
     hash_files = list(find_hash_files(search_paths))
 
@@ -1593,7 +2150,7 @@ def check_for_drift(
     print("All compiled files match their hashes.")
     return 0
 ```
-## File: init_project.py
+## File: commands\init_project.py
 ```python
 """Interactively setup a config file"""
 
@@ -1609,9 +2166,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     "input_dir": "src",
     "output_dir": "out",
-    "scripts_dir": "scripts",
-    "templates_in": "templates",
-    "templates_out": "out/templates",
 }
 
 # Default settings for boolean flags
@@ -1627,14 +2181,13 @@ TOML_TEMPLATE = """# Configuration for bash2gitlab
 # Directory settings
 input_dir = "{input_dir}"
 output_dir = "{output_dir}"
-scripts_dir = "{scripts_dir}"
-templates_in = "{templates_in}"
-templates_out = "{templates_out}"
 
 # Command-line flag defaults
 verbose = {verbose}
 quiet = {quiet}
 """
+
+__all__ = ["prompt_for_config", "create_config_file"]
 
 
 def get_str_input(prompt: str, default: str) -> str:
@@ -1698,29 +2251,8 @@ def create_config_file(base_path: Path, config: dict[str, Any], dry_run: bool = 
     config_file_path.write_text(toml_content, encoding="utf-8")
 
     logger.info("\n✅ Project initialization complete.")
-
-
-def init_handler(args: Any):
-    """Handles the `init` command logic."""
-    logger.info("Starting interactive project initializer...")
-    base_path = Path(args.directory).resolve()
-
-    if not base_path.exists():
-        base_path.mkdir(parents=True)
-        logger.info(f"Created project directory: {base_path}")
-    elif (base_path / "bash2gitlab.toml").exists():
-        logger.error(f"A 'bash2gitlab.toml' file already exists in '{base_path}'. Aborting.")
-        return 1
-
-    try:
-        user_config = prompt_for_config()
-        create_config_file(base_path, user_config, args.dry_run)
-    except (KeyboardInterrupt, EOFError):
-        logger.warning("\nInitialization cancelled by user.")
-        return 1
-    return 0
 ```
-## File: map_deploy_command.py
+## File: commands\map_deploy.py
 ```python
 """Copy from a central repos relevant shell scripts changes to many dependent repos for debugging."""
 
@@ -1734,6 +2266,8 @@ from pathlib import Path
 import toml
 
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+
+__all__ = ["run_map_deploy", "get_deployment_map"]
 
 
 def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
@@ -1759,7 +2293,7 @@ def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
         raise KeyError("'[tool.bash2gitlab.map]' section not found in pyproject.toml") from ke
 
 
-def map_deploy(
+def run_map_deploy(
     source_to_target_map: dict[str, str],
     dry_run: bool = False,
     force: bool = False,
@@ -1859,11 +2393,7 @@ def map_deploy(
                 else:
                     print(f"Unchanged: '{target_file_path}'")
 ```
-## File: py.typed
-```
-# when type checking dependents, tell type checkers to use this package's types
-```
-## File: shred_all.py
+## File: commands\shred_all.py
 ```python
 """Take a gitlab template with inline yaml and split it up into yaml and shell commands. Useful for project initialization"""
 
@@ -1884,6 +2414,8 @@ from bash2gitlab.utils.yaml_factory import get_yaml
 logger = logging.getLogger(__name__)
 
 SHEBANG = "#!/bin/bash"
+
+__all__ = ["run_shred_gitlab"]
 
 
 def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
@@ -2108,10 +2640,9 @@ def process_shred_job(
     return shredded_count
 
 
-def shred_gitlab_ci(
+def run_shred_gitlab(
     input_yaml_path: Path,
     output_yaml_path: Path,
-    scripts_output_path: Path,
     dry_run: bool = False,
 ) -> tuple[int, int]:
     """
@@ -2121,7 +2652,6 @@ def shred_gitlab_ci(
     Args:
         input_yaml_path (Path): Path to the input .gitlab-ci.yml file.
         output_yaml_path (Path): Path to write the modified .gitlab-ci.yml file.
-        scripts_output_path (Path): Directory to store the generated .sh files.
         dry_run (bool): If True, simulate the process without writing any files.
 
     Returns:
@@ -2147,7 +2677,7 @@ def shred_gitlab_ci(
     global_vars_filename = None
     if "variables" in data and isinstance(data.get("variables"), dict):
         logger.info("Processing global variables block.")
-        global_vars_filename = shred_variables_block(data["variables"], "global", scripts_output_path, dry_run)
+        global_vars_filename = shred_variables_block(data["variables"], "global", output_yaml_path.parent, dry_run)
         if global_vars_filename:
             total_files_created += 1
 
@@ -2157,7 +2687,7 @@ def shred_gitlab_ci(
         if isinstance(value, dict) and "script" in value:
             logger.debug(f"Processing job: {key}")
             jobs_processed += 1
-            total_files_created += process_shred_job(key, value, scripts_output_path, dry_run, global_vars_filename)
+            total_files_created += process_shred_job(key, value, output_yaml_path.parent, dry_run, global_vars_filename)
 
     if total_files_created > 0:
         logger.info(f"Shredded {total_files_created} file(s) from {jobs_processed} job(s).")
@@ -2170,615 +2700,10 @@ def shred_gitlab_ci(
         logger.info("No script or variable blocks found to shred.")
 
     if not dry_run:
-        scripts_output_path.mkdir(exist_ok=True)
-        generate_mock_ci_variables_script(str(scripts_output_path / "mock_ci_variables.sh"))
+        output_yaml_path.parent.mkdir(exist_ok=True)
+        generate_mock_ci_variables_script(str(output_yaml_path.parent / "mock_ci_variables.sh"))
 
     return jobs_processed, total_files_created
-```
-## File: watch_files.py
-```python
-"""
-Watch mode for bash2gitlab.
-
-Usage (internal):
-    from pathlib import Path
-    from bash2gitlab.watch import start_watch
-
-    start_watch(
-        uncompiled_path=Path("./ci"),
-        output_path=Path("./compiled"),
-        scripts_path=Path("./ci"),
-        templates_dir=Path("./ci/templates"),
-        output_templates_dir=Path("./compiled/templates"),
-        dry_run=False,
-    )
-"""
-
-from __future__ import annotations
-
-import logging
-import time
-from pathlib import Path
-
-from watchdog.events import FileSystemEvent, FileSystemEventHandler
-from watchdog.observers import Observer
-
-from bash2gitlab.compile_all import process_uncompiled_directory
-
-logger = logging.getLogger(__name__)
-
-
-class _RecompileHandler(FileSystemEventHandler):
-    """
-    Fire the compiler every time a *.yml, *.yaml or *.sh file changes.
-    """
-
-    def __init__(
-        self,
-        *,
-        uncompiled_path: Path,
-        output_path: Path,
-        scripts_path: Path,
-        templates_dir: Path,
-        output_templates_dir: Path,
-        dry_run: bool = False,
-        parallelism: int | None = None,
-    ) -> None:
-        super().__init__()
-        self._paths = {
-            "uncompiled_path": uncompiled_path,
-            "output_path": output_path,
-            "scripts_path": scripts_path,
-            "templates_dir": templates_dir,
-            "output_templates_dir": output_templates_dir,
-        }
-        self._flags = {"dry_run": dry_run, "parallelism": parallelism}
-        self._debounce: float = 0.5  # seconds
-        self._last_run = 0.0
-
-    def on_any_event(self, event: FileSystemEvent) -> None:
-        # Skip directories, temp files, and non-relevant extensions
-        if event.is_directory:
-            return
-        if event.src_path.endswith((".tmp", ".swp", "~")):  # type: ignore[arg-type]
-            return
-        if not event.src_path.endswith((".yml", ".yaml", ".sh")):  # type: ignore[arg-type]
-            return
-
-        now = time.monotonic()
-        if now - self._last_run < self._debounce:
-            return
-        self._last_run = now
-
-        logger.info("🔄 Source changed; recompiling…")
-        try:
-            process_uncompiled_directory(**self._paths, **self._flags)  # type: ignore[arg-type]
-            logger.info("✅ Recompiled successfully.")
-        except Exception as exc:  # pylint: disable=broad-except
-            logger.error("❌ Recompilation failed: %s", exc, exc_info=True)
-
-
-def start_watch(
-    *,
-    uncompiled_path: Path,
-    output_path: Path,
-    scripts_path: Path,
-    templates_dir: Path,
-    output_templates_dir: Path,
-    dry_run: bool = False,
-    parallelism: int | None = None,
-) -> None:
-    """
-    Start an in-process watchdog that recompiles whenever source files change.
-
-    Blocks forever (Ctrl-C to stop).
-    """
-    handler = _RecompileHandler(
-        uncompiled_path=uncompiled_path,
-        output_path=output_path,
-        scripts_path=scripts_path,
-        templates_dir=templates_dir,
-        output_templates_dir=output_templates_dir,
-        dry_run=dry_run,
-        parallelism=parallelism,
-    )
-
-    observer = Observer()
-    observer.schedule(handler, str(uncompiled_path), recursive=True)
-    if templates_dir != uncompiled_path:
-        observer.schedule(handler, str(templates_dir), recursive=True)
-    if scripts_path not in (uncompiled_path, templates_dir):
-        observer.schedule(handler, str(scripts_path), recursive=True)
-
-    try:
-        observer.start()
-        logger.info("👀 Watching for changes to *.yml, *.yaml, *.sh … (Ctrl-C to quit)")
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("⏹  Stopping watcher.")
-    finally:
-        observer.stop()
-        observer.join()
-```
-## File: __about__.py
-```python
-"""Metadata for bash2gitlab."""
-
-__all__ = [
-    "__title__",
-    "__version__",
-    "__description__",
-    "__readme__",
-    "__keywords__",
-    "__license__",
-    "__requires_python__",
-    "__status__",
-]
-
-__title__ = "bash2gitlab"
-__version__ = "0.8.6"
-__description__ = "Compile bash to gitlab pipeline yaml"
-__readme__ = "README.md"
-__keywords__ = ["bash", "gitlab"]
-__license__ = "MIT"
-__requires_python__ = ">=3.8"
-__status__ = "4 - Beta"
-```
-## File: __main__.py
-```python
-"""
-Handles CLI interactions for bash2gitlab
-
-usage: bash2gitlab [-h] [--version] {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map} ...
-
-A tool for making development of centralized yaml gitlab templates more pleasant.
-
-positional arguments:
-  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map}
-    compile             Compile an uncompiled directory into a standard GitLab CI structure.
-    shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
-    detect-drift        Detect if generated files have been edited and display what the edits are.
-    copy2local          Copy folder(s) from a repo to local, for testing bash in the dependent repo
-    init                Initialize a new bash2gitlab project and config file.
-    map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
-    commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
-
-options:
-  -h, --help            show this help message and exit
-  --version             show program's version number and exit
-"""
-
-from __future__ import annotations
-
-import argparse
-import logging
-import logging.config
-import sys
-from pathlib import Path
-
-import argcomplete
-
-from bash2gitlab import __about__
-from bash2gitlab import __doc__ as root_doc
-from bash2gitlab.clone2local import clone_repository_ssh, fetch_repository_archive
-from bash2gitlab.commit_map_command import commit_map
-from bash2gitlab.compile_all import process_uncompiled_directory
-from bash2gitlab.config import config
-from bash2gitlab.detect_drift import check_for_drift
-from bash2gitlab.init_project import init_handler
-from bash2gitlab.map_deploy_command import get_deployment_map, map_deploy
-from bash2gitlab.shred_all import shred_gitlab_ci
-from bash2gitlab.utils.cli_suggestions import SmartParser
-from bash2gitlab.utils.logging_config import generate_config
-from bash2gitlab.utils.update_checker import check_for_updates
-from bash2gitlab.watch_files import start_watch
-
-logger = logging.getLogger(__name__)
-
-
-def clone2local_handler(args: argparse.Namespace) -> None:
-    """
-    Argparse handler for the clone2local command.
-
-    This handler remains compatible with the new archive-based fetch function.
-    """
-    # This function now calls the new implementation, preserving the call stack.
-    if str(args.repo_url).startswith("ssh"):
-        return clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir)
-    return fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir)
-
-
-def compile_handler(args: argparse.Namespace):
-    """Handler for the 'compile' command."""
-    logger.info("Starting bash2gitlab compiler...")
-
-    # Resolve paths, using sensible defaults if optional paths are not provided
-    in_dir = Path(args.input_dir).resolve()
-    out_dir = Path(args.output_dir).resolve()
-    scripts_dir = Path(args.scripts_dir).resolve() if args.scripts_dir else in_dir
-    templates_in_dir = Path(args.templates_in).resolve() if args.templates_in else in_dir
-    templates_out_dir = Path(args.templates_out).resolve() if args.templates_out else out_dir
-    dry_run = bool(args.dry_run)
-    parallelism = args.parallelism
-
-    if args.watch:
-        start_watch(
-            uncompiled_path=in_dir,
-            output_path=out_dir,
-            scripts_path=scripts_dir,
-            templates_dir=templates_in_dir,
-            output_templates_dir=templates_out_dir,
-            dry_run=dry_run,
-            parallelism=parallelism,
-        )
-        return
-
-    try:
-        process_uncompiled_directory(
-            uncompiled_path=in_dir,
-            output_path=out_dir,
-            scripts_path=scripts_dir,
-            templates_dir=templates_in_dir,
-            output_templates_dir=templates_out_dir,
-            dry_run=dry_run,
-            parallelism=parallelism,
-        )
-
-        logger.info("✅ GitLab CI processing complete.")
-
-    except FileNotFoundError as e:
-        logger.error(f"❌ An error occurred: {e}")
-        sys.exit(10)
-    except (RuntimeError, ValueError) as e:
-        logger.error(f"❌ An error occurred: {e}")
-        sys.exit(1)
-
-
-def drift_handler(args: argparse.Namespace) -> None:
-    if not hasattr(args, "templates_out") or not args.templates_out:
-        check_for_drift(Path(args.out), None)
-    else:
-        check_for_drift(Path(args.out), Path(args.templates_out))
-
-
-def shred_handler(args: argparse.Namespace):
-    """Handler for the 'shred' command."""
-    logger.info("Starting bash2gitlab shredder...")
-
-    # Resolve the file and directory paths
-    in_file = Path(args.input_file).resolve()
-    out_file = Path(args.output_file).resolve()
-    if args.scripts_out:
-        scripts_out_dir = Path(args.scripts_out).resolve()
-    else:
-        if out_file.is_file():
-            scripts_out_dir = out_file.parent
-        else:
-            scripts_out_dir = out_file
-    dry_run = bool(args.dry_run)
-
-    try:
-        jobs, scripts = shred_gitlab_ci(
-            input_yaml_path=in_file,
-            output_yaml_path=out_file,
-            scripts_output_path=scripts_out_dir,
-            dry_run=dry_run,
-        )
-
-        if dry_run:
-            logger.info(f"DRY RUN: Would have processed {jobs} jobs and created {scripts} script(s).")
-        else:
-            logger.info(f"✅ Successfully processed {jobs} jobs and created {scripts} script(s).")
-            logger.info(f"Modified YAML written to: {out_file}")
-            logger.info(f"Scripts shredded to: {scripts_out_dir}")
-
-    except FileNotFoundError as e:
-        logger.error(f"❌ An error occurred: {e}")
-        sys.exit(10)
-
-
-def commit_map_handler(args: argparse.Namespace) -> None:
-
-    pyproject_path = Path(args.pyproject_path)
-    try:
-        mapping = get_deployment_map(pyproject_path)
-    except FileNotFoundError as e:
-        logger.error(f"❌ {e}")
-        sys.exit(10)
-    except KeyError as ke:
-        logger.error(f"❌ {ke}")
-        sys.exit(11)
-
-    commit_map(mapping, dry_run=args.dry_run, force=args.force)
-
-
-def map_deploy_handler(args: argparse.Namespace) -> None:
-
-    pyproject_path = Path(args.pyproject_path)
-    try:
-        mapping = get_deployment_map(pyproject_path)
-    except FileNotFoundError as e:
-        logger.error(f"❌ {e}")
-        sys.exit(10)
-    except KeyError as ke:
-        logger.error(f"❌ {ke}")
-        sys.exit(11)
-
-    map_deploy(mapping, dry_run=args.dry_run, force=args.force)
-
-
-def main() -> int:
-    """Main CLI entry point."""
-    check_for_updates(__about__.__title__, __about__.__version__)
-
-    parser = SmartParser(
-        prog=__about__.__title__,
-        description=root_doc,
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
-
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    # --- Compile Command ---
-    compile_parser = subparsers.add_parser(
-        "compile", help="Compile an uncompiled directory into a standard GitLab CI structure."
-    )
-    compile_parser.add_argument(
-        "--in",
-        dest="input_dir",
-        required=not bool(config.input_dir),
-        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
-    )
-    compile_parser.add_argument(
-        "--out",
-        dest="output_dir",
-        required=not bool(config.output_dir),
-        help="Output directory for the compiled GitLab CI files.",
-    )
-    compile_parser.add_argument(
-        "--scripts",
-        dest="scripts_dir",
-        help="Directory containing bash scripts to inline.",
-    )
-    compile_parser.add_argument(
-        "--templates-in",
-        help="Input directory for CI templates.",
-    )
-    compile_parser.add_argument(
-        "--templates-out",
-        help="Output directory for compiled CI templates.",
-    )
-    compile_parser.add_argument(
-        "--parallelism",
-        type=int,
-        default=config.parallelism,
-        help="Number of files to compile in parallel (default: CPU count).",
-    )
-    compile_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the compilation process without writing any files.",
-    )
-    compile_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    compile_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-    compile_parser.set_defaults(func=compile_handler)
-
-    # --- Shred Command ---
-    shred_parser = subparsers.add_parser(
-        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
-    )
-    shred_parser.add_argument(
-        "--in",
-        dest="input_file",
-        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
-    )
-    shred_parser.add_argument(
-        "--out",
-        dest="output_file",
-        help="Output path for the modified GitLab CI file.",
-    )
-    shred_parser.add_argument(
-        "--scripts-out",
-        help="Output directory to save the shredded .sh script files.",
-    )
-    shred_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the shredding process without writing any files.",
-    )
-    compile_parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Watch source directories and auto-recompile on changes.",
-    )
-    shred_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    shred_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-    shred_parser.set_defaults(func=shred_handler)
-
-    # detect drift command
-    # --- Shred Command ---
-    detect_drift_parser = subparsers.add_parser(
-        "detect-drift", help="Detect if generated files have been edited and display what the edits are."
-    )
-    detect_drift_parser.add_argument(
-        "--out",
-        dest="out",
-        help="Output path where generated files are.",
-    )
-    detect_drift_parser.add_argument(
-        "--templates-out",
-        help="Output directory where compiled CI templates are.",
-    )
-    detect_drift_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
-    )
-    detect_drift_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-    detect_drift_parser.set_defaults(func=drift_handler)
-
-    # --- copy2local Command ---
-    clone_parser = subparsers.add_parser(
-        "copy2local",
-        help="Copy folder(s) from a repo to local, for testing bash in the dependent repo",
-    )
-    clone_parser.add_argument(
-        "--repo-url",
-        required=True,
-        help="Repository URL to copy.",
-    )
-    clone_parser.add_argument(
-        "--branch",
-        required=True,
-        help="Branch to copy.",
-    )
-    clone_parser.add_argument(
-        "--copy-dir",
-        required=True,
-        help="Destination directory for the copy.",
-    )
-    clone_parser.add_argument(
-        "--source-dir",
-        required=True,
-        help="Directory to include in the copy.",
-    )
-    clone_parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
-    clone_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-    clone_parser.set_defaults(func=clone2local_handler)
-
-    # Init Parser
-    init_parser = subparsers.add_parser(
-        "init",
-        help="Initialize a new bash2gitlab project and config file.",
-    )
-    init_parser.add_argument(
-        "directory",
-        nargs="?",
-        default=".",
-        help="The directory to initialize the project in. Defaults to the current directory.",
-    )
-    init_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the initialization process without creating the config file.",
-    )
-    init_parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Enable verbose (DEBUG) logging output.",
-    )
-    init_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-    init_parser.set_defaults(func=init_handler)
-
-    # --- map-deploy Command ---
-    map_deploy_parser = subparsers.add_parser(
-        "map-deploy",
-        help="Deploy files from source to target directories based on a mapping in pyproject.toml.",
-    )
-    map_deploy_parser.add_argument(
-        "--pyproject",
-        dest="pyproject_path",
-        default="pyproject.toml",
-        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
-    )
-    map_deploy_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the deployment without copying files.",
-    )
-    map_deploy_parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Overwrite target files even if they have been modified since the last deployment.",
-    )
-    map_deploy_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
-    )
-    map_deploy_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-
-    map_deploy_parser.set_defaults(func=map_deploy_handler)
-
-    # --- commit-map Command ---
-    commit_map_parser = subparsers.add_parser(
-        "commit-map",
-        help=(
-            "Copy changed files from deployed directories back to their source"
-            " locations based on a mapping in pyproject.toml."
-        ),
-    )
-    commit_map_parser.add_argument(
-        "--pyproject",
-        dest="pyproject_path",
-        default="pyproject.toml",
-        help="Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.",
-    )
-    commit_map_parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Simulate the commit without copying files.",
-    )
-    commit_map_parser.add_argument(
-        "--force",
-        action="store_true",
-        help=("Overwrite source files even if they have been modified since the last " "deployment."),
-    )
-    commit_map_parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output."
-    )
-    commit_map_parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
-
-    commit_map_parser.set_defaults(func=commit_map_handler)
-
-    argcomplete.autocomplete(parser)
-    args = parser.parse_args()
-
-    # --- Configuration Precedence: CLI > ENV > TOML ---
-    # Merge string/path arguments
-    if args.command == "compile":
-        args.input_dir = args.input_dir or config.input_dir
-        args.output_dir = args.output_dir or config.output_dir
-        args.scripts_dir = args.scripts_dir or config.scripts_dir
-        args.templates_in = args.templates_in or config.templates_in
-        args.templates_out = args.templates_out or config.templates_out
-        # Validate required arguments after merging
-        if not args.input_dir:
-            compile_parser.error("argument --in is required")
-        if not args.output_dir:
-            compile_parser.error("argument --out is required")
-    elif args.command == "shred":
-        args.input_file = args.input_file or config.input_file
-        args.output_file = args.output_file or config.output_file
-        args.scripts_out = args.scripts_out or config.scripts_out
-        # Validate required arguments after merging
-        if not args.input_file:
-            shred_parser.error("argument --in is required")
-        if not args.output_file:
-            shred_parser.error("argument --out is required")
-
-    # Merge boolean flags
-    args.verbose = args.verbose or config.verbose or False
-    args.quiet = args.quiet or config.quiet or False
-    if hasattr(args, "dry_run"):
-        args.dry_run = args.dry_run or config.dry_run or False
-
-    # --- Setup Logging ---
-    if args.verbose:
-        log_level = "DEBUG"
-    elif args.quiet:
-        log_level = "CRITICAL"
-    else:
-        log_level = "INFO"
-    logging.config.dictConfig(generate_config(level=log_level))
-
-    # Execute the appropriate handler
-    args.func(args)
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
 ```
 ## File: utils\cli_suggestions.py
 ```python
@@ -3442,7 +3367,7 @@ from ruamel.yaml import YAML
 def get_yaml() -> YAML:
     y = YAML()
     y.width = 4096
-    y.preserve_quotes = False  # Maybe minimize quotes?
+    y.preserve_quotes = True  # Want to minimize quotes, but "1.0" -> 1.0 is a type change.
     y.default_style = None  # minimize quotes
     y.explicit_start = False  # no '---'
     y.explicit_end = False  # no '...'

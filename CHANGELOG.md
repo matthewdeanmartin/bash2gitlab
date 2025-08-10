@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.6] - 2025-08-09
 
 ### Changed
+- File invocations followed by comment are now detected.
+- Concept of script folder and template folder gone. Input folder and output folder is enough.
+
+
+## [0.8.6] - 2025-08-09
+
+### Changed
 
 - Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files. 
 

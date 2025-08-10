@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-from bash2gitlab.shred_all import SHEBANG, create_script_filename, shred_gitlab_ci
+from bash2gitlab.commands.shred_all import SHEBANG, create_script_filename, run_shred_gitlab
 
 # A sample GitLab CI configuration with various script definitions for comprehensive testing.
 SAMPLE_GITLAB_CI_CONTENT = """
@@ -98,12 +98,10 @@ class TestShredGitlabCI:
         """Tests the standard shredding process from end to end."""
         input_yaml, output_dir = setup_test_env
         output_yaml = output_dir / ".gitlab-ci.yml"
-        scripts_output_path = output_dir / "scripts"
 
-        jobs_processed, scripts_created = shred_gitlab_ci(
+        jobs_processed, scripts_created = run_shred_gitlab(
             input_yaml_path=input_yaml,
             output_yaml_path=output_yaml,
-            scripts_output_path=scripts_output_path,
             dry_run=False,
         )
 
@@ -117,21 +115,18 @@ class TestShredGitlabCI:
         yaml = YAML()
         data = yaml.load(output_yaml)
 
-        assert data["job_simple_script"]["script"] == "./scripts/job_simple_script.sh"
-        assert data["job_with_before_script"]["before_script"] == "./scripts/job_with_before_script_before_script.sh"
-        assert data["job_with_before_script"]["script"] == "./scripts/job_with_before_script.sh"
-        assert data["job_with_all_scripts"]["script"] == "./scripts/job_with_all_scripts.sh"
-        assert data[".hidden_job"]["script"] == "./scripts/.hidden_job.sh"
+        assert data["job_simple_script"]["script"] == "./output/job_simple_script.sh"
+        assert data["job_with_before_script"]["before_script"] == "./output/job_with_before_script_before_script.sh"
+        assert data["job_with_before_script"]["script"] == "./output/job_with_before_script.sh"
+        assert data["job_with_all_scripts"]["script"] == "./output/job_with_all_scripts.sh"
+        assert data[".hidden_job"]["script"] == "./output/.hidden_job.sh"
 
         # Check that jobs without scripts or with empty scripts are untouched
         assert "script" not in data["job_no_script"]
         assert data["job_with_empty_script"]["script"] is None, "Empty script block should remain empty"
 
-        # --- Verify script files ---
-        assert scripts_output_path.is_dir()
-
         # Check content and permissions of a simple script
-        script1 = scripts_output_path / "job_simple_script.sh"
+        script1 = output_yaml.parent / "job_simple_script.sh"
         assert script1.exists()
         if platform.system() == "Linux":
             assert stat.S_IXUSR & script1.stat().st_mode, "Script should be executable"
@@ -141,14 +136,14 @@ class TestShredGitlabCI:
         assert "ls -la" in content1
 
         # Check content of a multi-line script
-        script2 = scripts_output_path / "job_with_all_scripts.sh"
+        script2 = output_yaml.parent / "job_with_all_scripts.sh"
         assert script2.exists()
         content2 = script2.read_text(encoding="utf-8")
         assert 'echo "This is a multi-line script."' in content2
         assert 'echo "It does important things."' in content2
 
         # Check content of an after_script
-        script3 = scripts_output_path / "job_with_all_scripts_after_script.sh"
+        script3 = output_yaml.parent / "job_with_all_scripts_after_script.sh"
         assert script3.exists()
         assert 'echo "Cleaning up..."' in script3.read_text(encoding="utf-8")
 
@@ -158,10 +153,9 @@ class TestShredGitlabCI:
         output_yaml = output_dir / ".gitlab-ci.yml"
         scripts_output_path = output_dir / "scripts"
 
-        jobs_processed, scripts_created = shred_gitlab_ci(
+        jobs_processed, scripts_created = run_shred_gitlab(
             input_yaml_path=input_yaml,
             output_yaml_path=output_yaml,
-            scripts_output_path=scripts_output_path,
             dry_run=True,
         )
 
@@ -179,12 +173,10 @@ class TestShredGitlabCI:
         input_yaml = tmp_path / "ci.yml"
         input_yaml.write_text(no_script_content, encoding="utf-8")
         output_yaml = tmp_path / "output.yml"
-        scripts_output_path = tmp_path / "scripts"
 
-        jobs_processed, scripts_created = shred_gitlab_ci(
+        jobs_processed, scripts_created = run_shred_gitlab(
             input_yaml_path=input_yaml,
             output_yaml_path=output_yaml,
-            scripts_output_path=scripts_output_path,
         )
 
         assert jobs_processed == 0
@@ -195,8 +187,7 @@ class TestShredGitlabCI:
     def test_shred_file_not_found(self, tmp_path: Path):
         """Ensures a FileNotFoundError is raised for a non-existent input file."""
         with pytest.raises(FileNotFoundError, match="Input YAML file not found"):
-            shred_gitlab_ci(
+            run_shred_gitlab(
                 input_yaml_path=tmp_path / "nonexistent.yml",
                 output_yaml_path=tmp_path / "output.yml",
-                scripts_output_path=tmp_path / "scripts",
             )

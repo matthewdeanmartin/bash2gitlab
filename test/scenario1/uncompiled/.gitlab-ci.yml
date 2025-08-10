@@ -6,4 +6,4 @@ build:job:
   stage: build
   script:
     # relative to scripts folder
-    - ./build.sh
+    - ./scripts/build.sh

@@ -10,8 +10,6 @@ stages:
 default:
   image: hurriedreformist/gnucobol:latest
 
-
-
 # --- Build Stage ---
 # This job compiles the GnuCOBOL source code into an executable file.
 build_cobol_program:
@@ -34,4 +32,3 @@ test_payroll_calculation:
   dependencies:
     # This job depends on the successful completion of the 'build_cobol_program' job.
     - build_cobol_program
-

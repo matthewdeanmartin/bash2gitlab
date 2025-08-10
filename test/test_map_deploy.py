@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import toml
 
-from bash2gitlab.map_deploy_command import get_deployment_map, map_deploy
+from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ def test_initial_deployment(setup_test_environment):
     tmp_path, pyproject_path = setup_test_environment
     deployment_map = get_deployment_map(pyproject_path)
 
-    map_deploy(deployment_map)
+    run_map_deploy(deployment_map)
 
     # Check Angular deployment
     target_angular_file = tmp_path / "dest" / "angular_app" / "script1.sh"
@@ -80,7 +80,7 @@ def test_skips_unsupported_extensions(setup_test_environment):
     (tmp_path / "src" / "angular" / "ignore.txt").write_text("skip me")
     deployment_map = get_deployment_map(pyproject_path)
 
-    map_deploy(deployment_map)
+    run_map_deploy(deployment_map)
 
     assert not (tmp_path / "dest" / "angular_app" / "ignore.txt").exists()
     assert not (tmp_path / "dest" / "angular_app" / "ignore.txt.hash").exists()
@@ -91,13 +91,13 @@ def test_unchanged_redeployment(setup_test_environment):
     tmp_path, pyproject_path = setup_test_environment
     deployment_map = get_deployment_map(pyproject_path)
 
-    map_deploy(deployment_map)  # First run
+    run_map_deploy(deployment_map)  # First run
 
     # Capture last modified times
     target_angular_file = tmp_path / "dest" / "angular_app" / "script1.sh"
     mtime_before = target_angular_file.stat().st_mtime
 
-    map_deploy(deployment_map)  # Second run
+    run_map_deploy(deployment_map)  # Second run
     mtime_after = target_angular_file.stat().st_mtime
 
     assert mtime_before == mtime_after
@@ -107,7 +107,7 @@ def test_modified_destination_skip(setup_test_environment):
     """Tests that a modified destination file is skipped."""
     tmp_path, pyproject_path = setup_test_environment
     deployment_map = get_deployment_map(pyproject_path)
-    map_deploy(deployment_map)
+    run_map_deploy(deployment_map)
 
     target_file = tmp_path / "dest" / "angular_app" / "script1.sh"
     original_content = target_file.read_text()
@@ -115,7 +115,7 @@ def test_modified_destination_skip(setup_test_environment):
     # Modify the destination file
     target_file.write_text("console.log('modified');")
 
-    map_deploy(deployment_map)  # Attempt redeploy
+    run_map_deploy(deployment_map)  # Attempt redeploy
 
     # Content should remain modified because it was skipped
     assert target_file.read_text() == "console.log('modified');"
@@ -126,7 +126,7 @@ def test_modified_destination_force(setup_test_environment):
     """Tests that --force overwrites a modified destination file."""
     tmp_path, pyproject_path = setup_test_environment
     deployment_map = get_deployment_map(pyproject_path)
-    map_deploy(deployment_map)
+    run_map_deploy(deployment_map)
 
     target_file = tmp_path / "dest" / "angular_app" / "script1.sh"
     original_content = (tmp_path / "src" / "angular" / "script1.sh").read_text()
@@ -135,7 +135,7 @@ def test_modified_destination_force(setup_test_environment):
     target_file.write_text("console.log('modified');")
 
     # Attempt redeploy with force
-    map_deploy(deployment_map, force=True)
+    run_map_deploy(deployment_map, force=True)
 
     # Content should be reverted to the source content
     assert target_file.read_text() == original_content
@@ -146,7 +146,7 @@ def test_dry_run(setup_test_environment):
     tmp_path, pyproject_path = setup_test_environment
     deployment_map = get_deployment_map(pyproject_path)
 
-    map_deploy(deployment_map, dry_run=True)
+    run_map_deploy(deployment_map, dry_run=True)
 
     # No files or directories should have been created
     assert not (tmp_path / "dest").exists()

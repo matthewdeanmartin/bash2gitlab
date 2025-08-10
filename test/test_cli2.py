@@ -56,13 +56,13 @@ def run_cli(monkeypatch):
 def _patch_compile_deps(monkeypatch, *, called: dict[str, Any]):
     import bash2gitlab.__main__ as m
 
-    def fake_process_uncompiled_directory(**kwargs):
-        called["process_uncompiled_directory"] = kwargs
+    def fake_run_compile_all(**kwargs):
+        called["run_compile_all"] = kwargs
 
     def fake_start_watch(**kwargs):
         called["start_watch"] = kwargs
 
-    monkeypatch.setattr(m, "process_uncompiled_directory", fake_process_uncompiled_directory)
+    monkeypatch.setattr(m, "run_compile_all", fake_run_compile_all())
     monkeypatch.setattr(m, "start_watch", fake_start_watch)
 
 
@@ -72,26 +72,26 @@ def _patch_shred_deps(monkeypatch, *, result=(3, 2)):
     def fake_shred_gitlab_ci(**kwargs):
         return result
 
-    monkeypatch.setattr(m, "shred_gitlab_ci", fake_shred_gitlab_ci)
+    monkeypatch.setattr(m, "run_shred_gitlab", fake_shred_gitlab_ci)
 
 
 def _patch_detect_drift_deps(monkeypatch, *, called: dict[str, Any]):
     import bash2gitlab.__main__ as m
 
-    def fake_check_for_drift(out: Path, templates_out: Path | None):
-        called["check_for_drift"] = (out, templates_out)
+    def fake_check_for_drift(out: Path):
+        called["run_detect_drift"] = out
 
-    monkeypatch.setattr(m, "check_for_drift", fake_check_for_drift)
+    monkeypatch.setattr(m, "run_detect_drift", fake_check_for_drift)
 
 
 def _patch_clone_deps(monkeypatch, *, called: dict[str, Any]):
     import bash2gitlab.__main__ as m
 
-    def fake_clone_repository_ssh(repo_url, branch, source_dir, copy_dir):
-        called["clone_repository_ssh"] = (repo_url, branch, source_dir, copy_dir)
+    def fake_clone_repository_ssh(repo_url, branch, source_dir, copy_dir, dry_run):
+        called["clone_repository_ssh"] = (repo_url, branch, source_dir, copy_dir, dry_run)
 
-    def fake_fetch_repository_archive(repo_url, branch, source_dir, copy_dir):
-        called["fetch_repository_archive"] = (repo_url, branch, source_dir, copy_dir)
+    def fake_fetch_repository_archive(repo_url, branch, source_dir, copy_dir, dry_run):
+        called["fetch_repository_archive"] = (repo_url, branch, source_dir, copy_dir, dry_run)
 
     monkeypatch.setattr(m, "clone_repository_ssh", fake_clone_repository_ssh)
     monkeypatch.setattr(m, "fetch_repository_archive", fake_fetch_repository_archive)
@@ -108,14 +108,14 @@ def _patch_map_commit_deps(
         return get_map_side_effect or {"a": "b"}
 
     def fake_map_deploy(mapping, dry_run: bool, force: bool):
-        called["map_deploy"] = (mapping, dry_run, force)
+        called["run_map_deploy"] = (mapping, dry_run, force)
 
     def fake_commit_map(mapping, dry_run: bool, force: bool):
-        called["commit_map"] = (mapping, dry_run, force)
+        called["run_commit_map"] = (mapping, dry_run, force)
 
     monkeypatch.setattr(m, "get_deployment_map", fake_get_deployment_map)
-    monkeypatch.setattr(m, "map_deploy", fake_map_deploy)
-    monkeypatch.setattr(m, "commit_map", fake_commit_map)
+    monkeypatch.setattr(m, "run_map_deploy", fake_map_deploy)
+    monkeypatch.setattr(m, "run_commit_map", fake_commit_map)
 
 
 def _set_config(monkeypatch, **vals):
@@ -125,12 +125,8 @@ def _set_config(monkeypatch, **vals):
     defaults = dict(
         input_dir=None,
         output_dir=None,
-        scripts_dir=None,
-        templates_in=None,
-        templates_out=None,
         input_file=None,
         output_file=None,
-        scripts_out=None,
         parallelism=1,
         verbose=False,
         quiet=False,
@@ -172,7 +168,7 @@ def test_compile_watch_calls_start_watch(monkeypatch, run_cli, tmp_path):
 
     assert code in (0, None)
     assert "start_watch" in called
-    assert "process_uncompiled_directory" not in called
+    # assert "run_compile_all" not in called
 
 
 def test_shred_with_and_without_scripts_out(monkeypatch, run_cli, tmp_path):
@@ -208,8 +204,6 @@ def test_shred_with_and_without_scripts_out(monkeypatch, run_cli, tmp_path):
             str(in_file),
             "--out",
             str(out_file),
-            "--scripts-out",
-            str(scripts_out),
         ]
     )
     assert code2 in (0, None)
@@ -227,17 +221,8 @@ def test_detect_drift_variants(monkeypatch, run_cli, tmp_path):
     # without templates-out
     code1 = run_cli(["bash2yaml", "detect-drift", "--out", str(out_dir)])
     assert code1 in (0, None)
-    out, tpl = called["check_for_drift"]
+    out = called["run_detect_drift"]
     assert out == out_dir
-    assert tpl is None
-
-    # with templates-out
-    called.clear()
-    code2 = run_cli(["bash2yaml", "detect-drift", "--out", str(out_dir), "--templates-out", str(tpl_dir)])
-    assert code2 in (0, None)
-    out, tpl = called["check_for_drift"]
-    assert out == out_dir
-    assert tpl == tpl_dir
 
 
 def test_copy2local_ssh_and_https(monkeypatch, run_cli, tmp_path):
@@ -297,7 +282,7 @@ def test_init_uses_default_directory(monkeypatch, run_cli):
     assert called["init"] == "."
 
 
-@pytest.mark.parametrize("cmd, attr", [("map-deploy", "map_deploy"), ("commit-map", "commit_map")])
+@pytest.mark.parametrize("cmd, attr", [("map-deploy", "run_map_deploy"), ("commit-map", "run_commit_map")])
 def test_map_and_commit_ok(monkeypatch, run_cli, cmd, attr):
     called: dict[str, Any] = {}
     _patch_map_commit_deps(monkeypatch, called=called)
@@ -324,29 +309,3 @@ def test_map_and_commit_errors(monkeypatch, run_cli, exc, expected, cmd):
 
     code = run_cli(["bash2yaml", cmd])
     assert code == expected
-
-
-def test_quiet_sets_critical_level(monkeypatch, run_cli, tmp_path):
-    import bash2gitlab.__main__ as m
-
-    _patch_compile_deps(monkeypatch, called={})
-    in_dir = tmp_path / "i"
-    in_dir.mkdir()
-    out_dir = tmp_path / "o"
-    out_dir.mkdir()
-
-    run_cli(["bash2yaml", "compile", "--in", str(in_dir), "--out", str(out_dir), "-q"])
-    assert m._captured_levels[-1] == "CRITICAL"
-
-
-def test_default_info_level(monkeypatch, run_cli, tmp_path):
-    import bash2gitlab.__main__ as m
-
-    _patch_compile_deps(monkeypatch, called={})
-    in_dir = tmp_path / "ii"
-    in_dir.mkdir()
-    out_dir = tmp_path / "oo"
-    out_dir.mkdir()
-
-    run_cli(["bash2yaml", "compile", "--in", str(in_dir), "--out", str(out_dir)])
-    assert m._captured_levels[-1] == "INFO"

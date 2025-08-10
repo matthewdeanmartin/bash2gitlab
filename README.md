@@ -154,3 +154,8 @@ To define variables that should be inlined into the global `variables:` block of
 * **[gitlab-ci-local](https://github.com/firecow/gitlab-ci-local):** This is an excellent tool for running your entire
   GitLab pipeline in local Docker containers. `bash2gitlab` is different—it focuses on the "unit testing" of your Bash
   logic itself, assuming you can and want to execute your scripts on your local machine without the overhead of Docker.
+* **GitHub Actions** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows) 
+  do not have this problem. A shared GitHub action can reference a script in the shared action's repo. A GitHub
+  "reusable" workflow is a single yaml file and might suffer from the same problem as Gitlab pipelines.
+* **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.
+* **Base image holds all bash** You can only have one base image, so if you are using it for bash and yaml, you can't use other base images.

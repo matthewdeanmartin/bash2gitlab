@@ -3,18 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from test.temp_change_dir import chdir_to_file_dir
 
-from bash2gitlab.compile_all import process_uncompiled_directory
+from bash2gitlab.commands.compile_all import run_compile_all
 
 
 def test_yaml_it_src_to_out_12_powershell():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario12_ps1/folder")
         output_root = Path("scenario12_ps1/out")
-        templates_dir = Path("scenario12_ps1/folder")
-        output_templates_dir = output_root
-        scripts_dir = uncompiled
 
-        process_uncompiled_directory(uncompiled, output_root, scripts_dir, templates_dir, output_templates_dir)
+        run_compile_all(uncompiled, output_root)
 
         for file in output_root.rglob("*.yml"):
             output = file.read_text(encoding="utf-8")

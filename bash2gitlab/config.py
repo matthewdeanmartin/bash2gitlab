@@ -148,18 +148,6 @@ class _Config:
         return self._get_str("output_dir")
 
     @property
-    def scripts_dir(self) -> str | None:
-        return self._get_str("scripts_dir")
-
-    @property
-    def templates_in(self) -> str | None:
-        return self._get_str("templates_in")
-
-    @property
-    def templates_out(self) -> str | None:
-        return self._get_str("templates_out")
-
-    @property
     def parallelism(self) -> int | None:
         return self._get_int("parallelism")
 

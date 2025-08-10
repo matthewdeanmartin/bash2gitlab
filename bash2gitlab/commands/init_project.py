@@ -12,9 +12,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     "input_dir": "src",
     "output_dir": "out",
-    "scripts_dir": "scripts",
-    "templates_in": "templates",
-    "templates_out": "out/templates",
 }
 
 # Default settings for boolean flags
@@ -30,14 +27,13 @@ TOML_TEMPLATE = """# Configuration for bash2gitlab
 # Directory settings
 input_dir = "{input_dir}"
 output_dir = "{output_dir}"
-scripts_dir = "{scripts_dir}"
-templates_in = "{templates_in}"
-templates_out = "{templates_out}"
 
 # Command-line flag defaults
 verbose = {verbose}
 quiet = {quiet}
 """
+
+__all__ = ["prompt_for_config", "create_config_file"]
 
 
 def get_str_input(prompt: str, default: str) -> str:
@@ -101,24 +97,3 @@ def create_config_file(base_path: Path, config: dict[str, Any], dry_run: bool = 
     config_file_path.write_text(toml_content, encoding="utf-8")
 
     logger.info("\n✅ Project initialization complete.")
-
-
-def init_handler(args: Any):
-    """Handles the `init` command logic."""
-    logger.info("Starting interactive project initializer...")
-    base_path = Path(args.directory).resolve()
-
-    if not base_path.exists():
-        base_path.mkdir(parents=True)
-        logger.info(f"Created project directory: {base_path}")
-    elif (base_path / "bash2gitlab.toml").exists():
-        logger.error(f"A 'bash2gitlab.toml' file already exists in '{base_path}'. Aborting.")
-        return 1
-
-    try:
-        user_config = prompt_for_config()
-        create_config_file(base_path, user_config, args.dry_run)
-    except (KeyboardInterrupt, EOFError):
-        logger.warning("\nInitialization cancelled by user.")
-        return 1
-    return 0

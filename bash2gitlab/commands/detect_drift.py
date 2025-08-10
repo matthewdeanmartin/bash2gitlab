@@ -23,6 +23,8 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
+__all__ = ["run_detect_drift"]
+
 
 # ANSI color codes for pretty printing the diff.
 # This class now checks for NO_COLOR and CI environment variables to automatically
@@ -161,9 +163,8 @@ def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
         yield from search_path.rglob("*.hash")
 
 
-def check_for_drift(
+def run_detect_drift(
     output_path: Path,
-    output_templates_dir: Path | None = None,
 ) -> int:
     """
     Checks for manual edits (drift) in compiled files by comparing them against their .hash files.
@@ -174,7 +175,6 @@ def check_for_drift(
 
     Args:
         output_path: The main output directory containing compiled files (e.g., .gitlab-ci.yml).
-        output_templates_dir: The output directory for compiled templates, if any.
 
     Returns:
         int: Returns 0 if no drift is detected.
@@ -183,8 +183,6 @@ def check_for_drift(
     drift_detected_count = 0
     error_count = 0
     search_paths = [output_path]
-    if output_templates_dir and output_templates_dir.is_dir():
-        search_paths.append(output_templates_dir)
 
     hash_files = list(find_hash_files(search_paths))
 

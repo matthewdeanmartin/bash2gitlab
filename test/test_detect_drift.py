@@ -8,14 +8,14 @@ import base64
 import logging
 from pathlib import Path
 
-from bash2gitlab import detect_drift
-from bash2gitlab.detect_drift import (
+from bash2gitlab.commands import detect_drift
+from bash2gitlab.commands.detect_drift import (
     Colors,
     _decode_hash_content,
     _generate_pretty_diff,
     _get_source_file_from_hash,
-    check_for_drift,
     find_hash_files,
+    run_detect_drift,
 )
 
 # --- Fixtures and Helper Functions ---
@@ -121,7 +121,7 @@ def test_check_for_drift_no_drift(tmp_path: Path, capsys):
     create_file(source_file, content)
     create_hash_file(hash_file, content)
 
-    result = check_for_drift(output_dir)
+    result = run_detect_drift(output_dir)
     captured = capsys.readouterr()
 
     assert result == 0
@@ -139,7 +139,7 @@ def test_check_for_drift_detected(tmp_path: Path, capsys):
     create_file(source_file, modified_content)
     create_hash_file(hash_file, original_content)
 
-    result = check_for_drift(output_dir)
+    result = run_detect_drift(output_dir)
     captured = capsys.readouterr()
 
     assert result == 1
@@ -156,7 +156,7 @@ def test_check_for_drift_missing_source_file(tmp_path: Path, caplog):
 
     create_hash_file(hash_file, "some content")
 
-    result = check_for_drift(output_dir)
+    result = run_detect_drift(output_dir)
 
     assert result == 1
     assert "missing for hash file" in caplog.text
@@ -172,7 +172,7 @@ def test_check_for_drift_corrupted_hash_file(tmp_path: Path, caplog):
     create_file(source_file, "content")
     create_file(hash_file, "not-base64")
 
-    result = check_for_drift(output_dir)
+    result = run_detect_drift(output_dir)
 
     assert result == 1
     assert "Could not decode the .hash file" in caplog.text
@@ -184,7 +184,7 @@ def test_check_for_drift_no_hash_files_found(tmp_path: Path, caplog, capsys):
     output_dir = tmp_path / "output"
     create_file(output_dir / "some_file.txt", "content")
 
-    result = check_for_drift(output_dir)
+    result = run_detect_drift(output_dir)
     captured = capsys.readouterr()
 
     assert result == 0
@@ -195,7 +195,6 @@ def test_check_for_drift_no_hash_files_found(tmp_path: Path, caplog, capsys):
 def test_check_for_drift_with_templates_dir(tmp_path: Path, capsys):
     """Tests drift checking across a main output and a templates directory."""
     output_dir = tmp_path / "output"
-    templates_dir = tmp_path / "templates"
 
     # No drift file
     source1 = output_dir / "config.yml"
@@ -204,12 +203,12 @@ def test_check_for_drift_with_templates_dir(tmp_path: Path, capsys):
     create_hash_file(hash1, "content1")
 
     # Drift file
-    source2 = templates_dir / "template.yml"
-    hash2 = templates_dir / "template.yml.hash"
+    source2 = output_dir / "template.yml"
+    hash2 = output_dir / "template.yml.hash"
     create_file(source2, "modified content")
     create_hash_file(hash2, "original content")
 
-    result = check_for_drift(output_dir, templates_dir)
+    result = run_detect_drift(output_dir)
     captured = capsys.readouterr()
 
     assert result == 1

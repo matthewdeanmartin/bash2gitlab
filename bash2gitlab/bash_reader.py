@@ -1,3 +1,5 @@
+"""Read a bash script and inline any `source script.sh` patterns."""
+
 from __future__ import annotations
 
 import logging
@@ -15,7 +17,9 @@ logger = logging.getLogger(__name__)
 # - \s+         - At least one whitespace character.
 # - (?P<path>[\w./\\-]+) - Captures the file path.
 # - \s*$        - Optional whitespace until the end of the line.
-SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
+# SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
+# Handle optional comment.
+SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(?:#.*)?$")
 
 
 class SourceSecurityError(RuntimeError):

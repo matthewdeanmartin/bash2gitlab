@@ -8,28 +8,28 @@ variables:
   BASH_ENV: .bash_env
 
 before_script:
-  - before_script.sh
+  - ./scripts/before_script.sh
 
 format:
   stage: format
   script:
-    - format.sh
+    - ./scripts/format.sh
 
 lint:
   stage: lint
   script:
-    - lint.sh
+    - ./scripts/lint.sh
 
 test:
   stage: test
   image: bats/bats:latest
   script:
-    - test.sh
+    - ./scripts/test.sh
 
 package:
   stage: package
   script:
-    - package.sh
+    - ./scripts/package.sh
   artifacts:
     paths:
       - dist/

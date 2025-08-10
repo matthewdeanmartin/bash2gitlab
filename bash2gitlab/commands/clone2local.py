@@ -13,8 +13,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["fetch_repository_archive", "clone_repository_ssh"]
 
-def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
+
+def fetch_repository_archive(
+    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
+) -> None:
     """Fetches and extracts a specific directory from a repository archive.
 
     This function avoids using Git by downloading the repository as a ZIP archive.
@@ -28,6 +32,7 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
         source_dir: A single directory path (relative to the repo root) to
             extract and copy to the clone_dir.
         clone_dir: The destination directory. This directory must be empty.
+        dry_run: Simulate action
 
     Raises:
         FileExistsError: If the clone_dir exists and is not empty.
@@ -52,7 +57,8 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
     if clone_path.exists() and any(clone_path.iterdir()):
         raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
     # Ensure the directory exists, but don't error if it's already there (as long as it's empty)
-    clone_path.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        clone_path.mkdir(parents=True, exist_ok=True)
 
     try:
         # Use a temporary directory that cleans itself up automatically.
@@ -60,7 +66,8 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
             temp_path = Path(temp_dir)
             archive_path = temp_path / "repo.zip"
             unzip_root = temp_path / "unzipped"
-            unzip_root.mkdir()
+            if not dry_run:
+                unzip_root.mkdir()
 
             # 2. Construct the archive URL and check for its existence.
             archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
@@ -84,10 +91,15 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
 
             logger.info("Downloading archive to %s", archive_path)
             # URL is validated above.
-            urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
+            if not dry_run:
+                urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
 
             # 3. Unzip the downloaded archive.
             logger.info("Extracting archive to %s", unzip_root)
+            if dry_run:
+                # Nothing left meaningful to dry run
+                return
+
             with zipfile.ZipFile(archive_path, "r") as zf:
                 zf.extractall(unzip_root)
 
@@ -129,7 +141,9 @@ def fetch_repository_archive(repo_url: str, branch: str, source_dir: str, clone_
     logger.info("Successfully fetched directories into %s", clone_path)
 
 
-def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir: str | Path) -> None:
+def clone_repository_ssh(
+    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
+) -> None:
     """Clones a repo via Git and copies a specific directory.
 
     This function is designed for SSH or authenticated HTTPS URLs that require
@@ -142,6 +156,7 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
         branch: The name of the branch to check out (e.g., 'main', 'develop').
         source_dir: A single directory path (relative to the repo root) to copy.
         clone_dir: The destination directory. This directory must be empty.
+        dry_run: Simulate action
 
     Raises:
         FileExistsError: If the clone_dir exists and is not empty.
@@ -161,7 +176,8 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
     # 1. Validate that the destination directory is empty.
     if clone_path.exists() and any(clone_path.iterdir()):
         raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
-    clone_path.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        clone_path.mkdir(parents=True, exist_ok=True)
 
     try:
         # Use a temporary directory for the full clone, which will be auto-cleaned.
@@ -172,11 +188,15 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
             # 2. Clone the repository.
             # We clone the specific branch directly to be more efficient.
             # repo_url is a variable, but is intended to be a trusted source.
-            subprocess.run(  # nosec: B603, B607
-                ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
-                check=True,
-                capture_output=True,  # Capture stdout/stderr to hide git's noisy output
-            )
+            command = ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)]
+            if dry_run:
+                logger.info(f"Would have run {' '.join(command)}")
+            else:
+                subprocess.run(  # nosec: B603, B607
+                    ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
+                    check=True,
+                    capture_output=True,  # Capture stdout/stderr to hide git's noisy output
+                )
 
             logger.info("Clone successful. Copying specified directories.")
             # 3. Copy the specified directory to the final destination.
@@ -186,7 +206,7 @@ def clone_repository_ssh(repo_url: str, branch: str, source_dir: str, clone_dir:
             if repo_source_dir.is_dir():
                 logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
                 shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
-            else:
+            elif not dry_run:
                 logger.warning("Directory '%s' not found in repository, skipping.", source_dir)
 
     except Exception as e:

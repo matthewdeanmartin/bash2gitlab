@@ -16,6 +16,7 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
+from bash2gitlab.utils.yaml_file_same import yaml_is_same, normalize_for_compare
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
@@ -23,6 +24,10 @@ from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["run_compile_all"]
+
+
 
 
 def remove_excess(command: str) -> str:
@@ -41,43 +46,6 @@ BANNER = f"""# DO NOT EDIT
 #     {remove_excess(' '.join(sys.argv))}
 
 """
-
-
-# def extract_script_path(command_line: str) -> str | None:
-#     """
-#     Extracts the first shell script path from a shell command line.
-#
-#     Args:
-#         command_line (str): A shell command line.
-#
-#     Returns:
-#         str | None: The script path if the line is a script invocation; otherwise, None.
-#     """
-#     try:
-#         tokens: list[str] = shlex.split(command_line)
-#     except ValueError:
-#         # Malformed shell syntax
-#         return None
-#
-#     executors = {"bash", "sh", "source", ".", "pwsh"}
-#
-#     parts = 0
-#     path_found = None
-#     for i, token in enumerate(tokens):
-#         path = Path(token)
-#         if path.suffix in (".sh", ".ps1"):
-#             # Handle `bash script.sh`, `sh script.sh`, `source script.sh`
-#             if i > 0 and tokens[i - 1] in executors:
-#                 path_found = str(path).replace("\\", "/")
-#             else:
-#                 path_found = str(path).replace("\\", "/")
-#             parts += 1
-#         elif not token.isspace() and token not in executors:
-#             parts += 1
-#
-#     if path_found and parts == 1:
-#         return path_found
-#     return None
 
 
 def _as_items(
@@ -244,12 +212,25 @@ def inline_gitlab_scripts(
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
     # Merge global variables if provided
+    # if global_vars:
+    #     logger.debug("Merging global variables into the YAML configuration.")
+    #     existing_vars = data.get("variables", {})
+    #     merged_vars = global_vars.copy()
+    #     # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
+    #     merged_vars.update(existing_vars)
+    #     data["variables"] = merged_vars
+    #     inlined_count += 1
     if global_vars:
         logger.debug("Merging global variables into the YAML configuration.")
-        existing_vars = data.get("variables", {})
-        merged_vars = global_vars.copy()
-        # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
-        merged_vars.update(existing_vars)
+        existing_vars = data.get("variables", CommentedMap())
+
+        merged_vars = CommentedMap()
+        # global first, then YAML-defined wins on conflict
+        for k, v in (global_vars or {}).items():
+            merged_vars[k] = v
+        for k, v in existing_vars.items():
+            merged_vars[k] = v
+
         data["variables"] = merged_vars
         inlined_count += 1
 
@@ -313,22 +294,9 @@ def inline_gitlab_scripts(
                             logger.debug(f"Processing run/script: {job_name}")
                             inlined_count += process_job(item, scripts_root)
 
-    # --- Reorder top-level keys for consistent output ---
-    logger.debug("Reordering top-level keys in the final YAML.")
-    ordered_data = CommentedMap()
-    key_order = ["include", "variables", "stages"]
-
-    # Add specified keys first, in the desired order
-    for key in key_order:
-        if key in data:
-            ordered_data[key] = data.pop(key)
-
-    # Add the rest of the keys (jobs, etc.) in their original relative order
-    for key, value in data.items():
-        ordered_data[key] = value
-
     out_stream = io.StringIO()
-    yaml.dump(ordered_data, out_stream)  # Dump the reordered data
+    yaml.dump(data, out_stream)  # Dump the reordered data
+
     return inlined_count, out_stream.getvalue()
 
 
@@ -351,27 +319,60 @@ def write_yaml_and_hash(
     logger.debug(f"Updated hash file: {short_path(hash_file)}")
 
 
+def _unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
+    """Return a unified diff between *old* and *new* content with filenames.
+
+    keepends=True preserves newline structure for line-accurate diffs in logs.
+    """
+    return "".join(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            fromfile=f"{path} ({from_label})",
+            tofile=f"{path} ({to_label})",
+        )
+    )
+
+
+def _diff_stats(diff_text: str) -> tuple[int, int, int]:
+    """Compute (changed_lines, insertions, deletions) from unified diff text.
+
+    We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
+    """
+    ins = del_ = 0
+    for line in diff_text.splitlines():
+        if not line:
+            continue
+        # Skip headers/hunks
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        # Pure additions/deletions in unified diff start with '+' or '-'
+        if line.startswith("+"):
+            ins += 1
+        elif line.startswith("-"):
+            del_ += 1
+    return ins + del_, ins, del_
+
+
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
     """
     Writes a compiled file safely. If the destination file was manually edited in a meaningful way
     (i.e., the YAML data structure changed), it aborts with a descriptive error and a diff.
 
-    Args:
-        output_file: The path to the destination file.
-        new_content: The full, new content to be written.
-        dry_run: If True, simulate without writing.
-
-    Returns:
-        True if a file was written or would be written in a dry run, False otherwise.
-
-    Raises:
-        SystemExit: If the destination file has been manually modified.
+    Returns True if a file was written (or would be in dry run), False otherwise.
     """
     if dry_run:
         logger.info(f"[DRY RUN] Would evaluate writing to {short_path(output_file)}")
-        # In dry run, we report as if a change would happen if there is one.
-        if not output_file.exists() or output_file.read_text(encoding="utf-8") != new_content:
-            logger.info(f"[DRY RUN] Changes detected for {short_path(output_file)}.")
+        if not output_file.exists():
+            logger.info(f"[DRY RUN] Would create {short_path(output_file)} ({len(new_content.splitlines())} lines).")
+            return True
+        current_content = output_file.read_text(encoding="utf-8")
+
+        if not yaml_is_same(current_content, new_content):
+            diff_text = _unified_diff(normalize_for_compare(current_content), normalize_for_compare(new_content), output_file)
+            changed, ins, rem = _diff_stats(diff_text)
+            logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
+            logger.debug(diff_text)
             return True
         logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")
         return False
@@ -396,8 +397,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # Decode the last known content from the hash file
     last_known_base64 = hash_file.read_text(encoding="utf-8").strip()
     try:
-        last_known_content_bytes = base64.b64decode(last_known_base64)
-        last_known_content = last_known_content_bytes.decode("utf-8")
+        last_known_content = base64.b64decode(last_known_base64).decode("utf-8")
     except (ValueError, TypeError) as e:
         error_message = (
             f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\n"
@@ -410,44 +410,31 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     current_content = output_file.read_text(encoding="utf-8")
 
     # Load both YAML versions to compare their data structures
-    # --- Gracefully handle YAML parsing ---
     yaml = get_yaml()
-
-    last_known_doc = None
-    current_doc = None
-    is_current_corrupt = False
-
-    # First, try to load the last known good version. This should not fail unless the hash is corrupt.
     try:
         last_known_doc = yaml.load(last_known_content)
     except YAMLError as e:
-        error_message = (
-            f"ERROR: Could not parse YAML from the .hash file for '{short_path(output_file)}'. It is corrupted.\n"
-            f"Error: {e}\n"
-            "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
+        logger.error(
+            "ERROR: Could not parse YAML from the .hash file for '%s'. It is corrupted. Error: %s",
+            short_path(output_file),
+            e,
         )
-        logger.error(error_message)
         raise SystemExit(1) from e
 
-    # Next, try to load the current on-disk version. This might fail if manually edited.
     try:
         current_doc = yaml.load(current_content)
+        is_current_corrupt = False
     except YAMLError:
-        # The current file is corrupt. Treat this as a manual edit.
+        current_doc = None
         is_current_corrupt = True
-        logger.warning(f"Could not parse YAML from '{short_path(output_file)}'; it appears to be corrupt.")
+        logger.warning("Could not parse YAML from '%s'; it appears to be corrupt.", short_path(output_file))
 
     # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
-    if is_current_corrupt or current_doc != last_known_doc:
-        # Generate a diff between the *last known good version* and the *current modified version*
-        diff = difflib.unified_diff(
-            last_known_content.splitlines(keepends=True),
-            current_content.splitlines(keepends=True),
-            fromfile=f"{output_file} (last known good)",
-            tofile=f"{output_file} (current, with manual edits)",
-        )
-        diff_text = "".join(diff)
-
+    is_same = yaml_is_same(last_known_content, current_content)
+    # current_doc != last_known_doc
+    if is_current_corrupt or (current_doc != last_known_doc and not is_same) :
+        diff_text = _unified_diff(normalize_for_compare(last_known_content),
+                                  normalize_for_compare(current_content), output_file, "last known good", "current")
         corruption_warning = (
             "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n"
             if is_current_corrupt
@@ -476,12 +463,23 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
 
     # If we reach here, the current file is valid (or just reformatted).
     # Now, we check if the *newly generated* content is different from the current content.
-    if new_content != current_content:
-        logger.info(f"Content of {short_path(output_file)} has changed (reformatted or updated). Writing new version.")
+    if not yaml_is_same(current_content, new_content):
+        # NEW: log diff + counts before writing
+        diff_text = _unified_diff(normalize_for_compare(current_content), normalize_for_compare(new_content), output_file)
+        changed, ins, rem = _diff_stats(diff_text)
+        logger.info(
+            "(1) Rewriting %s: %d lines changed (+%d, -%d).",
+            short_path(output_file),
+            changed,
+            ins,
+            rem,
+        )
+        logger.debug(diff_text)
+
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
 
-    logger.debug(f"Content of {short_path(output_file)} is already up to date. Skipping.")
+    logger.debug("Content of %s is already up to date. Skipping.", short_path(output_file))
     return False
 
 
@@ -506,12 +504,9 @@ def _compile_single_file(
     return inlined_for_file, int(written)
 
 
-def process_uncompiled_directory(
+def run_compile_all(
     uncompiled_path: Path,
     output_path: Path,
-    scripts_path: Path,
-    templates_dir: Path,
-    output_templates_dir: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> int:
@@ -522,9 +517,6 @@ def process_uncompiled_directory(
     Args:
         uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
-        scripts_path (Path): Optionally put all bash files into a script folder.
-        templates_dir (Path): Optionally put all yaml files into a template folder.
-        output_templates_dir (Path): Optionally put all compiled template files into an output template folder.
         dry_run (bool): If True, simulate the process without writing any files.
         parallelism (int | None): Maximum number of processes to use for parallel compilation.
 
@@ -536,8 +528,6 @@ def process_uncompiled_directory(
 
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
-        if templates_dir.is_dir():
-            output_templates_dir.mkdir(parents=True, exist_ok=True)
 
     global_vars = {}
     global_vars_path = uncompiled_path / "global_variables.sh"
@@ -549,22 +539,15 @@ def process_uncompiled_directory(
 
     files_to_process: list[tuple[Path, Path, dict[str, str], str]] = []
 
-    root_yaml = uncompiled_path / ".gitlab-ci.yml"
-    if not root_yaml.exists():
-        root_yaml = uncompiled_path / ".gitlab-ci.yaml"
 
-    if root_yaml.is_file():
-        output_root_yaml = output_path / root_yaml.name
-        files_to_process.append((root_yaml, output_root_yaml, global_vars, "root file"))
-
-    if templates_dir.is_dir():
-        template_files = list(templates_dir.rglob("*.yml")) + list(templates_dir.rglob("*.yaml"))
+    if uncompiled_path.is_dir():
+        template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
         if not template_files:
-            logger.warning(f"No template YAML files found in {templates_dir}")
+            logger.warning(f"No template YAML files found in {uncompiled_path}")
 
         for template_path in template_files:
-            relative_path = template_path.relative_to(templates_dir)
-            output_file = output_templates_dir / relative_path
+            relative_path = template_path.relative_to(uncompiled_path)
+            output_file = output_path / relative_path
             files_to_process.append((template_path, output_file, {}, "template file"))
 
     total_files = len(files_to_process)
@@ -574,7 +557,7 @@ def process_uncompiled_directory(
 
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
-            (src, out, scripts_path, variables, uncompiled_path, dry_run, label)
+            (src, out, uncompiled_path, variables, uncompiled_path, dry_run, label)
             for src, out, variables, label in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
@@ -584,7 +567,7 @@ def process_uncompiled_directory(
     else:
         for src, out, variables, label in files_to_process:
             inlined_for_file, wrote = _compile_single_file(
-                src, out, scripts_path, variables, uncompiled_path, dry_run, label
+                src, out, uncompiled_path, variables, uncompiled_path, dry_run, label
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote

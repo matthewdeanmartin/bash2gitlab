@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import shutil
 from pathlib import Path
 
-__all__ = ["commit_map"]
+__all__ = ["run_commit_map"]
 
 
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
 
+logger = logging.getLogger(__name__)
 
-def commit_map(
+
+def run_commit_map(
     source_to_target_map: dict[str, str],
     dry_run: bool = False,
     force: bool = False,

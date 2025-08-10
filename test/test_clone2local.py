@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 from pytest_mock import MockerFixture
 
-from bash2gitlab.clone2local import fetch_repository_archive
+from bash2gitlab.commands.clone2local import fetch_repository_archive
 
 
 @pytest.fixture

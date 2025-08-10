@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-import bash2gitlab.compile_all as compile_all
+import bash2gitlab.commands.compile_all as compile_all
 
 # --- Unit Tests for Core Logic Functions ---
 
