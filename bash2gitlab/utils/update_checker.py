@@ -113,24 +113,24 @@ def _is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
     """
     try:
         if cache_file.exists():
-            last_check_time = os.path.getmtime(str(cache_file))
+            last_check_time = cache_file.stat().st_mtime
             return (time.time() - last_check_time) < ttl_seconds
     except (OSError, PermissionError):
         return False
     return False
 
 
-def _save_cache(cache_dir: str, cache_file: str, payload: dict) -> None:
+def _save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
     """Save data to cache.
 
     Args:
-        cache_dir (str): Cache directory.
-        cache_file (str): Cache file path.
+        cache_dir (Path): Cache directory.
+        cache_file (Path): Cache file path.
         payload (dict): Data to store.
     """
     try:
-        os.makedirs(cache_dir, exist_ok=True)
-        with open(cache_file, "w", encoding="utf-8") as f:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        with cache_file.open("w", encoding="utf-8") as f:
             json.dump({"last_check": time.time(), **payload}, f)
     except (OSError, PermissionError):
         pass
@@ -299,9 +299,9 @@ def check_for_updates(
         return None
 
 
-if __name__ == "__main__":
-    msg = check_for_updates("bash2gitlab", "0.0.0")
-    if msg:
-        print(msg)
-    else:
-        print("No update message (cached or up-to-date).")
+# if __name__ == "__main__":
+#     msg = check_for_updates("bash2gitlab", "0.0.0")
+#     if msg:
+#         print(msg)
+#     else:
+#         print("No update message (cached or up-to-date).")
