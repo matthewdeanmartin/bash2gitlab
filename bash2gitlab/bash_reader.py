@@ -70,7 +70,7 @@ def read_bash_script(path: Path) -> str:
         logger.debug(f"Stripping shebang from script: {lines[0]}")
         lines = lines[1:]
 
-    final = "".join(lines)
+    final = "\n".join(lines)
     if not final.endswith("\n"):
         return final + "\n"
     return final

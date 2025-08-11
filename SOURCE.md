@@ -103,7 +103,7 @@ def read_bash_script(path: Path) -> str:
         logger.debug(f"Stripping shebang from script: {lines[0]}")
         lines = lines[1:]
 
-    final = "".join(lines)
+    final = "\n".join(lines)
     if not final.endswith("\n"):
         return final + "\n"
     return final
@@ -546,7 +546,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.8"
+__version__ = "0.8.9"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]

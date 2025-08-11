@@ -153,7 +153,7 @@ template_job:
             # Check inlined top-level before_script
             assert (
                 data["before_script"]
-                == "# >>> BEGIN inline: short_task.sh\necho 'Short task line 1'echo 'Short task line 2'\n# <<< END inline"
+                == "# >>> BEGIN inline: short_task.sh\necho 'Short task line 1'\necho 'Short task line 2'\n# <<< END inline"
             )
 
             # # Check build_job (long script becomes literal block)

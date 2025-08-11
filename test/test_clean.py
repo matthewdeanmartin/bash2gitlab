@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import base64
 from pathlib import Path
 
@@ -11,9 +13,6 @@ from bash2gitlab.commands.clean_all import (
     list_stray_files,
     report_targets,
 )
-
-# Import the module under test as a namespace
-# Adjust import path/name to match your package layout.
 
 
 # -------------------------
