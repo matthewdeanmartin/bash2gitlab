@@ -1,4 +1,3 @@
-
 import pytest
 
 from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX

@@ -10,6 +10,11 @@ stages:
 default:
   image: hurriedreformist/gnucobol:latest
 
+variables:
+  PROGRAM_NAME: payroll_tax
+  # Define the name for the compiled artifact
+  EXECUTABLE_NAME: payroll_tax_calculator
+
 # --- Build Stage ---
 # This job compiles the GnuCOBOL source code into an executable file.
 build_cobol_program:

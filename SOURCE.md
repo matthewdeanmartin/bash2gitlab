@@ -2,11 +2,13 @@
 ```
 ├── bash_reader.py
 ├── commands/
+│   ├── clean_all.py
 │   ├── clone2local.py
 │   ├── commit_map.py
 │   ├── compile_all.py
 │   ├── detect_drift.py
 │   ├── init_project.py
+│   ├── lint_all.py
 │   ├── map_deploy.py
 │   └── shred_all.py
 ├── config.py
@@ -19,7 +21,8 @@
 │   ├── parse_bash.py
 │   ├── update_checker.py
 │   ├── utils.py
-│   └── yaml_factory.py
+│   ├── yaml_factory.py
+│   └── yaml_file_same.py
 ├── watch_files.py
 ├── __about__.py
 └── __main__.py
@@ -549,12 +552,14 @@ __status__ = "4 - Beta"
 """
 Handles CLI interactions for bash2gitlab
 
-usage: bash2gitlab [-h] [--version] {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map} ...
+usage: bash2gitlab [-h] [--version]
+                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
+                   ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map}
+  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
     compile             Compile an uncompiled directory into a standard GitLab CI structure.
     shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
     detect-drift        Detect if generated files have been edited and display what the edits are.
@@ -562,6 +567,8 @@ positional arguments:
     init                Initialize a new bash2gitlab project and config file.
     map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
     commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
+    clean               Clean output folder, removing only unmodified files previously written by bash2gitlab.
+    lint                Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
 
 options:
   -h, --help            show this help message and exit
@@ -575,16 +582,19 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
+from urllib import error as _urlerror
 
 import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.commit_map import run_commit_map
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
+from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
 from bash2gitlab.commands.shred_all import run_shred_gitlab
 from bash2gitlab.config import config
@@ -594,6 +604,62 @@ from bash2gitlab.utils.update_checker import check_for_updates
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
+
+
+def clean_handler(args: argparse.Namespace) -> int:
+    """Handles the `clean` command logic."""
+    logger.info("Starting cleaning output folder...")
+    out_dir = Path(args.output_dir).resolve()
+    try:
+        clean_targets(out_dir, dry_run=args.dry_run)
+    except (KeyboardInterrupt, EOFError):
+        logger.warning("\nClean cancelled by user.")
+        return 1
+    return 0
+
+
+essential_gitlab_args_help = (
+    "GitLab connection options. For private instances require --gitlab-url and possibly --token. "
+    "Use --project-id for project-scoped lint when your config relies on includes or project context."
+)
+
+
+def lint_handler(args: argparse.Namespace) -> int:
+    """Handler for the `lint` command.
+
+    Runs GitLab CI Lint against all YAML files in the output directory.
+
+    Exit codes:
+        0  All files valid
+        2  One or more files invalid
+        10 Configuration / path error
+        12 Network / HTTP error communicating with GitLab
+    """
+    out_dir = Path(args.output_dir).resolve()
+    if not out_dir.exists():
+        logger.error("Output directory does not exist: %s", out_dir)
+        return 10
+
+    try:
+        results = lint_output_folder(
+            output_root=out_dir,
+            gitlab_url=args.gitlab_url,
+            private_token=args.token,
+            project_id=args.project_id,
+            ref=args.ref,
+            include_merged_yaml=args.include_merged_yaml,
+            parallelism=args.parallelism,
+            timeout=args.timeout,
+        )
+    except (_urlerror.URLError, _urlerror.HTTPError) as e:  # pragma: no cover - network
+        logger.error("Failed to contact GitLab CI Lint API: %s", e)
+        return 12
+    except Exception as e:  # nosec - defensive logging of unexpected failures
+        logger.error("Unexpected error during lint: %s", e)
+        return 1
+
+    ok, fail = summarize_results(results)
+    return 0 if fail == 0 else 2
 
 
 def init_handler(args: argparse.Namespace) -> int:
@@ -731,7 +797,7 @@ def map_deploy_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-def add_common_arguments(parser):
+def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -787,6 +853,20 @@ def main() -> int:
     add_common_arguments(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
 
+    # Clean Parser
+    clean_parser = subparsers.add_parser(
+        "clean",
+        help="Clean output folder, only removes unmodified files that bash2gitlab wrote.",
+    )
+    clean_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=not bool(config.output_dir),
+        help="Output directory for the compiled GitLab CI files.",
+    )
+    add_common_arguments(clean_parser)
+    clean_parser.set_defaults(func=clean_handler)
+
     # --- Shred Command ---
     shred_parser = subparsers.add_parser(
         "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
@@ -805,7 +885,6 @@ def main() -> int:
     shred_parser.set_defaults(func=shred_handler)
 
     # detect drift command
-    # --- Shred Command ---
     detect_drift_parser = subparsers.add_parser(
         "detect-drift", help="Detect if generated files have been edited and display what the edits are."
     )
@@ -895,11 +974,71 @@ def main() -> int:
     commit_map_parser.add_argument(
         "--force",
         action="store_true",
-        help=("Overwrite source files even if they have been modified since the last " "deployment."),
+        help=("Overwrite source files even if they have been modified since the last deployment."),
     )
     add_common_arguments(commit_map_parser)
 
     commit_map_parser.set_defaults(func=commit_map_handler)
+
+    # --- lint Command ---
+    lint_parser = subparsers.add_parser(
+        "lint",
+        help="Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped).",
+        description=(
+            "Run GitLab CI Lint for every *.yml/*.yaml file under the output directory.\n\n"
+            + essential_gitlab_args_help
+        ),
+    )
+    lint_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=not bool(config.output_dir),
+        help="Directory containing compiled YAML files to lint.",
+    )
+    lint_parser.add_argument(
+        "--gitlab-url",
+        dest="gitlab_url",
+        required=True,
+        help="Base GitLab URL (e.g., https://gitlab.com).",
+    )
+    lint_parser.add_argument(
+        "--token",
+        dest="token",
+        help="PRIVATE-TOKEN or CI_JOB_TOKEN to authenticate with the API.",
+    )
+    lint_parser.add_argument(
+        "--project-id",
+        dest="project_id",
+        type=int,
+        help="Project ID for project-scoped lint (recommended for configs with includes).",
+    )
+    lint_parser.add_argument(
+        "--ref",
+        dest="ref",
+        help="Git ref to evaluate includes/variables against (project lint only).",
+    )
+    lint_parser.add_argument(
+        "--include-merged-yaml",
+        dest="include_merged_yaml",
+        action="store_true",
+        help="Return merged YAML from project-scoped lint (slower).",
+    )
+    lint_parser.add_argument(
+        "--parallelism",
+        dest="parallelism",
+        type=int,
+        default=config.parallelism,
+        help="Max concurrent lint requests (default: CPU count, capped to file count).",
+    )
+    lint_parser.add_argument(
+        "--timeout",
+        dest="timeout",
+        type=float,
+        default=20.0,
+        help="HTTP timeout per request in seconds (default: 20).",
+    )
+    add_common_arguments(lint_parser)
+    lint_parser.set_defaults(func=lint_handler)
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
@@ -922,6 +1061,15 @@ def main() -> int:
             shred_parser.error("argument --in is required")
         if not args.output_file:
             shred_parser.error("argument --out is required")
+    elif args.command == "clean":
+        args.output_dir = args.output_dir or config.output_dir
+        if not args.output_dir:
+            clean_parser.error("argument --out is required")
+    elif args.command == "lint":
+        # Only merge --out from config; GitLab connection is explicit via CLI
+        args.output_dir = args.output_dir or config.output_dir
+        if not args.output_dir:
+            lint_parser.error("argument --out is required")
 
     # Merge boolean flags
     args.verbose = args.verbose or config.verbose or False
@@ -944,6 +1092,236 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+```
+## File: commands\clean_all.py
+```python
+from __future__ import annotations
+
+import base64
+import logging
+from collections.abc import Iterator
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# --- Helpers -----------------------------------------------------------------
+
+
+def _partner_hash_file(base_file: Path) -> Path:
+    """Return the expected .hash file for a target file.
+
+    Example: foo/bar.yml -> foo/bar.yml.hash
+    """
+    return base_file.with_suffix(base_file.suffix + ".hash")
+
+
+def _base_from_hash(hash_file: Path) -> Path:
+    """Return the expected base file for a .hash file.
+
+    Works even on older Python without Path.removesuffix().
+    Example: foo/bar.yml.hash -> foo/bar.yml
+    """
+    s = str(hash_file)
+    suffix = ".hash"
+    if s.endswith(suffix):
+        return Path(s[: -len(suffix)])
+    return hash_file  # unexpected, but avoid throwing
+
+
+# --- Inspection utilities -----------------------------------------------------
+
+
+def iter_target_pairs(root: Path) -> Iterator[tuple[Path, Path]]:
+    """Yield (base_file, hash_file) pairs under *root* recursively.
+
+    Only yields pairs where *both* files exist.
+    """
+    for p in root.rglob("*"):
+        if p.is_dir():
+            continue
+        if p.name.endswith(".hash"):
+            base = _base_from_hash(p)
+            if base.exists() and base.is_file():
+                yield (base, p)
+        else:
+            hashf = _partner_hash_file(p)
+            if hashf.exists() and hashf.is_file():
+                # Pair will also be seen when rglob hits the .hash file; skip duplicates
+                continue
+
+
+def list_stray_files(root: Path) -> list[Path]:
+    """Return files under *root* that do **not** have a hash pair.
+
+    A "stray" is either:
+    - a non-.hash file with no corresponding ``<file>.hash``; or
+    - a ``.hash`` file whose base file is missing.
+    """
+    strays: list[Path] = []
+
+    # Track pairs we've seen to avoid extra disk checks
+    paired_bases: set[Path] = set()
+    paired_hashes: set[Path] = set()
+
+    for p in root.rglob("*"):
+        if p.is_dir():
+            continue
+        if p.suffix == "":
+            # still fine; pairing is based on full name + .hash
+            pass
+
+        if p.name.endswith(".hash"):
+            base = _base_from_hash(p)
+            if base.exists():
+                paired_bases.add(base)
+                paired_hashes.add(p)
+            else:
+                strays.append(p)
+        else:
+            hashf = _partner_hash_file(p)
+            if hashf.exists():
+                paired_bases.add(p)
+                paired_hashes.add(hashf)
+            else:
+                strays.append(p)
+
+    logger.info("Found %d stray file(s) under %s", len(strays), root)
+    for s in strays:
+        logger.debug("Stray: %s", s)
+    return sorted(strays)
+
+
+# --- Hash verification --------------------------------------------------------
+
+
+def _read_current_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _read_hash_text(hash_file: Path) -> str | None:
+    """Decode base64 content of *hash_file* to text.
+
+    Returns None if decoding fails.
+    """
+    try:
+        raw = hash_file.read_text(encoding="utf-8").strip()
+        return base64.b64decode(raw).decode("utf-8")
+    # best-effort guard
+    except Exception as e:  # nosec
+        logger.warning("Failed to decode hash file %s: %s", hash_file, e)
+        return None
+
+
+def is_target_unchanged(base_file: Path, hash_file: Path) -> bool | None:
+    """Check if *base_file* matches the content recorded in *hash_file*.
+
+    Returns:
+        - True if contents match
+        - False if they differ
+        - None if the hash file cannot be decoded
+    """
+    expected = _read_hash_text(hash_file)
+    if expected is None:
+        return None
+    current = _read_current_text(base_file)
+    return current == expected
+
+
+# --- Cleaning -----------------------------------------------------------------
+
+
+def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
+    """Delete generated target files (and their .hash files) under *root*.
+
+    Only deletes when a valid pair exists **and** the base file content matches
+    the recorded hash. "Stray" files are always left alone.
+
+    Args:
+        root: Directory containing compiled outputs and ``*.hash`` files.
+        dry_run: If True, log what would be deleted but do not delete.
+
+    Returns:
+        tuple of (deleted_pairs, skipped_changed, skipped_invalid_hash)
+    """
+    deleted = 0
+    skipped_changed = 0
+    skipped_invalid = 0
+
+    # Build a unique set of pairs to consider
+    seen_pairs: set[tuple[Path, Path]] = set()
+    for p in root.rglob("*.hash"):
+        if p.is_dir():
+            continue
+        base = _base_from_hash(p)
+        if not base.exists() or not base.is_file():
+            # Stray .hash; leave it
+            continue
+        seen_pairs.add((base, p))
+
+    if not seen_pairs:
+        logger.info("No target pairs found under %s", root)
+        return (0, 0, 0)
+
+    for base, hashf in sorted(seen_pairs):
+        status = is_target_unchanged(base, hashf)
+        if status is None:
+            skipped_invalid += 1
+            logger.warning("Refusing to remove %s (invalid/corrupt hash at %s)", base, hashf)
+            continue
+        if status is False:
+            skipped_changed += 1
+            logger.warning("Refusing to remove %s (content has changed since last write)", base)
+            continue
+
+        # status is True: safe to delete
+        if dry_run:
+            logger.info("[DRY RUN] Would delete %s and %s", base, hashf)
+        else:
+            try:
+                base.unlink(missing_ok=False)
+                hashf.unlink(missing_ok=True)
+                logger.info("Deleted %s and %s", base, hashf)
+            # narrow surface area; logs any fs issues
+            except Exception as e:  # nosec
+                logger.error("Failed to delete %s / %s: %s", base, hashf, e)
+                continue
+        deleted += 1
+
+    logger.info(
+        "Clean summary: %d pair(s) deleted, %d changed file(s) skipped, %d invalid hash(es) skipped",
+        deleted,
+        skipped_changed,
+        skipped_invalid,
+    )
+    return (deleted, skipped_changed, skipped_invalid)
+
+
+# --- Optional: quick report helper -------------------------------------------
+
+
+def report_targets(root: Path) -> list[Path]:
+    """Log a concise report of pairs, strays, and safety status.
+
+    Useful for diagnostics before/after ``clean_targets``.
+    """
+    pairs = list(iter_target_pairs(root))
+    strays = list_stray_files(root)
+
+    logger.debug("Target report for %s", root)
+    logger.debug("Pairs found: %d", len(pairs))
+    for base, hashf in pairs:
+        status = is_target_unchanged(base, hashf)
+        if status is True:
+            logger.debug("OK: %s (hash matches)", base)
+        elif status is False:
+            logger.warning("CHANGED: %s (hash mismatch)", base)
+        else:
+            logger.warning("INVALID HASH: %s (cannot decode %s)", base, hashf)
+
+    logger.debug("Strays: %d", len(strays))
+    for s in strays:
+        logger.debug("Stray: %s", s)
+    return strays
 ```
 ## File: commands\clone2local.py
 ```python
@@ -1283,7 +1661,6 @@ import difflib
 import io
 import logging
 import multiprocessing
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -1294,27 +1671,16 @@ from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.bash_reader import read_bash_script
+from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
+from bash2gitlab.utils.yaml_file_same import normalize_for_compare, yaml_is_same
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["run_compile_all"]
-
-
-def _normalize_for_compare(text: str) -> str:
-    # Normalize line endings
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    # Trim trailing whitespace per line
-    text = "\n".join(line.rstrip() for line in text.splitlines())
-    # Ensure exactly one newline at EOF
-    if not text.endswith("\n"):
-        text += "\n"
-    # Collapse multiple blank lines at EOF to one (optional)
-    text = re.sub(r"\n{3,}$", "\n\n", text)
-    return text
 
 
 def remove_excess(command: str) -> str:
@@ -1499,12 +1865,25 @@ def inline_gitlab_scripts(
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
     # Merge global variables if provided
+    # if global_vars:
+    #     logger.debug("Merging global variables into the YAML configuration.")
+    #     existing_vars = data.get("variables", {})
+    #     merged_vars = global_vars.copy()
+    #     # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
+    #     merged_vars.update(existing_vars)
+    #     data["variables"] = merged_vars
+    #     inlined_count += 1
     if global_vars:
         logger.debug("Merging global variables into the YAML configuration.")
-        existing_vars = data.get("variables", {})
-        merged_vars = global_vars.copy()
-        # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
-        merged_vars.update(existing_vars)
+        existing_vars = data.get("variables", CommentedMap())
+
+        merged_vars = CommentedMap()
+        # global first, then YAML-defined wins on conflict
+        for k, v in (global_vars or {}).items():
+            merged_vars[k] = v
+        for k, v in existing_vars.items():
+            merged_vars[k] = v
+
         data["variables"] = merged_vars
         inlined_count += 1
 
@@ -1568,22 +1947,9 @@ def inline_gitlab_scripts(
                             logger.debug(f"Processing run/script: {job_name}")
                             inlined_count += process_job(item, scripts_root)
 
-    # --- Reorder top-level keys for consistent output ---
-    logger.debug("Reordering top-level keys in the final YAML.")
-    ordered_data = CommentedMap()
-    key_order = ["include", "variables", "stages"]
-
-    # Add specified keys first, in the desired order
-    for key in key_order:
-        if key in data:
-            ordered_data[key] = data.pop(key)
-
-    # Add the rest of the keys (jobs, etc.) in their original relative order
-    for key, value in data.items():
-        ordered_data[key] = value
-
     out_stream = io.StringIO()
-    yaml.dump(ordered_data, out_stream)  # Dump the reordered data
+    yaml.dump(data, out_stream)  # Dump the reordered data
+
     return inlined_count, out_stream.getvalue()
 
 
@@ -1655,15 +2021,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             return True
         current_content = output_file.read_text(encoding="utf-8")
 
-        current_norm = _normalize_for_compare(current_content)
-        new_norm = _normalize_for_compare(new_content)
-
-        if current_norm == new_norm:
-            logger.debug("No textual changes after normalization. Skipping write.")
-            return False
-
-        if current_content != new_content:
-            diff_text = _unified_diff(current_content, new_content, output_file)
+        if not yaml_is_same(current_content, new_content):
+            diff_text = _unified_diff(
+                normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
+            )
             changed, ins, rem = _diff_stats(diff_text)
             logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
             logger.debug(diff_text)
@@ -1719,12 +2080,21 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         current_doc = yaml.load(current_content)
         is_current_corrupt = False
     except YAMLError:
+        current_doc = None
         is_current_corrupt = True
         logger.warning("Could not parse YAML from '%s'; it appears to be corrupt.", short_path(output_file))
 
     # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
-    if is_current_corrupt or current_doc != last_known_doc:
-        diff_text = _unified_diff(last_known_content, current_content, output_file, "last known good", "current")
+    is_same = yaml_is_same(last_known_content, current_content)
+    # current_doc != last_known_doc
+    if is_current_corrupt or (current_doc != last_known_doc and not is_same):
+        diff_text = _unified_diff(
+            normalize_for_compare(last_known_content),
+            normalize_for_compare(current_content),
+            output_file,
+            "last known good",
+            "current",
+        )
         corruption_warning = (
             "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n"
             if is_current_corrupt
@@ -1753,12 +2123,14 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
 
     # If we reach here, the current file is valid (or just reformatted).
     # Now, we check if the *newly generated* content is different from the current content.
-    if new_content != current_content:
+    if not yaml_is_same(current_content, new_content):
         # NEW: log diff + counts before writing
-        diff_text = _unified_diff(current_content, new_content, output_file)
+        diff_text = _unified_diff(
+            normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
+        )
         changed, ins, rem = _diff_stats(diff_text)
         logger.info(
-            "Rewriting %s: %d lines changed (+%d, -%d).",
+            "(1) Rewriting %s: %d lines changed (+%d, -%d).",
             short_path(output_file),
             changed,
             ins,
@@ -1813,29 +2185,27 @@ def run_compile_all(
     Returns:
         The total number of inlined sections across all files.
     """
+    strays = report_targets(output_path)
+    if strays:
+        print("Stray files in output folder, halting")
+        for stray in strays:
+            print(f"  {stray}")
+        sys.exit(200)
+
     total_inlined_count = 0
     written_files_count = 0
 
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
 
-    global_vars = {}
     global_vars_path = uncompiled_path / "global_variables.sh"
     if global_vars_path.is_file():
         logger.info(f"Found and loading variables from {short_path(global_vars_path)}")
         content = global_vars_path.read_text(encoding="utf-8")
-        global_vars = parse_env_file(content)
+        parse_env_file(content)
         total_inlined_count += 1
 
     files_to_process: list[tuple[Path, Path, dict[str, str], str]] = []
-
-    root_yaml = uncompiled_path / ".gitlab-ci.yml"
-    if not root_yaml.exists():
-        root_yaml = uncompiled_path / ".gitlab-ci.yaml"
-
-    if root_yaml.is_file():
-        output_root_yaml = output_path / root_yaml.name
-        files_to_process.append((root_yaml, output_root_yaml, global_vars, "root file"))
 
     if uncompiled_path.is_dir():
         template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
@@ -2251,6 +2621,435 @@ def create_config_file(base_path: Path, config: dict[str, Any], dry_run: bool = 
     config_file_path.write_text(toml_content, encoding="utf-8")
 
     logger.info("\n✅ Project initialization complete.")
+```
+## File: commands\lint_all.py
+```python
+"""Utilities to lint compiled GitLab CI YAML files against a GitLab instance.
+
+This module scans an *output* directory for YAML files and submits each file's
+content to GitLab's CI Lint API. It supports both the global lint endpoint and
+project-scoped linting (recommended for configs that rely on `include:` or
+project-level context).
+
+The entrypoint is :func:`lint_output_folder`.
+
+Design goals
+------------
+- Pure standard library HTTP (``urllib.request``) to avoid extra deps.
+- Safe defaults, clear logging, and mypy-friendly type hints.
+- Google-style docstrings, small focused helpers, and testable pieces.
+
+Example:
+-------
+>>> from pathlib import Path
+>>> results = lint_output_folder(
+...     output_root=Path("dist"),
+...     gitlab_url="https://gitlab.example.com",
+...     private_token="glpat-...",
+...     project_id=1234,
+...     ref="main",
+...     include_merged_yaml=True,
+... )
+>>> any(r.ok for r in results)
+True
+
+Notes:
+-----
+- The project-scoped endpoint provides more accurate validation for pipelines
+  that depend on project context, variables, or remote includes.
+- GitLab API reference:
+  - Global lint:   ``POST /api/v4/ci/lint`` (body: {"content": "..."})
+  - Project lint:  ``POST /api/v4/projects/:id/ci/lint`` with optional
+    parameters such as ``ref`` and ``include_merged_yaml``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import multiprocessing
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from urllib import error, request
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["LintIssue", "LintResult", "lint_single_text", "lint_single_file", "lint_output_folder", "summarize_results"]
+
+
+# ---------------------------------------------------------------------------
+# Data structures
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class LintIssue:
+    """Represents a single message from GitLab CI Lint.
+
+    Attributes:
+        severity: Message severity (e.g., "error", "warning").
+        message: Human-readable message.
+        line: Optional line number in the YAML (GitLab may omit).
+    """
+
+    severity: str
+    message: str
+    line: int | None = None
+
+
+@dataclass(frozen=True)
+class LintResult:
+    """Result of linting one YAML payload.
+
+    Attributes:
+        path: Source file path (``Path``) or synthetic path for raw text.
+        ok: ``True`` when the configuration is valid according to GitLab.
+        status: Raw status string from API (e.g., "valid", "invalid").
+        errors: List of error messages (as :class:`LintIssue`).
+        warnings: List of warning messages (as :class:`LintIssue`).
+        merged_yaml: The resolved/merged YAML returned by project-scoped lint
+            when ``include_merged_yaml=True``; otherwise ``None``.
+        raw_response: The decoded API JSON for debugging.
+    """
+
+    path: Path
+    ok: bool
+    status: str
+    errors: list[LintIssue]
+    warnings: list[LintIssue]
+    merged_yaml: str | None
+    raw_response: dict
+
+
+# ---------------------------------------------------------------------------
+# HTTP helpers
+# ---------------------------------------------------------------------------
+
+
+def _api_url(
+    base_url: str,
+    project_id: int | None,
+) -> str:
+    """Build the CI Lint API URL.
+
+    Args:
+        base_url: Base GitLab URL, e.g., ``https://gitlab.com``.
+        project_id: If provided, use project-scoped lint endpoint.
+
+    Returns:
+        Fully-qualified API endpoint URL.
+    """
+    base = base_url.rstrip("/")
+    if project_id is None:
+        return f"{base}/api/v4/ci/lint"
+    return f"{base}/api/v4/projects/{project_id}/ci/lint"
+
+
+def _post_json(
+    url: str,
+    payload: dict,
+    *,
+    private_token: str | None,
+    timeout: float,
+) -> dict:
+    """POST JSON to ``url`` and return decoded JSON response.
+
+    Args:
+        url: Target endpoint.
+        payload: JSON payload to send.
+        private_token: Optional GitLab token for authentication.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Decoded JSON response as a ``dict``.
+
+    Raises:
+        URLError / HTTPError on network issues (logged and re-raised).
+        ValueError if response cannot be parsed as JSON.
+    """
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "bash2gitlab-lint/1.0",
+    }
+    if private_token:
+        headers["PRIVATE-TOKEN"] = private_token
+
+    req = request.Request(url=url, data=body, headers=headers, method="POST")
+
+    try:
+        #  controlled URL
+        with request.urlopen(req, timeout=timeout) as resp:  # nosec
+            raw = resp.read()
+    except error.HTTPError as e:  # pragma: no cover - network dependent
+        detail = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
+        logger.error("HTTP %s from %s: %s", getattr(e, "code", "?"), url, detail)
+        raise
+    except error.URLError as e:  # pragma: no cover - network dependent
+        logger.error("Network error calling %s: %s", url, e)
+        raise
+
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except Exception as e:
+        logger.error("Failed to decode JSON from %s: %s", url, e)
+        raise
+
+
+# ---------------------------------------------------------------------------
+# Lint operations
+# ---------------------------------------------------------------------------
+
+
+def lint_single_text(
+    content: str,
+    *,
+    gitlab_url: str,
+    private_token: str | None = None,
+    project_id: int | None = None,
+    ref: str | None = None,
+    include_merged_yaml: bool = False,
+    timeout: float = 20.0,
+    synthetic_path: Path | None = None,
+) -> LintResult:
+    """Lint a single YAML *content* string via GitLab CI Lint API.
+
+    Args:
+        content: The YAML text to validate.
+        gitlab_url: Base GitLab URL, e.g., ``https://gitlab.com``.
+        private_token: Optional personal access token (PAT) or CI job token.
+        project_id: If provided, use project-scoped endpoint.
+        ref: Optional Git ref for project-scoped lint (e.g., "main").
+        include_merged_yaml: If True, ask GitLab to resolve includes and return
+            the merged YAML (project-scoped lint only).
+        timeout: HTTP timeout in seconds.
+        synthetic_path: Optional path label for reporting (used when linting
+            text not originating from a file).
+
+    Returns:
+        A :class:`LintResult` with structured details.
+    """
+    url = _api_url(gitlab_url, project_id)
+
+    payload: dict = {"content": content}
+
+    # Project-scoped knobs
+    if project_id is not None and ref is not None:
+        payload["ref"] = ref
+    if project_id is not None and include_merged_yaml:
+        payload["include_merged_yaml"] = True
+
+    resp = _post_json(url, payload, private_token=private_token, timeout=timeout)
+
+    # GitLab returns varing shapes across versions. Normalize defensively.
+    status = str(resp.get("status") or ("valid" if resp.get("valid") else "invalid"))
+    valid = bool(resp.get("valid", status == "valid"))
+
+    def _collect(kind: str) -> list[LintIssue]:
+        out: list[LintIssue] = []
+        items = resp.get(kind) or []
+        if isinstance(items, list):
+            for m in items:
+                if isinstance(m, dict):
+                    out.append(
+                        LintIssue(
+                            severity=str(m.get("severity", kind.rstrip("s"))),
+                            message=str(m.get("message", m)),
+                            line=m.get("line"),
+                        )
+                    )
+                else:
+                    out.append(LintIssue(severity=kind.rstrip("s"), message=str(m)))
+        return out
+
+    errors = _collect("errors")
+    warnings = _collect("warnings")
+    merged_yaml: str | None = None
+    if include_merged_yaml:
+        merged_yaml = resp.get("merged_yaml") or resp.get("mergedYaml")
+
+    path = synthetic_path or Path("<string>")
+    return LintResult(
+        path=path,
+        ok=valid,
+        status=status,
+        errors=errors,
+        warnings=warnings,
+        merged_yaml=merged_yaml,
+        raw_response=resp,
+    )
+
+
+def lint_single_file(
+    path: Path,
+    *,
+    gitlab_url: str,
+    private_token: str | None = None,
+    project_id: int | None = None,
+    ref: str | None = None,
+    include_merged_yaml: bool = False,
+    timeout: float = 20.0,
+    encoding: str = "utf-8",
+) -> LintResult:
+    """Lint one YAML file at *path*.
+
+    Args:
+        path: File to lint.
+        gitlab_url: Base GitLab URL, e.g., ``https://gitlab.com``.
+        private_token: Optional personal access token (PAT) or CI job token.
+        project_id: Optional project id for project-scoped lint.
+        ref: Optional git ref when using project-scoped lint.
+        include_merged_yaml: Whether to return merged YAML (project lint only).
+        timeout: HTTP timeout.
+        encoding: File encoding.
+
+    Returns:
+        A :class:`LintResult`.
+    """
+    text = path.read_text(encoding=encoding)
+    return lint_single_text(
+        text,
+        gitlab_url=gitlab_url,
+        private_token=private_token,
+        project_id=project_id,
+        ref=ref,
+        include_merged_yaml=include_merged_yaml,
+        timeout=timeout,
+        synthetic_path=path,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Folder scanning / orchestration
+# ---------------------------------------------------------------------------
+
+_YAML_GLOBS: tuple[str, ...] = ("*.yml", "*.yaml")
+
+
+def _discover_yaml_files(root: Path) -> list[Path]:
+    """Recursively find YAML files under *root*.
+
+    Files with suffixes ``.yml`` or ``.yaml`` are included.
+    """
+    out: list[Path] = []
+    for pat in _YAML_GLOBS:
+        out.extend(root.rglob(pat))
+    # Deterministic order aids testing and stable logs
+    return sorted(p for p in out if p.is_file())
+
+
+def lint_output_folder(
+    output_root: Path,
+    *,
+    gitlab_url: str,
+    private_token: str | None = None,
+    project_id: int | None = None,
+    ref: str | None = None,
+    include_merged_yaml: bool = False,
+    parallelism: int | None = None,
+    timeout: float = 20.0,
+) -> list[LintResult]:
+    """Lint every YAML file under *output_root* using GitLab CI Lint.
+
+    Args:
+        output_root: Directory containing compiled YAML outputs to validate.
+        gitlab_url: Base GitLab URL, e.g., ``https://gitlab.com``.
+        private_token: Optional personal access token (PAT) or CI job token.
+        project_id: Optional project id for project-scoped lint.
+        ref: Optional git ref when using project-scoped lint.
+        include_merged_yaml: Whether to return merged YAML (project lint only).
+        parallelism: Max worker processes for concurrent lint requests. If
+            ``None``, a reasonable default will be used for small sets.
+        timeout: HTTP timeout per request.
+
+    Returns:
+        List of :class:`LintResult`, one per file.
+    """
+    files = _discover_yaml_files(output_root)
+    if not files:
+        logger.warning("No YAML files found under %s", output_root)
+        return []
+
+    # Heuristic: don't over-parallelize small sets
+    if parallelism is None:
+        parallelism = min(max(1, len(files)), multiprocessing.cpu_count())
+
+    logger.info(
+        "Linting %d YAML file(s) under %s using %s endpoint",
+        len(files),
+        output_root,
+        "project" if project_id is not None else "global",
+    )
+
+    if parallelism <= 1:
+        return [
+            lint_single_file(
+                p,
+                gitlab_url=gitlab_url,
+                private_token=private_token,
+                project_id=project_id,
+                ref=ref,
+                include_merged_yaml=include_merged_yaml,
+                timeout=timeout,
+            )
+            for p in files
+        ]
+
+    # Use processes for simple isolation; network-bound so processes vs threads
+    # is not critical, but this avoids GIL considerations for file IO + json.
+    from functools import partial
+
+    worker = partial(
+        lint_single_file,
+        gitlab_url=gitlab_url,
+        private_token=private_token,
+        project_id=project_id,
+        ref=ref,
+        include_merged_yaml=include_merged_yaml,
+        timeout=timeout,
+    )
+
+    with multiprocessing.Pool(processes=parallelism) as pool:
+        results = pool.map(worker, files)
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Reporting helpers (optional)
+# ---------------------------------------------------------------------------
+
+
+def summarize_results(results: Sequence[LintResult]) -> tuple[int, int]:
+    """Log a concise summary and return counts.
+
+    Args:
+        results: Sequence of lint results.
+
+    Returns:
+        Tuple of (ok_count, fail_count).
+    """
+    ok = sum(1 for r in results if r.ok)
+    fail = len(results) - ok
+
+    for r in results:
+        if r.ok:
+            logger.info("OK: %s", r.path)
+            if r.warnings:
+                for w in r.warnings:
+                    logger.warning("%s: %s", r.path, w.message)
+        else:
+            logger.error("INVALID: %s (status=%s)", r.path, r.status)
+            for e in r.errors:
+                if e.line is not None:
+                    logger.error("%s:%s: %s", r.path, e.line, e.message)
+                else:
+                    logger.error("%s: %s", r.path, e.message)
+
+    logger.info("Lint summary: %d ok, %d failed", ok, fail)
+    return ok, fail
 ```
 ## File: commands\map_deploy.py
 ```python
@@ -3372,4 +4171,49 @@ def get_yaml() -> YAML:
     y.explicit_start = False  # no '---'
     y.explicit_end = False  # no '...'
     return y
+```
+## File: utils\yaml_file_same.py
+```python
+import re
+
+from ruamel.yaml.error import YAMLError
+
+from bash2gitlab.utils.yaml_factory import get_yaml
+
+
+def normalize_for_compare(text: str) -> str:
+    # Normalize line endings
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Trim trailing whitespace per line
+    text = "\n".join(line.rstrip() for line in text.splitlines())
+    # Ensure exactly one newline at EOF
+    if not text.endswith("\n"):
+        text += "\n"
+    # Collapse multiple blank lines at EOF to one (optional)
+    text = re.sub(r"\n{3,}$", "\n\n", text)
+    return text.strip(" \n")
+
+
+def yaml_is_same(current_content: str, new_content: str):
+    if current_content.strip("\n") == new_content.strip("\n"):
+        # Simple match.
+        return True
+
+    current_norm = normalize_for_compare(current_content)
+    new_norm = normalize_for_compare(new_content)
+
+    if current_norm == new_norm:
+        return True
+
+    yaml = get_yaml()
+    try:
+        new_doc = yaml.load(new_content)
+        curr_doc = yaml.load(current_content)
+    except YAMLError:
+        return False
+
+    if curr_doc == new_doc:
+        return True
+
+    return False
 ```

@@ -15,6 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.6] - 2025-08-09
 
 ### Changed
+- File invocations followed by comment are now detected.
+- Concept of script folder and template folder gone. Input folder and output folder is enough.
+
+### Removed
+- Global variable file feature is broken, will need to rethink
+
+### Added
+- Clean command that only removes unmodified files from output folder
+- Checks for stray files in output folder before compiling
+- Lint command, but it is in "beta" testing
+
+### Fixed
+- No longer rewrites files even when there are no changes
+
+## [0.8.6] - 2025-08-09
+
+### Changed
 
 - Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files. 
 

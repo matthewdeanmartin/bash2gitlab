@@ -1,5 +1,7 @@
 import re
 
+from ruamel.yaml.error import YAMLError
+
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 
@@ -16,7 +18,7 @@ def normalize_for_compare(text: str) -> str:
     return text.strip(" \n")
 
 
-def yaml_is_same(current_content:str, new_content:str):
+def yaml_is_same(current_content: str, new_content: str):
     if current_content.strip("\n") == new_content.strip("\n"):
         # Simple match.
         return True

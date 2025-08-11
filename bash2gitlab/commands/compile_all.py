@@ -16,18 +16,17 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from bash2gitlab.utils.yaml_file_same import yaml_is_same, normalize_for_compare
 from bash2gitlab.bash_reader import read_bash_script
+from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
+from bash2gitlab.utils.yaml_file_same import normalize_for_compare, yaml_is_same
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["run_compile_all"]
-
-
 
 
 def remove_excess(command: str) -> str:
@@ -369,7 +368,9 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         current_content = output_file.read_text(encoding="utf-8")
 
         if not yaml_is_same(current_content, new_content):
-            diff_text = _unified_diff(normalize_for_compare(current_content), normalize_for_compare(new_content), output_file)
+            diff_text = _unified_diff(
+                normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
+            )
             changed, ins, rem = _diff_stats(diff_text)
             logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
             logger.debug(diff_text)
@@ -432,9 +433,14 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
     is_same = yaml_is_same(last_known_content, current_content)
     # current_doc != last_known_doc
-    if is_current_corrupt or (current_doc != last_known_doc and not is_same) :
-        diff_text = _unified_diff(normalize_for_compare(last_known_content),
-                                  normalize_for_compare(current_content), output_file, "last known good", "current")
+    if is_current_corrupt or (current_doc != last_known_doc and not is_same):
+        diff_text = _unified_diff(
+            normalize_for_compare(last_known_content),
+            normalize_for_compare(current_content),
+            output_file,
+            "last known good",
+            "current",
+        )
         corruption_warning = (
             "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n"
             if is_current_corrupt
@@ -465,7 +471,9 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # Now, we check if the *newly generated* content is different from the current content.
     if not yaml_is_same(current_content, new_content):
         # NEW: log diff + counts before writing
-        diff_text = _unified_diff(normalize_for_compare(current_content), normalize_for_compare(new_content), output_file)
+        diff_text = _unified_diff(
+            normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
+        )
         changed, ins, rem = _diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
@@ -523,22 +531,27 @@ def run_compile_all(
     Returns:
         The total number of inlined sections across all files.
     """
+    strays = report_targets(output_path)
+    if strays:
+        print("Stray files in output folder, halting")
+        for stray in strays:
+            print(f"  {stray}")
+        sys.exit(200)
+
     total_inlined_count = 0
     written_files_count = 0
 
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
 
-    global_vars = {}
     global_vars_path = uncompiled_path / "global_variables.sh"
     if global_vars_path.is_file():
         logger.info(f"Found and loading variables from {short_path(global_vars_path)}")
         content = global_vars_path.read_text(encoding="utf-8")
-        global_vars = parse_env_file(content)
+        parse_env_file(content)
         total_inlined_count += 1
 
     files_to_process: list[tuple[Path, Path, dict[str, str], str]] = []
-
 
     if uncompiled_path.is_dir():
         template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))

@@ -1,12 +1,14 @@
 """
 Handles CLI interactions for bash2gitlab
 
-usage: bash2gitlab [-h] [--version] {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map} ...
+usage: bash2gitlab [-h] [--version]
+                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
+                   ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map}
+  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
     compile             Compile an uncompiled directory into a standard GitLab CI structure.
     shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
     detect-drift        Detect if generated files have been edited and display what the edits are.
@@ -14,6 +16,8 @@ positional arguments:
     init                Initialize a new bash2gitlab project and config file.
     map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
     commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
+    clean               Clean output folder, removing only unmodified files previously written by bash2gitlab.
+    lint                Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
 
 options:
   -h, --help            show this help message and exit
@@ -27,16 +31,19 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
+from urllib import error as _urlerror
 
 import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.commit_map import run_commit_map
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
+from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
 from bash2gitlab.commands.shred_all import run_shred_gitlab
 from bash2gitlab.config import config
@@ -46,6 +53,63 @@ from bash2gitlab.utils.update_checker import check_for_updates
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
+
+
+def clean_handler(args: argparse.Namespace) -> int:
+    """Handles the `clean` command logic."""
+    logger.info("Starting cleaning output folder...")
+    out_dir = Path(args.output_dir).resolve()
+    try:
+        clean_targets(out_dir, dry_run=args.dry_run)
+    except (KeyboardInterrupt, EOFError):
+        logger.warning("\nClean cancelled by user.")
+        return 1
+    return 0
+
+
+essential_gitlab_args_help = (
+    "GitLab connection options. For private instances require --gitlab-url and possibly --token. "
+    "Use --project-id for project-scoped lint when your config relies on includes or project context."
+)
+
+
+def lint_handler(args: argparse.Namespace) -> int:
+    """Handler for the `lint` command.
+
+    Runs GitLab CI Lint against all YAML files in the output directory.
+
+    Exit codes:
+        0  All files valid
+        2  One or more files invalid
+        10 Configuration / path error
+        12 Network / HTTP error communicating with GitLab
+    """
+    out_dir = Path(args.output_dir).resolve()
+    if not out_dir.exists():
+        logger.error("Output directory does not exist: %s", out_dir)
+        return 10
+
+    try:
+        results = lint_output_folder(
+            output_root=out_dir,
+            gitlab_url=args.gitlab_url,
+            private_token=args.token,
+            project_id=args.project_id,
+            ref=args.ref,
+            include_merged_yaml=args.include_merged_yaml,
+            parallelism=args.parallelism,
+            timeout=args.timeout,
+        )
+    except (_urlerror.URLError, _urlerror.HTTPError) as e:  # pragma: no cover - network
+        logger.error("Failed to contact GitLab CI Lint API: %s", e)
+        return 12
+    # defensive logging of unexpected failures
+    except Exception as e:  # nosec
+        logger.error("Unexpected error during lint: %s", e)
+        return 1
+
+    ok, fail = summarize_results(results)
+    return 0 if fail == 0 else 2
 
 
 def init_handler(args: argparse.Namespace) -> int:
@@ -183,7 +247,7 @@ def map_deploy_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-def add_common_arguments(parser):
+def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -239,6 +303,20 @@ def main() -> int:
     add_common_arguments(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
 
+    # Clean Parser
+    clean_parser = subparsers.add_parser(
+        "clean",
+        help="Clean output folder, only removes unmodified files that bash2gitlab wrote.",
+    )
+    clean_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=not bool(config.output_dir),
+        help="Output directory for the compiled GitLab CI files.",
+    )
+    add_common_arguments(clean_parser)
+    clean_parser.set_defaults(func=clean_handler)
+
     # --- Shred Command ---
     shred_parser = subparsers.add_parser(
         "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
@@ -257,7 +335,6 @@ def main() -> int:
     shred_parser.set_defaults(func=shred_handler)
 
     # detect drift command
-    # --- Shred Command ---
     detect_drift_parser = subparsers.add_parser(
         "detect-drift", help="Detect if generated files have been edited and display what the edits are."
     )
@@ -347,11 +424,71 @@ def main() -> int:
     commit_map_parser.add_argument(
         "--force",
         action="store_true",
-        help=("Overwrite source files even if they have been modified since the last " "deployment."),
+        help=("Overwrite source files even if they have been modified since the last deployment."),
     )
     add_common_arguments(commit_map_parser)
 
     commit_map_parser.set_defaults(func=commit_map_handler)
+
+    # --- lint Command ---
+    lint_parser = subparsers.add_parser(
+        "lint",
+        help="Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped).",
+        description=(
+            "Run GitLab CI Lint for every *.yml/*.yaml file under the output directory.\n\n"
+            + essential_gitlab_args_help
+        ),
+    )
+    lint_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=not bool(config.output_dir),
+        help="Directory containing compiled YAML files to lint.",
+    )
+    lint_parser.add_argument(
+        "--gitlab-url",
+        dest="gitlab_url",
+        required=True,
+        help="Base GitLab URL (e.g., https://gitlab.com).",
+    )
+    lint_parser.add_argument(
+        "--token",
+        dest="token",
+        help="PRIVATE-TOKEN or CI_JOB_TOKEN to authenticate with the API.",
+    )
+    lint_parser.add_argument(
+        "--project-id",
+        dest="project_id",
+        type=int,
+        help="Project ID for project-scoped lint (recommended for configs with includes).",
+    )
+    lint_parser.add_argument(
+        "--ref",
+        dest="ref",
+        help="Git ref to evaluate includes/variables against (project lint only).",
+    )
+    lint_parser.add_argument(
+        "--include-merged-yaml",
+        dest="include_merged_yaml",
+        action="store_true",
+        help="Return merged YAML from project-scoped lint (slower).",
+    )
+    lint_parser.add_argument(
+        "--parallelism",
+        dest="parallelism",
+        type=int,
+        default=config.parallelism,
+        help="Max concurrent lint requests (default: CPU count, capped to file count).",
+    )
+    lint_parser.add_argument(
+        "--timeout",
+        dest="timeout",
+        type=float,
+        default=20.0,
+        help="HTTP timeout per request in seconds (default: 20).",
+    )
+    add_common_arguments(lint_parser)
+    lint_parser.set_defaults(func=lint_handler)
 
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
@@ -374,6 +511,15 @@ def main() -> int:
             shred_parser.error("argument --in is required")
         if not args.output_file:
             shred_parser.error("argument --out is required")
+    elif args.command == "clean":
+        args.output_dir = args.output_dir or config.output_dir
+        if not args.output_dir:
+            clean_parser.error("argument --out is required")
+    elif args.command == "lint":
+        # Only merge --out from config; GitLab connection is explicit via CLI
+        args.output_dir = args.output_dir or config.output_dir
+        if not args.output_dir:
+            lint_parser.error("argument --out is required")
 
     # Merge boolean flags
     args.verbose = args.verbose or config.verbose or False
