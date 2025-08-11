@@ -7,6 +7,7 @@ from bash2gitlab.watch_files import _RecompileHandler, start_watch
 
 class _Evt:
     """Tiny stand-in for watchdog FileSystemEvent."""
+
     def __init__(self, src_path: str, is_directory: bool = False):
         self.src_path = src_path
         self.is_directory = is_directory
@@ -88,6 +89,7 @@ def test_handler_debounce(monkeypatch, tmp_path):
 
     # Control time.monotonic so we can test the debounce window deterministically
     times = [100.0, 100.3, 101.0]  # first call at 100, second inside 0.5s, third outside
+
     def fake_monotonic():
         return times.pop(0)
 
@@ -153,6 +155,7 @@ def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, mon
 
     # Make the main loop raise KeyboardInterrupt immediately after start
     sleep_calls = {"n": 0}
+
     def fake_sleep(_):
         sleep_calls["n"] += 1
         raise KeyboardInterrupt

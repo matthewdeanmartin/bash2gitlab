@@ -1,15 +1,19 @@
 import base64
 from pathlib import Path
 
-import pytest
-
-from bash2gitlab.commands.clean_all import _partner_hash_file, _base_from_hash, iter_target_pairs, _read_hash_text, \
-    is_target_unchanged, clean_targets, report_targets, list_stray_files
-
+from bash2gitlab.commands.clean_all import (
+    _base_from_hash,
+    _partner_hash_file,
+    _read_hash_text,
+    clean_targets,
+    is_target_unchanged,
+    iter_target_pairs,
+    list_stray_files,
+    report_targets,
+)
 
 # Import the module under test as a namespace
 # Adjust import path/name to match your package layout.
-
 
 
 # -------------------------
@@ -109,8 +113,6 @@ def test_is_target_unchanged_states(tmp_path: Path):
     # Invalid hash -> None
     bad_hash = write_text(tmp_path / "x.yml.hash", "notbase64")
     assert is_target_unchanged(base, bad_hash) is None
-
-
 
 
 def test_clean_targets_dry_run_does_not_delete(tmp_path: Path):

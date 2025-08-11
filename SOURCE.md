@@ -654,7 +654,8 @@ def lint_handler(args: argparse.Namespace) -> int:
     except (_urlerror.URLError, _urlerror.HTTPError) as e:  # pragma: no cover - network
         logger.error("Failed to contact GitLab CI Lint API: %s", e)
         return 12
-    except Exception as e:  # nosec - defensive logging of unexpected failures
+    # defensive logging of unexpected failures
+    except Exception as e:  # nosec
         logger.error("Unexpected error during lint: %s", e)
         return 1
 
