@@ -12,7 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.8.6] - 2025-08-09
+## [0.8.8] - 2025-08-11
+
+### Added
+- Support for inlining other languages, python, etc. using `python -c`, etc.
+
+### Fixed
+- Force new line at the end of any script.
+- Minimize bash written in `- code` lists because of risk of quoting problems.
+- Quote strings more aggressively
+
+## [0.8.7] - 2025-08-10
 
 ### Changed
 - File invocations followed by comment are now detected.

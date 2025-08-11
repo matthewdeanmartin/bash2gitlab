@@ -6,6 +6,7 @@
 │   ├── clone2local.py
 │   ├── commit_map.py
 │   ├── compile_all.py
+│   ├── compile_not_bash.py
 │   ├── detect_drift.py
 │   ├── init_project.py
 │   ├── lint_all.py
@@ -102,7 +103,10 @@ def read_bash_script(path: Path) -> str:
         logger.debug(f"Stripping shebang from script: {lines[0]}")
         lines = lines[1:]
 
-    return "\n".join(lines)
+    final = "".join(lines)
+    if not final.endswith("\n"):
+        return final + "\n"
+    return final
 
 
 def inline_bash_source(
@@ -212,7 +216,10 @@ def inline_bash_source(
         logger.exception("Failed to read or process %s", main_script_path)
         raise
 
-    return "".join(final_content_lines)
+    final = "".join(final_content_lines)
+    if not final.endswith("\n"):
+        return final + "\n"
+    return final
 ```
 ## File: config.py
 ```python
@@ -539,7 +546,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.7"
+__version__ = "0.8.8"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -1673,6 +1680,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
+from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
@@ -1820,7 +1828,12 @@ def process_script_list(
                 )
                 processed_items.append(item)
         else:
-            processed_items.append(item)
+            # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
+            interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
+            if interp_inline:
+                processed_items.extend(interp_inline)
+            else:
+                processed_items.append(item)
 
     # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)
@@ -1829,7 +1842,7 @@ def process_script_list(
     )
 
     # Collapse to literal block only when no YAML features and sufficiently long
-    if not has_yaml_features and only_plain_strings and len(processed_items) > 5:
+    if not has_yaml_features and only_plain_strings and len(processed_items) > 2:
         final_script_block = "\n".join(processed_items)
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)
@@ -2250,6 +2263,137 @@ def run_compile_all(
         logger.info(f"[DRY RUN] Simulation complete. Would have processed {written_files_count} file(s).")
 
     return total_inlined_count
+```
+## File: commands\compile_not_bash.py
+```python
+"""Support for inlining many types of scripts"""
+
+from __future__ import annotations
+
+import logging
+import re
+from pathlib import Path
+
+__all__ = ["_maybe_inline_interpreter_command"]
+
+
+logger = logging.getLogger(__name__)
+
+_INTERPRETER_FLAGS = {
+    "python": "-c",
+    "node": "-e",
+    "ruby": "-e",
+    "php": "-r",
+    "fish": "-c",
+}
+
+# Simple extension mapping to help sanity-check paths by interpreter
+_INTERPRETER_EXTS = {
+    "python": (".py",),
+    "node": (".js", ".mjs", ".cjs"),
+    "ruby": (".rb",),
+    "php": (".php",),
+    "fish": (".fish", ".sh"),  # a lot of folks keep fish scripts as .fish; allow .sh too
+}
+
+_INTERP_LINE = re.compile(
+    r"""
+    ^\s*
+    (?P<interp>python|node|ruby|php|fish)      # interpreter
+    \s+
+    (?:
+        -m\s+(?P<module>[A-Za-z0-9_\.]+)       # python -m package.module
+        |
+        (?P<path>\.?/?[^\s]+)                  # or a path like scripts/foo.py
+    )
+    (?:\s+.*)?                                 # allow trailing args (ignored for now)
+    \s*$
+    """,
+    re.VERBOSE,
+)
+
+
+def _shell_single_quote(s: str) -> str:
+    """
+    Safely single-quote *s* for POSIX shell.
+    Turns: abc'def  ->  'abc'"'"'def'
+    """
+    return "'" + s.replace("'", "'\"'\"'") + "'"
+
+
+def _resolve_interpreter_target(
+    interp: str, module: str | None, path_str: str | None, scripts_root: Path
+) -> tuple[Path, str]:
+    """
+    Resolve the target file and a display label from either a module or a path.
+    For python -m, we map "a.b.c" -> a/b/c.py.
+    """
+    if module:
+        if interp != "python":
+            raise ValueError(f"-m is only supported for python, got: {interp}")
+        rel = Path(module.replace(".", "/") + ".py")
+        return scripts_root / rel, f"{interp} -m {module}"
+    if path_str:
+        # normalize ./ and leading slashes relative to scripts_root
+        rel_str = Path(path_str.strip()).as_posix().lstrip("./")
+        return scripts_root / rel_str, f"{interp} {Path(rel_str).as_posix()}"
+    raise ValueError("Neither module nor path provided.")
+
+
+def _is_reasonable_ext(interp: str, file: Path) -> bool:
+    exts = _INTERPRETER_EXTS.get(interp)
+    if not exts:
+        return True
+    return file.suffix.lower() in exts
+
+
+def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
+    """
+    If *line* looks like an interpreter execution (python/node/ruby/php/fish),
+    return [BEGIN, <interp -flag 'code'>, END]; else return None.
+    """
+    m = _INTERP_LINE.match(line)
+    if not m:
+        return None
+
+    interp = m.group("interp")
+    module = m.group("module")
+    path_str = m.group("path")
+
+    try:
+        target_file, shown = _resolve_interpreter_target(interp, module, path_str, scripts_root)
+    except ValueError as e:
+        logger.debug("Interpreter inline skip: %s", e)
+        return None
+
+    if not target_file.is_file():
+        logger.warning("Could not inline %s: file not found at %s; preserving original.", shown, target_file)
+        return None
+
+    if not _is_reasonable_ext(interp, target_file):
+        logger.debug("Interpreter inline skip: extension %s not expected for %s", target_file.suffix, interp)
+        return None
+
+    try:
+        code = target_file.read_text(encoding="utf-8")
+    except Exception as e:  # nosec
+        logger.warning("Could not read %s: %s; preserving original.", target_file, e)
+        return None
+
+    # Strip shebang if present
+    if code.startswith("#!"):
+        code = "\n".join(code.splitlines()[1:])
+
+    flag = _INTERPRETER_FLAGS.get(interp)
+    if not flag:
+        return None
+
+    quoted = _shell_single_quote(code)
+    begin_marker = f"# >>> BEGIN inline: {shown}"
+    end_marker = "# <<< END inline"
+    inlined_cmd = f"{interp} {flag} {quoted}"
+    logger.debug("Inlining interpreter command '%s' (%d chars).", shown, len(code))
+    return [begin_marker, inlined_cmd, end_marker]
 ```
 ## File: commands\detect_drift.py
 ```python
@@ -4168,7 +4312,8 @@ def get_yaml() -> YAML:
     y = YAML()
     y.width = 4096
     y.preserve_quotes = True  # Want to minimize quotes, but "1.0" -> 1.0 is a type change.
-    y.default_style = None  # minimize quotes
+    # maximize quotes
+    y.default_style = '"'  # type: ignore[assignment]
     y.explicit_start = False  # no '---'
     y.explicit_end = False  # no '...'
     return y

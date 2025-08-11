@@ -70,7 +70,10 @@ def read_bash_script(path: Path) -> str:
         logger.debug(f"Stripping shebang from script: {lines[0]}")
         lines = lines[1:]
 
-    return "\n".join(lines)
+    final = "".join(lines)
+    if not final.endswith("\n"):
+        return final + "\n"
+    return final
 
 
 def inline_bash_source(
@@ -180,4 +183,7 @@ def inline_bash_source(
         logger.exception("Failed to read or process %s", main_script_path)
         raise
 
-    return "".join(final_content_lines)
+    final = "".join(final_content_lines)
+    if not final.endswith("\n"):
+        return final + "\n"
+    return final

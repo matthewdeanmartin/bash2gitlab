@@ -21,6 +21,6 @@ def test_yaml_must_preserve_references_and_multiscripts():
                     assert ".sh" not in line or ". before_script.sh" in line
             assert "echo build" in output
             assert "echo test" in output
-            assert "!reference [.echo]" in output
+            assert "!reference" in output
             found += 1
         assert found

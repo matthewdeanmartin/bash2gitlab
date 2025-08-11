@@ -18,6 +18,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
+from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
@@ -165,7 +166,12 @@ def process_script_list(
                 )
                 processed_items.append(item)
         else:
-            processed_items.append(item)
+            # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
+            interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
+            if interp_inline:
+                processed_items.extend(interp_inline)
+            else:
+                processed_items.append(item)
 
     # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)
@@ -174,7 +180,7 @@ def process_script_list(
     )
 
     # Collapse to literal block only when no YAML features and sufficiently long
-    if not has_yaml_features and only_plain_strings and len(processed_items) > 5:
+    if not has_yaml_features and only_plain_strings and len(processed_items) > 2:
         final_script_block = "\n".join(processed_items)
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)

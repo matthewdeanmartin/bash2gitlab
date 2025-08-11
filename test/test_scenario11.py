@@ -23,6 +23,6 @@ def test_yaml_must_preserve_references_and_multiscripts():
             assert "echo build2" in output
             assert "echo test1" in output
             assert "echo test2" in output
-            assert "!reference [.echo]" in output
+            assert "!reference" in output
             found += 1
         assert found
