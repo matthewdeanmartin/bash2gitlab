@@ -9,5 +9,6 @@ build:job:
   stage: build
   script:
     - !reference [.echo]
+    - echo 123
     - ./build.sh
     - ./test.sh

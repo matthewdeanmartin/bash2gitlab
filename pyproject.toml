@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.8.9"
+version = "0.8.10"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]

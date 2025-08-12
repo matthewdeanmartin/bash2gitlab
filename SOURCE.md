@@ -546,7 +546,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.9"
+__version__ = "0.8.10"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -1762,6 +1762,38 @@ def _rebuild_seq_like(
     return new_seq
 
 
+def _compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any]:
+    """
+    Merge consecutive plain strings into a single LiteralScalarString,
+    leaving YAML nodes (e.g., TaggedScalar) as boundaries.
+    """
+    out: list[Any] = []
+    buf: list[str] = []
+
+    def _flush():
+        nonlocal buf, out
+        if not buf:
+            return
+        # If there are multiple lines (or any newline already), collapse to literal block
+        if len(buf) >= min_lines or any("\n" in s for s in buf):
+            out.append(LiteralScalarString("\n".join(buf)))
+        else:
+            out.extend(buf)
+        buf = []
+
+    for it in items:
+        # Treat existing LiteralScalarString as a plain string; it can join with neighbors
+        if isinstance(it, str) and not isinstance(it, TaggedScalar):
+            buf.append(it)
+            continue
+        # Boundary (TaggedScalar or any non-str ruamel node): flush and keep node
+        _flush()
+        out.append(it)
+
+    _flush()
+    return out
+
+
 def process_script_list(
     script_list: list[TaggedScalar | str] | CommentedSeq | str,
     scripts_root: Path,
@@ -1848,7 +1880,11 @@ def process_script_list(
         return LiteralScalarString(final_script_block)
 
     # Preserve sequence shape; if input was a CommentedSeq, return one
-    return _rebuild_seq_like(processed_items, was_commented_seq, original_seq)
+    # Case 2: Keep sequence shape but compact adjacent plain strings into a single literal
+    compact_items = _compact_runs_to_literal(processed_items, min_lines=2)
+
+    # Preserve sequence style (CommentedSeq vs list) to match input
+    return _rebuild_seq_like(compact_items, was_commented_seq, original_seq)
 
 
 def process_job(job_data: dict, scripts_root: Path) -> int:
