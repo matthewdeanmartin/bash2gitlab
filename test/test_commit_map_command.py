@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands.commit_map import run_commit_map
+from bash2gitlab.commands.map_commit import run_commit_map
 
 
 def _hash(content: str) -> str:

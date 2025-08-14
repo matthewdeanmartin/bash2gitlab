@@ -12,17 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.11] - 2025-08-13
+
+### Added
+
+- Install/uninstall git precommit hooks to compile before commit (not integrated with the popular pre-commit tool). Support for
+  integration with the `pre-commit` tool is on the way.
+
 ## [0.8.9] - 2025-08-11
 
 ### Fixed
+
 - Lost all new lines
 
 ## [0.8.8] - 2025-08-11
 
 ### Added
+
 - Support for inlining other languages, python, etc. using `python -c`, etc.
 
 ### Fixed
+
 - Force new line at the end of any script.
 - Minimize bash written in `- code` lists because of risk of quoting problems.
 - Quote strings more aggressively
@@ -30,25 +40,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.7] - 2025-08-10
 
 ### Changed
+
 - File invocations followed by comment are now detected.
 - Concept of script folder and template folder gone. Input folder and output folder is enough.
 
 ### Removed
+
 - Global variable file feature is broken, will need to rethink
 
 ### Added
+
 - Clean command that only removes unmodified files from output folder
 - Checks for stray files in output folder before compiling
 - Lint command, but it is in "beta" testing
 
 ### Fixed
+
 - No longer rewrites files even when there are no changes
 
 ## [0.8.6] - 2025-08-09
 
 ### Changed
 
-- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files. 
+- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files.
 
 ### Added
 
@@ -90,7 +104,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed bug with copy2local
 
-
 ## [0.8.2] - 2025-08-05
 
 ### Added
@@ -100,7 +113,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - copy2local now copies the contents of src folder to destination folder, to reduce nesting.
-
 
 ## [0.8.1] - 2025-08-05
 

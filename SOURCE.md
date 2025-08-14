@@ -4,13 +4,14 @@
 ├── commands/
 │   ├── clean_all.py
 │   ├── clone2local.py
-│   ├── commit_map.py
 │   ├── compile_all.py
 │   ├── compile_not_bash.py
 │   ├── detect_drift.py
 │   ├── init_project.py
 │   ├── lint_all.py
+│   ├── map_commit.py
 │   ├── map_deploy.py
+│   ├── precommit.py
 │   └── shred_all.py
 ├── config.py
 ├── py.typed
@@ -385,10 +386,6 @@ class _Config:
     def output_file(self) -> str | None:
         return self._get_str("output_file")
 
-    @property
-    def scripts_out(self) -> str | None:
-        return self._get_str("scripts_out")
-
     # --- Shared Properties ---
     @property
     def dry_run(self) -> bool | None:
@@ -560,26 +557,28 @@ __status__ = "4 - Beta"
 Handles CLI interactions for bash2gitlab
 
 usage: bash2gitlab [-h] [--version]
-                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
+                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
                    ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
-    compile             Compile an uncompiled directory into a standard GitLab CI structure.
-    shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
-    detect-drift        Detect if generated files have been edited and display what the edits are.
-    copy2local          Copy folder(s) from a repo to local, for testing bash in the dependent repo
-    init                Initialize a new bash2gitlab project and config file.
-    map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
-    commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
-    clean               Clean output folder, removing only unmodified files previously written by bash2gitlab.
-    lint                Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
+  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
+    compile               Compile an uncompiled directory into a standard GitLab CI structure.
+    shred                 Shred a GitLab CI file, extracting inline scripts into separate .sh files.
+    detect-drift          Detect if generated files have been edited and display what the edits are.
+    copy2local            Copy folder(s) from a repo to local, for testing bash in the dependent repo
+    init                  Initialize a new bash2gitlab project and config file.
+    map-deploy            Deploy files from source to target directories based on a mapping in pyproject.toml.
+    commit-map            Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
+    clean                 Clean output folder, removing only unmodified files previously written by bash2gitlab.
+    lint                  Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
+    install-precommit     Install a Git pre-commit hook that runs `bash2gitlab compile` (honors core.hooksPath/worktrees).
+    uninstall-precommit   Remove the bash2gitlab pre-commit hook.
 
 options:
-  -h, --help            show this help message and exit
-  --version             show program's version number and exit
+  -h, --help              show this help message and exit
+  --version               show program's version number and exit
 """
 
 from __future__ import annotations
@@ -595,13 +594,14 @@ import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.commands import precommit
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
-from bash2gitlab.commands.commit_map import run_commit_map
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
+from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
 from bash2gitlab.commands.shred_all import run_shred_gitlab
 from bash2gitlab.config import config
@@ -746,6 +746,7 @@ def compile_handler(args: argparse.Namespace) -> int:
 
 
 def drift_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'detect-drift' command."""
     run_detect_drift(Path(args.out))
     return 0
 
@@ -775,6 +776,7 @@ def shred_handler(args: argparse.Namespace) -> int:
 
 
 def commit_map_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'commit-map' command."""
     pyproject_path = Path(args.pyproject_path)
     try:
         mapping = get_deployment_map(pyproject_path)
@@ -790,7 +792,7 @@ def commit_map_handler(args: argparse.Namespace) -> int:
 
 
 def map_deploy_handler(args: argparse.Namespace) -> int:
-
+    """Handler for the 'map-deploy' command."""
     pyproject_path = Path(args.pyproject_path)
     try:
         mapping = get_deployment_map(pyproject_path)
@@ -805,7 +807,54 @@ def map_deploy_handler(args: argparse.Namespace) -> int:
     return 0
 
 
+# NEW: install/uninstall pre-commit handlers
+def install_precommit_handler(args: argparse.Namespace) -> int:
+    """Install the Git pre-commit hook that runs `bash2gitlab compile`.
+
+    Honors `core.hooksPath` and Git worktrees. Fails if required configuration
+    (input/output) is missing; see `bash2gitlab init` or set appropriate env vars.
+
+    Args:
+        args: Parsed CLI arguments containing:
+            - repo_root: Optional repository root (defaults to CWD).
+            - force: Overwrite an existing non-matching hook if True.
+
+    Returns:
+        Process exit code (0 on success, non-zero on error).
+    """
+    repo_root = Path(args.repo_root).resolve()
+    try:
+        precommit.install(repo_root=repo_root, force=args.force)
+        logger.info("Pre-commit hook installed.")
+        return 0
+    except precommit.PrecommitHookError as e:
+        logger.error("Failed to install pre-commit hook: %s", e)
+        return 199
+
+
+def uninstall_precommit_handler(args: argparse.Namespace) -> int:
+    """Uninstall the bash2gitlab pre-commit hook.
+
+    Args:
+        args: Parsed CLI arguments containing:
+            - repo_root: Optional repository root (defaults to CWD).
+            - force: Remove even if the hook content doesn't match.
+
+    Returns:
+        Process exit code (0 on success, non-zero on error).
+    """
+    repo_root = Path(args.repo_root).resolve()
+    try:
+        precommit.uninstall(repo_root=repo_root, force=args.force)
+        logger.info("Pre-commit hook removed.")
+        return 0
+    except precommit.PrecommitHookError as e:
+        logger.error("Failed to uninstall pre-commit hook: %s", e)
+        return 200
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add shared CLI flags to a subparser."""
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -1048,6 +1097,45 @@ def main() -> int:
     add_common_arguments(lint_parser)
     lint_parser.set_defaults(func=lint_handler)
 
+    # --- install-precommit Command ---
+    install_pc = subparsers.add_parser(
+        "install-precommit",
+        help="Install a Git pre-commit hook that runs `bash2gitlab compile` (honors core.hooksPath/worktrees).",
+    )
+    install_pc.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root (defaults to current directory).",
+    )
+    install_pc.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing different hook.",
+    )
+    # Keep logging flags consistent with other commands
+    install_pc.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    install_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    install_pc.set_defaults(func=install_precommit_handler)
+
+    # --- uninstall-precommit Command ---
+    uninstall_pc = subparsers.add_parser(
+        "uninstall-precommit",
+        help="Remove the bash2gitlab pre-commit hook.",
+    )
+    uninstall_pc.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root (defaults to current directory).",
+    )
+    uninstall_pc.add_argument(
+        "--force",
+        action="store_true",
+        help="Remove even if the hook content does not match.",
+    )
+    uninstall_pc.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    uninstall_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    uninstall_pc.set_defaults(func=uninstall_precommit_handler)
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -1078,10 +1166,11 @@ def main() -> int:
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
             lint_parser.error("argument --out is required")
+    # install-precommit / uninstall-precommit do not merge config
 
     # Merge boolean flags
-    args.verbose = args.verbose or config.verbose or False
-    args.quiet = args.quiet or config.quiet or False
+    args.verbose = getattr(args, "verbose", False) or config.verbose or False
+    args.quiet = getattr(args, "quiet", False) or config.quiet or False
     if hasattr(args, "dry_run"):
         args.dry_run = args.dry_run or config.dry_run or False
 
@@ -1552,111 +1641,6 @@ def clone_repository_ssh(
         raise
 
     logger.info("Successfully cloned directories into %s", clone_path)
-```
-## File: commands\commit_map.py
-```python
-"""Copy from many repos relevant shell scripts changes back to the central repo."""
-
-from __future__ import annotations
-
-import hashlib
-import logging
-import os
-import shutil
-from pathlib import Path
-
-__all__ = ["run_commit_map"]
-
-
-_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
-
-logger = logging.getLogger(__name__)
-
-
-def run_commit_map(
-    source_to_target_map: dict[str, str],
-    dry_run: bool = False,
-    force: bool = False,
-) -> None:
-    """Copy modified deployed files back to their source directories.
-
-    This function performs the inverse of :func:`bash2gitlab.map_deploy_command.map_deploy`.
-    For every mapping of ``source`` to ``target`` directories it traverses the
-    deployed ``target`` directory and copies changed files back to the
-    corresponding ``source`` directory. Change detection relies on ``.hash``
-    files created during deployment. A file is copied back when the content of
-    the deployed file differs from the stored hash. After a successful copy the
-    ``.hash`` file is updated to reflect the new content hash.
-
-    Args:
-        source_to_target_map: Mapping of source directories to deployed target
-            directories.
-        dry_run: If ``True`` the operation is only simulated and no files are
-            written.
-        force: If ``True`` a source file is overwritten even if it was modified
-            locally since the last deployment.
-    """
-    for source_base, target_base in source_to_target_map.items():
-        source_base_path = Path(source_base).resolve()
-        target_base_path = Path(target_base).resolve()
-
-        if not target_base_path.is_dir():
-            print(f"Warning: Target directory '{target_base_path}' does not exist. Skipping.")
-            continue
-
-        print(f"\nProcessing map: '{target_base_path}' -> '{source_base_path}'")
-
-        for root, _, files in os.walk(target_base_path):
-            target_root_path = Path(root)
-
-            for filename in files:
-                if filename == ".gitignore" or filename.endswith(".hash"):
-                    continue
-
-                target_file_path = target_root_path / filename
-                if target_file_path.suffix.lower() not in _VALID_SUFFIXES:
-                    continue
-
-                relative_path = target_file_path.relative_to(target_base_path)
-                source_file_path = source_base_path / relative_path
-                hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
-
-                # Calculate hash of the deployed file
-                with open(target_file_path, "rb") as f:
-                    target_hash = hashlib.sha256(f.read()).hexdigest()
-
-                stored_hash = ""
-                if hash_file_path.exists():
-                    with open(hash_file_path, encoding="utf-8") as f:
-                        stored_hash = f.read().strip()
-
-                source_hash_actual = ""
-                if source_file_path.exists():
-                    with open(source_file_path, "rb") as f:
-                        source_hash_actual = hashlib.sha256(f.read()).hexdigest()
-
-                if stored_hash and target_hash == stored_hash:
-                    print(f"Unchanged: '{target_file_path}'")
-                    continue
-
-                if stored_hash and source_hash_actual and source_hash_actual != stored_hash and not force:
-                    print(f"Warning: '{source_file_path}' was modified in source since last deployment.")
-                    print("Skipping copy. Use --force to overwrite.")
-                    continue
-
-                action = "Copied" if not source_file_path.exists() else "Updated"
-                print(f"{action}: '{target_file_path}' -> '{source_file_path}'")
-
-                if dry_run:
-                    continue
-
-                if not source_file_path.parent.exists():
-                    print(f"Creating directory: {source_file_path.parent}")
-                    source_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-                shutil.copy2(target_file_path, source_file_path)
-                with open(hash_file_path, "w", encoding="utf-8") as f:
-                    f.write(target_hash)
 ```
 ## File: commands\compile_all.py
 ```python
@@ -3232,6 +3216,111 @@ def summarize_results(results: Sequence[LintResult]) -> tuple[int, int]:
     logger.info("Lint summary: %d ok, %d failed", ok, fail)
     return ok, fail
 ```
+## File: commands\map_commit.py
+```python
+"""Copy from many repos relevant shell scripts changes back to the central repo."""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import os
+import shutil
+from pathlib import Path
+
+__all__ = ["run_commit_map"]
+
+
+_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+
+logger = logging.getLogger(__name__)
+
+
+def run_commit_map(
+    source_to_target_map: dict[str, str],
+    dry_run: bool = False,
+    force: bool = False,
+) -> None:
+    """Copy modified deployed files back to their source directories.
+
+    This function performs the inverse of :func:`bash2gitlab.map_deploy_command.map_deploy`.
+    For every mapping of ``source`` to ``target`` directories it traverses the
+    deployed ``target`` directory and copies changed files back to the
+    corresponding ``source`` directory. Change detection relies on ``.hash``
+    files created during deployment. A file is copied back when the content of
+    the deployed file differs from the stored hash. After a successful copy the
+    ``.hash`` file is updated to reflect the new content hash.
+
+    Args:
+        source_to_target_map: Mapping of source directories to deployed target
+            directories.
+        dry_run: If ``True`` the operation is only simulated and no files are
+            written.
+        force: If ``True`` a source file is overwritten even if it was modified
+            locally since the last deployment.
+    """
+    for source_base, target_base in source_to_target_map.items():
+        source_base_path = Path(source_base).resolve()
+        target_base_path = Path(target_base).resolve()
+
+        if not target_base_path.is_dir():
+            print(f"Warning: Target directory '{target_base_path}' does not exist. Skipping.")
+            continue
+
+        print(f"\nProcessing map: '{target_base_path}' -> '{source_base_path}'")
+
+        for root, _, files in os.walk(target_base_path):
+            target_root_path = Path(root)
+
+            for filename in files:
+                if filename == ".gitignore" or filename.endswith(".hash"):
+                    continue
+
+                target_file_path = target_root_path / filename
+                if target_file_path.suffix.lower() not in _VALID_SUFFIXES:
+                    continue
+
+                relative_path = target_file_path.relative_to(target_base_path)
+                source_file_path = source_base_path / relative_path
+                hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
+
+                # Calculate hash of the deployed file
+                with open(target_file_path, "rb") as f:
+                    target_hash = hashlib.sha256(f.read()).hexdigest()
+
+                stored_hash = ""
+                if hash_file_path.exists():
+                    with open(hash_file_path, encoding="utf-8") as f:
+                        stored_hash = f.read().strip()
+
+                source_hash_actual = ""
+                if source_file_path.exists():
+                    with open(source_file_path, "rb") as f:
+                        source_hash_actual = hashlib.sha256(f.read()).hexdigest()
+
+                if stored_hash and target_hash == stored_hash:
+                    print(f"Unchanged: '{target_file_path}'")
+                    continue
+
+                if stored_hash and source_hash_actual and source_hash_actual != stored_hash and not force:
+                    print(f"Warning: '{source_file_path}' was modified in source since last deployment.")
+                    print("Skipping copy. Use --force to overwrite.")
+                    continue
+
+                action = "Copied" if not source_file_path.exists() else "Updated"
+                print(f"{action}: '{target_file_path}' -> '{source_file_path}'")
+
+                if dry_run:
+                    continue
+
+                if not source_file_path.parent.exists():
+                    print(f"Creating directory: {source_file_path.parent}")
+                    source_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+                shutil.copy2(target_file_path, source_file_path)
+                with open(hash_file_path, "w", encoding="utf-8") as f:
+                    f.write(target_hash)
+```
 ## File: commands\map_deploy.py
 ```python
 """Copy from a central repos relevant shell scripts changes to many dependent repos for debugging."""
@@ -3372,6 +3461,253 @@ def run_map_deploy(
                             f.write(source_hash)
                 else:
                     print(f"Unchanged: '{target_file_path}'")
+```
+## File: commands\precommit.py
+```python
+#!/usr/bin/env python3
+"""Precommit handler.
+
+Installs and removes a Git `pre-commit` hook that runs `bash2gitlab compile`.
+Respects environment/TOML config, Git worktrees, and `core.hooksPath`.
+"""
+
+from __future__ import annotations
+
+import configparser
+import hashlib
+import logging
+import os
+import stat
+from pathlib import Path
+
+from bash2gitlab.config import config
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["install", "uninstall", "PrecommitHookError", "hook_hash", "hook_path"]
+
+
+class PrecommitHookError(Exception):
+    """Raised when pre-commit hook installation or removal fails."""
+
+
+HOOK_NAME = "pre-commit"
+
+# POSIX sh (not bash). Avoid `pipefail` and bashisms.
+# We do not use `set -e` because we intentionally fall through runners.
+HOOK_CONTENT = """#!/bin/sh
+# Auto-generated by bash2gitlab: run `bash2gitlab compile` before committing.
+set -u
+
+say() { printf '%s\\n' "$*"; }
+
+say "[pre-commit] Running bash2gitlab compile..."
+
+try_run() {
+  # $* is the command string
+  if sh -c "$*"; then
+    say "[pre-commit] OK: $*"
+    exit 0
+  fi
+  return 1
+}
+
+# 1) direct
+if command -v bash2gitlab >/dev/null 2>&1; then
+  try_run "bash2gitlab compile"
+fi
+
+# 2) common project runners
+for tool in uv poetry pipenv pdm hatch rye; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    case "$tool" in
+      hatch) try_run "hatch run bash2gitlab compile" || true ;;
+      *)     try_run "$tool run bash2gitlab compile" || true ;;
+    esac
+  fi
+done
+
+# 3) python module fallback
+if command -v python >/dev/null 2>&1; then
+  try_run "python -m bash2gitlab compile" || true
+fi
+
+say "[pre-commit] ERROR: could not run bash2gitlab. Install it or use uv/poetry/pipenv/pdm/hatch/rye."
+exit 1
+"""
+
+CONFIG_SECTION = "tool.bash2gitlab"
+REQUIRED_ENV_VARS = {"BASH2GITLAB_INPUT_DIR", "BASH2GITLAB_OUTPUT_DIR"}
+
+
+def hook_hash(content: str) -> str:
+    """Return a stable hash of hook content for conflict detection.
+
+    Args:
+        content: Hook script content.
+
+    Returns:
+        Hex digest string (sha256).
+    """
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def resolve_git_dir(repo_root: Path) -> Path:
+    """Resolve the actual .git directory, supporting worktrees (gitdir file).
+
+    Args:
+        repo_root: Candidate repo root.
+
+    Returns:
+        Path to the real .git directory.
+
+    Raises:
+        PrecommitHookError: If a git directory cannot be located.
+    """
+    git_path = repo_root / ".git"
+    if git_path.is_dir():
+        return git_path
+    if git_path.is_file():
+        try:
+            data = git_path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise PrecommitHookError(f"Unable to read {git_path}: {exc}") from exc
+        if data.lower().startswith("gitdir:"):
+            target = data.split(":", 1)[1].strip()
+            return (repo_root / target).resolve()
+    raise PrecommitHookError(f"Not inside a Git repository: {repo_root}")
+
+
+def read_hooks_path(git_dir: Path, repo_root: Path) -> Path | None:
+    """Read core.hooksPath from .git/config, if present.
+
+    Args:
+        git_dir: Path to .git directory (resolved).
+        repo_root: Repo root.
+
+    Returns:
+        Path to hooks dir or None if not configured.
+    """
+    cfg = configparser.ConfigParser()
+    cfg_path = git_dir / "config"
+    if not cfg_path.is_file():
+        return None
+    try:
+        cfg.read(cfg_path, encoding="utf-8")
+    except Exception:  # best-effort
+        return None
+    if cfg.has_section("core") and cfg.has_option("core", "hooksPath"):
+        hooks_path = Path(cfg.get("core", "hooksPath"))
+        if not hooks_path.is_absolute():
+            hooks_path = (repo_root / hooks_path).resolve()
+        return hooks_path
+    return None
+
+
+def hooks_dir(repo_root: Path) -> Path:
+    """Compute the correct hooks directory, honoring `core.hooksPath`."""
+    git_dir = resolve_git_dir(repo_root)
+    alt = read_hooks_path(git_dir, repo_root)
+    return alt if alt else (git_dir / "hooks")
+
+
+def hook_path(repo_root: Path) -> Path:
+    """Return full path to the pre-commit hook file."""
+    return hooks_dir(repo_root) / HOOK_NAME
+
+
+def has_required_config() -> bool:
+    """Check whether compile input/output are configured via env or TOML.
+
+    Returns:
+        True if `input_dir` and `output_dir` are present; otherwise False.
+    """
+    # Env wins
+    if REQUIRED_ENV_VARS.issubset(os.environ):
+        return True
+
+    # TOML via singleton config
+    if config.input_dir and config.output_dir:
+        return True
+
+    return False
+
+
+def install(repo_root: Path | None = None, *, force: bool = False) -> None:
+    """Install the bash2gitlab `pre-commit` hook.
+
+    The hook will try multiple runners (direct, uv, poetry, pipenv, pdm, hatch, rye,
+    then `python -m`) to invoke `bash2gitlab compile`.
+
+    Args:
+        repo_root: Directory considered as the repository root (defaults to CWD).
+        force: Overwrite an existing non-matching hook if True.
+
+    Raises:
+        PrecommitHookError: If outside a Git repo, config missing, or conflict.
+    """
+    repo_root = repo_root or Path.cwd()
+
+    # Validate repo and config
+    _git_dir = resolve_git_dir(repo_root)  # raises if not a repo
+    if not has_required_config():
+        raise PrecommitHookError(
+            "Missing bash2gitlab input/output configuration. "
+            "Run `bash2gitlab init` to create TOML, or set "
+            "BASH2GITLAB_INPUT_DIR and BASH2GITLAB_OUTPUT_DIR."
+        )
+
+    # Ensure hooks dir exists
+    hdir = hooks_dir(repo_root)
+    hdir.mkdir(parents=True, exist_ok=True)
+
+    dest = hdir / HOOK_NAME
+    new_hash = hook_hash(HOOK_CONTENT)
+
+    if dest.exists():
+        existing = dest.read_text(encoding="utf-8")
+        if hook_hash(existing) == new_hash and not force:
+            logger.info("Pre-commit hook is already up to date at %s", dest)
+            return
+        if hook_hash(existing) != new_hash and not force:
+            raise PrecommitHookError(f"A different pre-commit hook exists at {dest}. Use force=True to overwrite.")
+
+    dest.write_text(HOOK_CONTENT, encoding="utf-8")
+
+    # Executable on POSIX; Git for Windows runs sh hooks regardless of mode.
+    if os.name == "posix":
+        st_mode = dest.stat().st_mode
+        dest.chmod(st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    logger.info("Installed pre-commit hook at %s", dest.relative_to(repo_root))
+
+
+def uninstall(repo_root: Path | None = None, *, force: bool = False) -> None:
+    """Remove the bash2gitlab `pre-commit` hook.
+
+    Args:
+        repo_root: Directory considered as the repository root (defaults to CWD).
+        force: Remove even if the hook content does not match our generated one.
+
+    Raises:
+        PrecommitHookError: If outside a Git repo or conflict without `force`.
+    """
+    repo_root = repo_root or Path.cwd()
+    _git_dir = resolve_git_dir(repo_root)  # raises if not a repo
+
+    dest = hook_path(repo_root)
+    if not dest.exists():
+        logger.warning("No pre-commit hook to uninstall at %s", dest)
+        return
+
+    content = dest.read_text(encoding="utf-8")
+    if hook_hash(content) != hook_hash(HOOK_CONTENT) and not force:
+        raise PrecommitHookError(
+            f"Pre-commit hook at {dest} does not match bash2gitlab's. Use force=True to remove anyway."
+        )
+
+    dest.unlink()
+    logger.info("Removed pre-commit hook at %s", dest.relative_to(repo_root))
 ```
 ## File: commands\shred_all.py
 ```python

@@ -160,10 +160,6 @@ class _Config:
     def output_file(self) -> str | None:
         return self._get_str("output_file")
 
-    @property
-    def scripts_out(self) -> str | None:
-        return self._get_str("scripts_out")
-
     # --- Shared Properties ---
     @property
     def dry_run(self) -> bool | None:

@@ -69,7 +69,6 @@ def test_load_from_pyproject_toml(tmp_path: Path):
     config = config_module.config
 
     assert config.input_file == "my_ci.yml"
-    assert config.scripts_out == "shredded_scripts/"
     assert config.dry_run is False
     assert config.input_dir is None  # Not defined
 

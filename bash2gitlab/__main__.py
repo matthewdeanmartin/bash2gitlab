@@ -2,26 +2,28 @@
 Handles CLI interactions for bash2gitlab
 
 usage: bash2gitlab [-h] [--version]
-                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
+                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
                    ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint}
-    compile             Compile an uncompiled directory into a standard GitLab CI structure.
-    shred               Shred a GitLab CI file, extracting inline scripts into separate .sh files.
-    detect-drift        Detect if generated files have been edited and display what the edits are.
-    copy2local          Copy folder(s) from a repo to local, for testing bash in the dependent repo
-    init                Initialize a new bash2gitlab project and config file.
-    map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
-    commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
-    clean               Clean output folder, removing only unmodified files previously written by bash2gitlab.
-    lint                Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
+  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
+    compile               Compile an uncompiled directory into a standard GitLab CI structure.
+    shred                 Shred a GitLab CI file, extracting inline scripts into separate .sh files.
+    detect-drift          Detect if generated files have been edited and display what the edits are.
+    copy2local            Copy folder(s) from a repo to local, for testing bash in the dependent repo
+    init                  Initialize a new bash2gitlab project and config file.
+    map-deploy            Deploy files from source to target directories based on a mapping in pyproject.toml.
+    commit-map            Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
+    clean                 Clean output folder, removing only unmodified files previously written by bash2gitlab.
+    lint                  Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
+    install-precommit     Install a Git pre-commit hook that runs `bash2gitlab compile` (honors core.hooksPath/worktrees).
+    uninstall-precommit   Remove the bash2gitlab pre-commit hook.
 
 options:
-  -h, --help            show this help message and exit
-  --version             show program's version number and exit
+  -h, --help              show this help message and exit
+  --version               show program's version number and exit
 """
 
 from __future__ import annotations
@@ -37,13 +39,14 @@ import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.commands import precommit
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
-from bash2gitlab.commands.commit_map import run_commit_map
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
+from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
 from bash2gitlab.commands.shred_all import run_shred_gitlab
 from bash2gitlab.config import config
@@ -188,6 +191,7 @@ def compile_handler(args: argparse.Namespace) -> int:
 
 
 def drift_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'detect-drift' command."""
     run_detect_drift(Path(args.out))
     return 0
 
@@ -217,6 +221,7 @@ def shred_handler(args: argparse.Namespace) -> int:
 
 
 def commit_map_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'commit-map' command."""
     pyproject_path = Path(args.pyproject_path)
     try:
         mapping = get_deployment_map(pyproject_path)
@@ -232,7 +237,7 @@ def commit_map_handler(args: argparse.Namespace) -> int:
 
 
 def map_deploy_handler(args: argparse.Namespace) -> int:
-
+    """Handler for the 'map-deploy' command."""
     pyproject_path = Path(args.pyproject_path)
     try:
         mapping = get_deployment_map(pyproject_path)
@@ -247,7 +252,54 @@ def map_deploy_handler(args: argparse.Namespace) -> int:
     return 0
 
 
+# NEW: install/uninstall pre-commit handlers
+def install_precommit_handler(args: argparse.Namespace) -> int:
+    """Install the Git pre-commit hook that runs `bash2gitlab compile`.
+
+    Honors `core.hooksPath` and Git worktrees. Fails if required configuration
+    (input/output) is missing; see `bash2gitlab init` or set appropriate env vars.
+
+    Args:
+        args: Parsed CLI arguments containing:
+            - repo_root: Optional repository root (defaults to CWD).
+            - force: Overwrite an existing non-matching hook if True.
+
+    Returns:
+        Process exit code (0 on success, non-zero on error).
+    """
+    repo_root = Path(args.repo_root).resolve()
+    try:
+        precommit.install(repo_root=repo_root, force=args.force)
+        logger.info("Pre-commit hook installed.")
+        return 0
+    except precommit.PrecommitHookError as e:
+        logger.error("Failed to install pre-commit hook: %s", e)
+        return 199
+
+
+def uninstall_precommit_handler(args: argparse.Namespace) -> int:
+    """Uninstall the bash2gitlab pre-commit hook.
+
+    Args:
+        args: Parsed CLI arguments containing:
+            - repo_root: Optional repository root (defaults to CWD).
+            - force: Remove even if the hook content doesn't match.
+
+    Returns:
+        Process exit code (0 on success, non-zero on error).
+    """
+    repo_root = Path(args.repo_root).resolve()
+    try:
+        precommit.uninstall(repo_root=repo_root, force=args.force)
+        logger.info("Pre-commit hook removed.")
+        return 0
+    except precommit.PrecommitHookError as e:
+        logger.error("Failed to uninstall pre-commit hook: %s", e)
+        return 200
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add shared CLI flags to a subparser."""
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -490,6 +542,45 @@ def main() -> int:
     add_common_arguments(lint_parser)
     lint_parser.set_defaults(func=lint_handler)
 
+    # --- install-precommit Command ---
+    install_pc = subparsers.add_parser(
+        "install-precommit",
+        help="Install a Git pre-commit hook that runs `bash2gitlab compile` (honors core.hooksPath/worktrees).",
+    )
+    install_pc.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root (defaults to current directory).",
+    )
+    install_pc.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing different hook.",
+    )
+    # Keep logging flags consistent with other commands
+    install_pc.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    install_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    install_pc.set_defaults(func=install_precommit_handler)
+
+    # --- uninstall-precommit Command ---
+    uninstall_pc = subparsers.add_parser(
+        "uninstall-precommit",
+        help="Remove the bash2gitlab pre-commit hook.",
+    )
+    uninstall_pc.add_argument(
+        "--repo-root",
+        default=".",
+        help="Repository root (defaults to current directory).",
+    )
+    uninstall_pc.add_argument(
+        "--force",
+        action="store_true",
+        help="Remove even if the hook content does not match.",
+    )
+    uninstall_pc.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
+    uninstall_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+    uninstall_pc.set_defaults(func=uninstall_precommit_handler)
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -520,10 +611,11 @@ def main() -> int:
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
             lint_parser.error("argument --out is required")
+    # install-precommit / uninstall-precommit do not merge config
 
     # Merge boolean flags
-    args.verbose = args.verbose or config.verbose or False
-    args.quiet = args.quiet or config.quiet or False
+    args.verbose = getattr(args, "verbose", False) or config.verbose or False
+    args.quiet = getattr(args, "quiet", False) or config.quiet or False
     if hasattr(args, "dry_run"):
         args.dry_run = args.dry_run or config.dry_run or False
 
