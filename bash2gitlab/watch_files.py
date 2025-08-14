@@ -25,6 +25,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from bash2gitlab.commands.compile_all import run_compile_all
+from bash2gitlab.plugins import get_pm
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,11 @@ class _RecompileHandler(FileSystemEventHandler):
             return
         if event.src_path.endswith((".tmp", ".swp", "~")):  # type: ignore[arg-type]
             return
-        if not event.src_path.endswith((".yml", ".yaml", ".sh")):  # type: ignore[arg-type]
+        exts = {".yml", ".yaml", ".sh", ".bash"}
+        for extra in get_pm().hook.watch_file_extensions():
+            if extra:
+                exts.update(extra)
+        if not event.src_path.endswith(tuple(exts)):  # type: ignore[arg-type]
             return
 
         now = time.monotonic()

@@ -50,6 +50,7 @@ from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
 from bash2gitlab.commands.shred_all import run_shred_gitlab
 from bash2gitlab.config import config
+from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.utils.update_checker import check_for_updates
@@ -581,6 +582,8 @@ def main() -> int:
     uninstall_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     uninstall_pc.set_defaults(func=uninstall_precommit_handler)
 
+    get_pm().hook.register_cli(subparsers=subparsers, config=config)
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -628,8 +631,13 @@ def main() -> int:
         log_level = "INFO"
     logging.config.dictConfig(generate_config(level=log_level))
 
+    for _ in get_pm().hook.before_command(args=args):
+        pass
     # Execute the appropriate handler
-    return args.func(args)
+    rc = args.func(args)
+    for _ in get_pm().hook.after_command(result=rc, args=args):
+        pass
+    return rc
 
 
 if __name__ == "__main__":

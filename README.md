@@ -7,6 +7,9 @@ Tired of writing Bash inside YAML strings with no syntax highlighting, linting, 
 develop your CI logic in standard `.sh` files and then compiles them into your GitLab CI configuration, giving you the
 best of both worlds.
 
+Bash in yaml is Bash without quality gates. Also, includes support for inlining a large number of scripts from python
+to PHP.
+
 ---
 
 ### Before
@@ -61,6 +64,7 @@ This tool is for you if:
 * Your `.gitlab-ci.yml` files contain thousands of lines of shell scripts.
 * You want to write, test, and debug your CI scripts locally without involving Docker or a full pipeline simulation.
 * Your IDE's lack of Bash support in YAML files is slowing you down.
+* You want to be able to put Python or other non-Bash scripts into your shared templates.
 
 If your CI/CD configuration is simple or contained entirely within a single repository, you might not need this tool.
 
@@ -112,15 +116,20 @@ bash2gitlab compile --in my-project/ --out compiled/
 
 `bash2gitlab` provides a few core commands to manage your workflow.
 
-| Command        | Description                                                                    |
-|:---------------|:-------------------------------------------------------------------------------|
-| `init`         | Initializes a new `bash2gitlab` project and config file.                       |
-| `compile`      | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.            |
-| `shred`        | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files.     |
-| `copy2local`   | Copies compiled files from a central repo to a local project for testing.      |
-| `detect-drift` | Report what unexpected changes were made to the generated files.               |
-| `map-deploy`   | Copies compiled files from a central repo to a many local project for testing. |
-| `commit-map`   | Copies intential changes in local projects back to the central repo.           |
+| Command               | Description                                                                    |
+|:----------------------|:-------------------------------------------------------------------------------|
+| `init`                | Initializes a new `bash2gitlab` project and config file.                       |
+| `compile`             | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.            |
+| `shred`               | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files.     |
+| `copy2local`          | Copies compiled files from a central repo to a local project for testing.      |
+| `detect-drift`        | Report what unexpected changes were made to the generated files.               |
+| `map-deploy`          | Copies compiled files from a central repo to a many local project for testing. |
+| `commit-map`          | Copies intential changes in local projects back to the central repo.           |
+| `clean`               | Carefully delete output in target folder.                                      |
+| `install-precommit`   | Add git hook to compile before commit                                          |
+| `uninstall-precommit` | Remove precommit hook                                                          |
+| `lint`                | Call gitlab APIs to lint you yaml                                              |
+
 
 For detailed options on any command, run `bash2gitlab <command> --help`.
 

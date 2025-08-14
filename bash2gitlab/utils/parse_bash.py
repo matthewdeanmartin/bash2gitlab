@@ -8,7 +8,7 @@ from pathlib import Path
 
 _EXECUTORS = {"bash", "sh", "pwsh"}
 _DOT_SOURCE = {"source", "."}
-_VALID_SUFFIXES = {".sh", ".ps1"}
+_VALID_SUFFIXES = {".sh", ".ps1", ".bash"}
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 

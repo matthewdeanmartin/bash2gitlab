@@ -19,6 +19,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
+from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
@@ -173,37 +174,45 @@ def process_script_list(
             continue
 
         # Plain string: attempt to detect and inline scripts
-        script_path_str = extract_script_path(item)
+        pm = get_pm()
+        script_path_str = pm.hook.extract_script_path(line=item) or None
+        if script_path_str is None:
+            # try existing extract_script_path fallback
+            script_path_str = extract_script_path(item)
+
         if script_path_str:
             rel_path = script_path_str.strip().lstrip("./")
             script_path = scripts_root / rel_path
             try:
                 bash_code = read_bash_script(script_path)
-                bash_lines = bash_code.splitlines()
-                logger.debug(
-                    "Inlining script '%s' (%d lines).",
-                    Path(rel_path).as_posix(),
-                    len(bash_lines),
-                )
-                begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
-                end_marker = "# <<< END inline"
-                processed_items.append(begin_marker)
-                processed_items.extend(bash_lines)
-                processed_items.append(end_marker)
             except (FileNotFoundError, ValueError) as e:
-                logger.warning(
-                    "Could not inline script '%s': %s. Preserving original line.",
-                    script_path_str,
-                    e,
-                )
-                processed_items.append(item)
+                logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
+                raise Exception(f"Could not inline script '{script_path_str}': {e}. Preserving original line.") from e
+            bash_lines = bash_code.splitlines()
+            logger.debug(
+                "Inlining script '%s' (%d lines).",
+                Path(rel_path).as_posix(),
+                len(bash_lines),
+            )
+            begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
+            end_marker = "# <<< END inline"
+            processed_items.append(begin_marker)
+            processed_items.extend(bash_lines)
+            processed_items.append(end_marker)
+
         else:
             # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
-            interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
-            if interp_inline:
-                processed_items.extend(interp_inline)
+            alt = pm.hook.inline_command(line=item, scripts_root=scripts_root) or None
+            if alt:
+                processed_items.extend(alt)
             else:
-                processed_items.append(item)
+                interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
+                if interp_inline and isinstance(interp_inline, list):
+                    processed_items.extend(interp_inline)
+                elif interp_inline and isinstance(interp_inline, str):
+                    processed_items.append(interp_inline)
+                else:
+                    processed_items.append(item)
 
     # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)

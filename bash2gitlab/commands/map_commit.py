@@ -11,7 +11,7 @@ from pathlib import Path
 __all__ = ["run_commit_map"]
 
 
-_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
 logger = logging.getLogger(__name__)
 

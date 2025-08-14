@@ -9,7 +9,7 @@ from pathlib import Path
 
 import toml
 
-_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
 __all__ = ["run_map_deploy", "get_deployment_map"]
 

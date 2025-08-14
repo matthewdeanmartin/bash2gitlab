@@ -5,6 +5,7 @@ set -euo pipefail
 readonly SRC_DIR="./bash2gitlab"
 readonly TMP_ROOT="/tmp"
 readonly TMP_DIR="${TMP_ROOT}/bash2gitlab"
+readonly OUTPUT_MD_BASENAME="bash2gitlab.flat.md"
 
 # Copy directory safely
 bash2gitlab_proc::copy_to_tmp() {
@@ -47,8 +48,7 @@ bash2gitlab_proc::confirm() {
   fi
 }
 
-
-# Run coderoller-flatten-repo
+# Remove temporary strip markers and flatten the repo to a single Markdown file
 bash2gitlab_proc::flatten_repo() {
   echo "Removing marker lines from .py files in '${TMP_DIR}'..."
 
@@ -66,6 +66,49 @@ bash2gitlab_proc::flatten_repo() {
   coderoller-flatten-repo "${TMP_DIR}"
 }
 
+# Clean trailing '##' that appear at the END of lines inside ```python code fences
+# in the generated Markdown (bash2gitlab.flat.md). Other code fences remain untouched.
+bash2gitlab_proc::clean_flat_md_trailing_double_hash() {
+  local output_md
+  # Prefer TMP_DIR if the file is written there; fallback to CWD; else try to find it
+  if [[ -f "${TMP_DIR}/${OUTPUT_MD_BASENAME}" ]]; then
+    output_md="${TMP_DIR}/${OUTPUT_MD_BASENAME}"
+  elif [[ -f "${OUTPUT_MD_BASENAME}" ]]; then
+    output_md="${OUTPUT_MD_BASENAME}"
+  else
+    local found
+    found="$(find "${TMP_DIR}" . -maxdepth 2 -type f -name "${OUTPUT_MD_BASENAME}" 2>/dev/null | head -n1 || true)"
+    if [[ -n "${found}" ]]; then
+      output_md="${found}"
+    else
+      echo "Note: ${OUTPUT_MD_BASENAME} not found; skipping cleanup."
+      return 0
+    fi
+  fi
+
+  echo "Cleaning trailing '##' inside Python code blocks in '${output_md}'..."
+
+  # Use awk to track when we're inside a fenced code block and what the language is.
+  # Only modify lines within ```python or ```py blocks. We strip a trailing '##' plus any surrounding whitespace.
+  awk '
+  BEGIN { in_code=0; lang="" }
+  /^```/ {
+    if (in_code==0) {
+      in_code=1
+      if (match($0, /^```[ \t]*([A-Za-z0-9_+\-]+)/, m)) { lang=m[1] } else { lang="" }
+    } else {
+      in_code=0; lang=""
+    }
+    print; next
+  }
+  {
+    if (in_code==1 && (lang=="python" || lang=="py")) {
+      sub(/[ \t]*##[ \t]*$/, "")
+    }
+    print
+  }' "${output_md}" > "${output_md}.tmp" && mv "${output_md}.tmp" "${output_md}"
+}
+
 # Cleanup tmp directory
 bash2gitlab_proc::cleanup_tmp() {
   echo "Cleaning up '${TMP_DIR}'..."
@@ -77,6 +120,8 @@ main() {
   bash2gitlab_proc::run_strip_docs
   bash2gitlab_proc::confirm "Run coderoller-flatten-repo?"
   bash2gitlab_proc::flatten_repo
+  # Post-process the flattened Markdown to remove trailing '##' in Python code blocks only
+  bash2gitlab_proc::clean_flat_md_trailing_double_hash
   bash2gitlab_proc::confirm "Delete temporary files in '${TMP_DIR}'?"
   bash2gitlab_proc::cleanup_tmp
 }

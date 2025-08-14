@@ -16,14 +16,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Install/uninstall git precommit hooks to compile before commit (not integrated with the popular pre-commit tool). Support for
+- Install/uninstall git precommit hooks to compile before commit (not integrated with the popular pre-commit tool).
+  Support for
   integration with the `pre-commit` tool is on the way.
+- Pluggy support for plugins
+
+### Changed
+
+- Now support inlining a much larger list of script languages using variations on `intepreter -c "..."`
+
+## [0.8.10] - 2025-08-11
+
+### Fixed
+
+- Minimize all "script as yaml lists" because they are not compatible with line continuation characters. No one should
+  use any version of bash2gitlab before 0.8.10.
 
 ## [0.8.9] - 2025-08-11
 
 ### Fixed
 
-- Lost all new lines
+- Lost all new lines.
 
 ## [0.8.8] - 2025-08-11
 

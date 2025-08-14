@@ -1,0 +1,20 @@
+# Keep recipes very thin; all logic is in Bash.
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+# Parameters (optional):
+#   MODE:   "working" (default) = unstaged + staged + untracked
+#           "commit"            = diff against a merge-base with the default branch
+#   BASE:   override the base ref/branch (e.g., origin/main)
+#   HEAD:   override the head ref (default: HEAD)
+#
+# Examples:
+#   just lint-changed
+#   just lint-changed MODE=commit
+#   just lint-changed MODE=commit BASE=origin/main
+#   just list-changed MODE=working
+#
+lint-changed MODE="working" BASE="" HEAD="HEAD":
+    CHANGED_MODE={{MODE}} BASE={{BASE}} HEAD={{HEAD}} ./scripts/lint-changed.sh
+
+list-changed MODE="working" BASE="" HEAD="HEAD":
+    CHANGED_MODE={{MODE}} BASE={{BASE}} HEAD={{HEAD}} ./scripts/changed-files.sh

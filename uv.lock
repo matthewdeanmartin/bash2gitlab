@@ -438,12 +438,14 @@ wheels = [
 
 [[package]]
 name = "bash2gitlab"
-version = "0.8.10"
+version = "0.8.11"
 source = { editable = "." }
 dependencies = [
     { name = "argcomplete" },
     { name = "colorlog" },
     { name = "packaging" },
+    { name = "pluggy", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "pluggy", version = "1.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "pydantic", marker = "python_full_version >= '3.14'" },
     { name = "ruamel-yaml" },
     { name = "toml" },
@@ -505,6 +507,7 @@ requires-dist = [
     { name = "argcomplete" },
     { name = "colorlog" },
     { name = "packaging" },
+    { name = "pluggy" },
     { name = "pydantic", marker = "python_full_version >= '3.14'", specifier = ">=2.12.0a1" },
     { name = "ruamel-yaml" },
     { name = "toml" },

@@ -13,6 +13,7 @@ dependencies = [
     "argcomplete",
     "packaging",
     "watchdog>=3.0.0",
+    "pluggy",
     # backwards compatibility
     "toml",
     # yamlfix

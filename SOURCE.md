@@ -1,6 +1,7 @@
 ## Tree for bash2gitlab
 ```
 ├── bash_reader.py
+├── builtin_plugins.py
 ├── commands/
 │   ├── clean_all.py
 │   ├── clone2local.py
@@ -14,6 +15,8 @@
 │   ├── precommit.py
 │   └── shred_all.py
 ├── config.py
+├── hookspecs.py
+├── plugins.py
 ├── py.typed
 ├── utils/
 │   ├── cli_suggestions.py
@@ -222,6 +225,29 @@ def inline_bash_source(
         return final + "\n"
     return final
 ```
+## File: builtin_plugins.py
+```python
+from __future__ import annotations
+
+from pathlib import Path
+
+from pluggy import HookimplMarker
+
+from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
+from bash2gitlab.utils.parse_bash import extract_script_path as _extract
+
+hookimpl = HookimplMarker("bash2gitlab")
+
+
+class Defaults:
+    @hookimpl(tryfirst=True)  # firstresult=True
+    def extract_script_path(self, line: str) -> str | None:
+        return _extract(line)
+
+    @hookimpl(tryfirst=True)  # firstresult=True
+    def inline_command(self, line: str, scripts_root: Path) -> list[str] | None:
+        return _maybe_inline_interpreter_command(line, scripts_root)
+```
 ## File: config.py
 ```python
 """TOML based configuration. A way to communicate command arguments without using CLI switches."""
@@ -413,6 +439,98 @@ def _reset_for_testing(config_path_override: Path | None = None):
     global config
     config = _Config(config_path_override=config_path_override)
 ```
+## File: hookspecs.py
+```python
+"""
+Hooks, mainly with an eye to allowing supporting inlining other scripting languages.
+"""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+import pluggy
+
+hookspec = pluggy.HookspecMarker("bash2gitlab")
+
+
+@hookspec(firstresult=True)
+def extract_script_path(line: str) -> str | None:
+    """Return a path-like string if this line is a ‘run this script’ line."""
+
+
+@hookspec(firstresult=True)
+def inline_command(line: str, scripts_root: Path) -> list[str] | None:
+    """Return a list of lines to inline in place of this command, or None."""
+
+
+@hookspec
+def yaml_before_dump(doc: Any, *, path: Path | None = None) -> Any:
+    """Given a YAML doc right before dump, return replacement or None."""
+
+
+@hookspec
+def watch_file_extensions() -> Iterable[str]:
+    return []
+
+
+@hookspec
+def register_cli(subparsers, config) -> None: ...
+
+
+@hookspec
+def before_command(args: argparse.Namespace) -> None:
+    """
+    Called right before dispatching a subcommand.
+    May mutate `args` (e.g., add defaults), but must not return anything.
+    """
+
+
+@hookspec
+def after_command(result: int, args: argparse.Namespace) -> None:
+    """
+    Called after the command handler returns. Read-only by convention.
+    Use for logging/metrics/teardown. No return.
+    """
+```
+## File: plugins.py
+```python
+import os
+
+import pluggy
+
+from bash2gitlab import hookspecs
+
+_pm = None
+
+
+def get_pm() -> pluggy.PluginManager:
+    global _pm
+    if _pm is None:
+        _pm = pluggy.PluginManager("bash2gitlab")
+        _pm.add_hookspecs(hookspecs)
+        # Builtins keep current behavior:
+        from bash2gitlab.builtin_plugins import Defaults
+
+        _pm.register(Defaults())
+        # Third-party:
+        if not os.environ.get("BASH2GITLAB_NO_PLUGINS"):
+            _pm.load_setuptools_entrypoints("bash2gitlab")
+    return _pm
+
+
+def call_seq(func_name: str, value, **kwargs):
+    """Apply all hook returns in sequence (for yaml_*)."""
+    pm = get_pm()
+    results = getattr(pm.hook, func_name)(value, **kwargs)
+    for r in results:
+        if r is not None:
+            value = r
+    return value
+```
 ## File: py.typed
 ```
 # when type checking dependents, tell type checkers to use this package's types
@@ -446,6 +564,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from bash2gitlab.commands.compile_all import run_compile_all
+from bash2gitlab.plugins import get_pm
 
 logger = logging.getLogger(__name__)
 
@@ -478,7 +597,11 @@ class _RecompileHandler(FileSystemEventHandler):
             return
         if event.src_path.endswith((".tmp", ".swp", "~")):  # type: ignore[arg-type]
             return
-        if not event.src_path.endswith((".yml", ".yaml", ".sh")):  # type: ignore[arg-type]
+        exts = {".yml", ".yaml", ".sh", ".bash"}
+        for extra in get_pm().hook.watch_file_extensions():
+            if extra:
+                exts.update(extra)
+        if not event.src_path.endswith(tuple(exts)):  # type: ignore[arg-type]
             return
 
         now = time.monotonic()
@@ -543,7 +666,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.10"
+__version__ = "0.8.11"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -605,6 +728,7 @@ from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
 from bash2gitlab.commands.shred_all import run_shred_gitlab
 from bash2gitlab.config import config
+from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.utils.update_checker import check_for_updates
@@ -1136,6 +1260,8 @@ def main() -> int:
     uninstall_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     uninstall_pc.set_defaults(func=uninstall_precommit_handler)
 
+    get_pm().hook.register_cli(subparsers=subparsers, config=config)
+
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
@@ -1183,8 +1309,13 @@ def main() -> int:
         log_level = "INFO"
     logging.config.dictConfig(generate_config(level=log_level))
 
+    for _ in get_pm().hook.before_command(args=args):
+        pass
     # Execute the appropriate handler
-    return args.func(args)
+    rc = args.func(args)
+    for _ in get_pm().hook.after_command(result=rc, args=args):
+        pass
+    return rc
 
 
 if __name__ == "__main__":
@@ -1665,6 +1796,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
+from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
@@ -1819,37 +1951,45 @@ def process_script_list(
             continue
 
         # Plain string: attempt to detect and inline scripts
-        script_path_str = extract_script_path(item)
+        pm = get_pm()
+        script_path_str = pm.hook.extract_script_path(line=item) or None
+        if script_path_str is None:
+            # try existing extract_script_path fallback
+            script_path_str = extract_script_path(item)
+
         if script_path_str:
             rel_path = script_path_str.strip().lstrip("./")
             script_path = scripts_root / rel_path
             try:
                 bash_code = read_bash_script(script_path)
-                bash_lines = bash_code.splitlines()
-                logger.debug(
-                    "Inlining script '%s' (%d lines).",
-                    Path(rel_path).as_posix(),
-                    len(bash_lines),
-                )
-                begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
-                end_marker = "# <<< END inline"
-                processed_items.append(begin_marker)
-                processed_items.extend(bash_lines)
-                processed_items.append(end_marker)
             except (FileNotFoundError, ValueError) as e:
-                logger.warning(
-                    "Could not inline script '%s': %s. Preserving original line.",
-                    script_path_str,
-                    e,
-                )
-                processed_items.append(item)
+                logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
+                raise Exception(f"Could not inline script '{script_path_str}': {e}. Preserving original line.") from e
+            bash_lines = bash_code.splitlines()
+            logger.debug(
+                "Inlining script '%s' (%d lines).",
+                Path(rel_path).as_posix(),
+                len(bash_lines),
+            )
+            begin_marker = f"# >>> BEGIN inline: {Path(rel_path).as_posix()}"
+            end_marker = "# <<< END inline"
+            processed_items.append(begin_marker)
+            processed_items.extend(bash_lines)
+            processed_items.append(end_marker)
+
         else:
             # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
-            interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
-            if interp_inline:
-                processed_items.extend(interp_inline)
+            alt = pm.hook.inline_command(line=item, scripts_root=scripts_root) or None
+            if alt:
+                processed_items.extend(alt)
             else:
-                processed_items.append(item)
+                interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
+                if interp_inline and isinstance(interp_inline, list):
+                    processed_items.extend(interp_inline)
+                elif interp_inline and isinstance(interp_inline, str):
+                    processed_items.append(interp_inline)
+                else:
+                    processed_items.append(item)
 
     # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)
@@ -2286,47 +2426,130 @@ def run_compile_all(
 ```
 ## File: commands\compile_not_bash.py
 ```python
-"""Support for inlining many types of scripts"""
+"""Support for inlining many types of scripts.
+
+Turns invocations like `python -m pkg.tool`, `node scripts/foo.js`, `awk -f prog.awk data.txt`
+into a single interpreter call that evaluates the file contents inline, e.g.:
+
+    # >>> BEGIN inline: python -m pkg.tool
+    python -c '...file contents...'
+    # <<< END inline
+
+If a line doesn't match a supported pattern, returns None.
+"""
 
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 
 __all__ = ["_maybe_inline_interpreter_command"]
 
-
 logger = logging.getLogger(__name__)
 
-_INTERPRETER_FLAGS = {
+# Maximum *quoted* payload length to inline. Large payloads risk hitting ARG_MAX
+# limits on various platforms/runners. Choose a conservative default.
+MAX_INLINE_LEN = int(os.getenv("BASH2GITLAB_MAX_INLINE_LEN", "16000"))
+
+# Env toggles
+ALLOW_ANY_EXT = os.getenv("BASH2GITLAB_ALLOW_ANY_EXT") == "1"
+
+# Interpreters → flag that accepts a *single* string of code.
+# Empty string means the code is the first positional argument (awk/jq).
+_INTERPRETER_FLAGS: dict[str, str | None] = {
+    # existing
     "python": "-c",
     "node": "-e",
     "ruby": "-e",
     "php": "-r",
     "fish": "-c",
+    # shells
+    "bash": "-c",
+    "sh": "-c",
+    "zsh": "-c",
+    "ksh": "-c",
+    "pwsh": "-Command",
+    "powershell": "-Command",
+    # scripting languages
+    "perl": "-e",
+    "lua": "-e",
+    "elixir": "-e",
+    "raku": "-e",
+    "julia": "-e",
+    "groovy": "-e",
+    "scala": "-e",  # may depend on launcher availability
+    "clojure": "-e",
+    "bb": "-e",  # babashka
+    "erl": "-eval",  # special-cased with -noshell -s init stop
+    "R": "-e",
+    "Rscript": "-e",
+    # JS runtimes
+    "deno": "eval",  # map `deno run` to `deno eval`
+    "bun": "eval",  # map `bun run` to `bun eval` (verify version)
+    # mini-languages / filters
+    "awk": "",  # program as first arg
+    "sed": "-e",
+    "jq": "",  # filter as first arg
 }
 
-# Simple extension mapping to help sanity-check paths by interpreter
-_INTERPRETER_EXTS = {
+# Interpreter → expected extensions for sanity checking. Permissive by default.
+_INTERPRETER_EXTS: dict[str, tuple[str, ...]] = {
     "python": (".py",),
     "node": (".js", ".mjs", ".cjs"),
     "ruby": (".rb",),
     "php": (".php",),
-    "fish": (".fish", ".sh"),  # a lot of folks keep fish scripts as .fish; allow .sh too
+    "fish": (".fish", ".sh"),
+    # shells
+    "bash": (".sh",),
+    "sh": (".sh",),
+    "zsh": (".zsh", ".sh"),
+    "ksh": (".ksh", ".sh"),
+    "pwsh": (".ps1",),
+    "powershell": (".ps1",),
+    # scripting languages
+    "perl": (".pl", ".pm"),
+    "lua": (".lua",),
+    "elixir": (".exs",),
+    "raku": (".raku", ".p6"),
+    "julia": (".jl",),
+    "groovy": (".groovy",),
+    "scala": (".scala",),
+    "clojure": (".clj",),
+    "bb": (".clj",),
+    "erl": (".erl",),
+    "R": (".R", ".r"),
+    "Rscript": (".R", ".r"),
+    # JS runtimes
+    "deno": (".ts", ".tsx", ".js", ".mjs"),
+    "bun": (".ts", ".tsx", ".js"),
+    # mini-languages
+    "awk": (".awk", ".txt"),
+    "sed": (".sed", ".txt"),
+    "jq": (".jq", ".txt"),
 }
 
+# Match common interpreter invocations. Supports python -m, deno/bun run, and tail args.
 _INTERP_LINE = re.compile(
     r"""
     ^\s*
-    (?P<interp>python|node|ruby|php|fish)      # interpreter
+    (?P<interp>
+        python(?:\d+(?:\.\d+)?)? | node | deno | bun |
+        ruby | php | fish |
+        bash | sh | zsh | ksh |
+        pwsh | powershell |
+        perl | lua | elixir | raku | julia | groovy | scala | clojure | bb | erl | Rscript | R |
+        awk | sed | jq
+    )
+    (?:\s+run)?              # handle `deno run`, `bun run`
     \s+
     (?:
-        -m\s+(?P<module>[A-Za-z0-9_\.]+)       # python -m package.module
+        -m\s+(?P<module>[A-Za-z0-9_\.]+)  # python -m package.module
         |
-        (?P<path>\.?/?[^\s]+)                  # or a path like scripts/foo.py
+        (?P<path>\.?/?[^\s]+)             # or a script path
     )
-    (?:\s+.*)?                                 # allow trailing args (ignored for now)
+    (?P<rest>\s+.*)?              # preserve trailing args/files
     \s*$
     """,
     re.VERBOSE,
@@ -2334,54 +2557,94 @@ _INTERP_LINE = re.compile(
 
 
 def _shell_single_quote(s: str) -> str:
-    """
-    Safely single-quote *s* for POSIX shell.
+    """Safely single-quote *s* for POSIX shell.
     Turns: abc'def  ->  'abc'"'"'def'
     """
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
 
+def _normalize_interp(interp: str) -> str:
+    """Map interpreter aliases to their base key for lookups.
+    e.g., python3.12 → python.
+    """
+    if interp.startswith("python"):
+        return "python"
+    return interp
+
+
 def _resolve_interpreter_target(
     interp: str, module: str | None, path_str: str | None, scripts_root: Path
 ) -> tuple[Path, str]:
-    """
-    Resolve the target file and a display label from either a module or a path.
-    For python -m, we map "a.b.c" -> a/b/c.py.
+    """Resolve the target file and a display label from either a module or a path.
+    For python -m, map "a.b.c" -> a/b/c.py
     """
     if module:
-        if interp != "python":
+        if not _normalize_interp(interp) == "python":
             raise ValueError(f"-m is only supported for python, got: {interp}")
         rel = Path(module.replace(".", "/") + ".py")
-        return scripts_root / rel, f"{interp} -m {module}"
+        return scripts_root / rel, f"python -m {module}"
     if path_str:
-        # normalize ./ and leading slashes relative to scripts_root
         rel_str = Path(path_str.strip()).as_posix().lstrip("./")
-        return scripts_root / rel_str, f"{interp} {Path(rel_str).as_posix()}"
+        shown = f"{interp} {Path(rel_str).as_posix()}"
+        return scripts_root / rel_str, shown
     raise ValueError("Neither module nor path provided.")
 
 
 def _is_reasonable_ext(interp: str, file: Path) -> bool:
-    exts = _INTERPRETER_EXTS.get(interp)
+    if ALLOW_ANY_EXT:
+        return True
+    base = _normalize_interp(interp)
+    exts = _INTERPRETER_EXTS.get(base)
     if not exts:
         return True
     return file.suffix.lower() in exts
 
 
+def _read_script_bytes(p: Path) -> str | None:
+    try:
+        text = p.read_text(encoding="utf-8")
+    # reading local workspace file
+    except Exception as e:  # nosec
+        logger.warning("Could not read %s: %s; preserving original.", p, e)
+        return None
+    # Strip UTF-8 BOM if present
+    if text.startswith("\ufeff"):
+        text = text.lstrip("\ufeff")
+    # Strip shebang
+    if text.startswith("#!"):
+        lines = text.splitlines()
+        text = "\n".join(lines[1:])
+    return text
+
+
+def _build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | None) -> str | None:
+    if flag is None:
+        return None
+    r = rest or ""
+    # erl needs some boilerplate to run and exit non-interactively
+    if interp == "erl":
+        return f"erl -noshell -eval {quoted} -s init stop{r}"
+    if flag == "":  # awk / jq (no flag; program/filter is first positional)
+        return f"{interp} {quoted}{r}"
+    return f"{interp} {flag} {quoted}{r}"
+
+
 def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
-    """
-    If *line* looks like an interpreter execution (python/node/ruby/php/fish),
-    return [BEGIN, <interp -flag 'code'>, END]; else return None.
+    """If *line* looks like an interpreter execution we can inline, return:
+    [BEGIN_MARK, <interp -flag 'code'>, END_MARK]. Otherwise return None.
     """
     m = _INTERP_LINE.match(line)
     if not m:
         return None
 
-    interp = m.group("interp")
+    interp_raw = m.group("interp")
+    interp = _normalize_interp(interp_raw)
     module = m.group("module")
     path_str = m.group("path")
+    rest = m.group("rest") or ""
 
     try:
-        target_file, shown = _resolve_interpreter_target(interp, module, path_str, scripts_root)
+        target_file, shown = _resolve_interpreter_target(interp_raw, module, path_str, scripts_root)
     except ValueError as e:
         logger.debug("Interpreter inline skip: %s", e)
         return None
@@ -2394,24 +2657,33 @@ def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str
         logger.debug("Interpreter inline skip: extension %s not expected for %s", target_file.suffix, interp)
         return None
 
-    try:
-        code = target_file.read_text(encoding="utf-8")
-    except Exception as e:  # nosec
-        logger.warning("Could not read %s: %s; preserving original.", target_file, e)
-        return None
-
-    # Strip shebang if present
-    if code.startswith("#!"):
-        code = "\n".join(code.splitlines()[1:])
-
-    flag = _INTERPRETER_FLAGS.get(interp)
-    if not flag:
+    code = _read_script_bytes(target_file)
+    if code is None:
         return None
 
     quoted = _shell_single_quote(code)
+
+    # size guard
+    if len(quoted) > MAX_INLINE_LEN:
+        logger.warning(
+            "Skipping inline for %s: payload %d chars exceeds MAX_INLINE_LEN=%d.",
+            shown,
+            len(quoted),
+            MAX_INLINE_LEN,
+        )
+        return None
+
+    flag = _INTERPRETER_FLAGS.get(interp)
+    if flag is None:
+        logger.debug("Interpreter inline skip: no eval flag known for %s", interp)
+        return None
+
+    inlined_cmd = _build_eval_command(interp, flag, quoted, rest)
+    if inlined_cmd is None:
+        return None
+
     begin_marker = f"# >>> BEGIN inline: {shown}"
     end_marker = "# <<< END inline"
-    inlined_cmd = f"{interp} {flag} {quoted}"
     logger.debug("Inlining interpreter command '%s' (%d chars).", shown, len(code))
     return [begin_marker, inlined_cmd, end_marker]
 ```
@@ -3231,7 +3503,7 @@ from pathlib import Path
 __all__ = ["run_commit_map"]
 
 
-_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
 logger = logging.getLogger(__name__)
 
@@ -3334,7 +3606,7 @@ from pathlib import Path
 
 import toml
 
-_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml"}
+_VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
 __all__ = ["run_map_deploy", "get_deployment_map"]
 
@@ -4257,7 +4529,7 @@ from pathlib import Path
 
 _EXECUTORS = {"bash", "sh", "pwsh"}
 _DOT_SOURCE = {"source", "."}
-_VALID_SUFFIXES = {".sh", ".ps1"}
+_VALID_SUFFIXES = {".sh", ".ps1", ".bash"}
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
