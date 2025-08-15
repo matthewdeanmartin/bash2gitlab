@@ -11,6 +11,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from bash2gitlab.utils.utils import short_path
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["fetch_repository_archive", "clone_repository_ssh"]
@@ -216,4 +218,4 @@ def clone_repository_ssh(
         # Re-raise the exception to notify the caller of the failure.
         raise
 
-    logger.info("Successfully cloned directories into %s", clone_path)
+    logger.info("Successfully cloned directories into %s", short_path(clone_path))

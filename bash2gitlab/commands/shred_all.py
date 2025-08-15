@@ -24,6 +24,7 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
@@ -193,11 +194,10 @@ def shred_script_block(
         script_filepath.chmod(0o755)
 
     # Compute bash command relative to YAML
-    relative_path = Path(
-        script_filepath.resolve().relative_to(yaml_dir.resolve())
-        if script_filepath.resolve().is_relative_to(yaml_dir.resolve())  # py>=3.9
-        else script_filename
-    )
+    base = yaml_dir.resolve()
+    target = script_filepath.resolve()
+    relative_path = target.relative_to(base) if is_relative_to(target, base) else Path(script_filename)
+
     # Normalize to posix for YAML
     rel_str = str(relative_path).replace("\\", "/")
     if not rel_str.startswith(".") and "/" not in rel_str:

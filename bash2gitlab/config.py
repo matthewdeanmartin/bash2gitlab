@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from bash2gitlab.utils.utils import short_path
+
 # Use tomllib if available (Python 3.11+), otherwise fall back to tomli
 if sys.version_info >= (3, 11):
     import tomllib
@@ -75,14 +77,14 @@ class _Config:
             else:
                 file_config = data
 
-            logger.info(f"Loaded configuration from {config_path}")
+            logger.info(f"Loaded configuration from {short_path(config_path)}")
             return file_config
 
         except tomllib.TOMLDecodeError as e:
-            logger.error(f"Error decoding TOML file {config_path}: {e}")
+            logger.error(f"Error decoding TOML file {short_path(config_path)}: {e}")
             return {}
         except OSError as e:
-            logger.error(f"Error reading file {config_path}: {e}")
+            logger.error(f"Error reading file {short_path(config_path)}: {e}")
             return {}
 
     def load_env_config(self) -> dict[str, str]:

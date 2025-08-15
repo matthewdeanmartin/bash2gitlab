@@ -1,0 +1,120 @@
+sage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR [--parallelism PARALLELISM] [--watch] [--dry-run] [-v] [-q]
+
+options:
+  -h, --help            show this help message and exit
+  --in INPUT_DIR        Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.
+  --out OUTPUT_DIR      Output directory for the compiled GitLab CI files.
+  --parallelism PARALLELISM
+                        Number of files to compile in parallel (default: CPU count).
+  --watch               Watch source directories and auto-recompile on changes.
+  --dry-run             Simulate the command without filesystem changes.
+  -v, --verbose         Enable verbose (DEBUG) logging output.
+  -q, --quiet           Disable output.
+usage: bash2gitlab clean [-h] --out OUTPUT_DIR [--dry-run] [-v] [-q]
+
+usage: bash2gitlab shred [-h] (--in-file INPUT_FILE | --in-folder INPUT_FOLDER) --out OUTPUT_DIR [--dry-run] [-v] [-q]
+
+Use either --in-file (single YAML) or --in-folder (process tree). --out must be a directory; output YAML and scripts are written side-by-side.
+
+options:
+  -h, --help            show this help message and exit
+  --in-file INPUT_FILE  Input GitLab CI YAML file to shred (e.g., .gitlab-ci.yml).
+  --in-folder INPUT_FOLDER
+                        Folder to recursively shred (*.yml, *.yaml).
+  --out OUTPUT_DIR      Output directory (will be created). YAML and scripts are written here.
+
+usage: bash2gitlab detect-drift [-h] [--out OUT] [--dry-run] [-v] [-q]
+
+options:
+  -h, --help     show this help message and exit
+  --out OUT      Output path where generated files are.
+
+usage: bash2gitlab copy2local [-h] --repo-url REPO_URL --branch BRANCH --copy-dir COPY_DIR --source-dir SOURCE_DIR [--dry-run] [-v] [-q]
+
+options:
+  -h, --help            show this help message and exit
+  --repo-url REPO_URL   Repository URL to copy.
+  --branch BRANCH       Branch to copy.
+  --copy-dir COPY_DIR   Destination directory for the copy.
+  --source-dir SOURCE_DIR
+                        Directory to include in the copy.
+
+usage: bash2gitlab init [-h] [--dry-run] [-v] [-q] [directory]
+
+positional arguments:
+  directory      The directory to initialize the project in. Defaults to the current directory.
+
+options:
+  -h, --help     show this help message and exit
+
+usage: bash2gitlab map-deploy [-h] [--pyproject PYPROJECT_PATH] [--force] [--dry-run] [-v] [-q]
+
+options:
+  -h, --help            show this help message and exit
+  --pyproject PYPROJECT_PATH
+                        Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.
+  --force               Overwrite target files even if they have been modified since the last deployment.
+
+usage: bash2gitlab commit-map [-h] [--pyproject PYPROJECT_PATH] [--force] [--dry-run] [-v] [-q]
+
+options:
+  -h, --help            show this help message and exit
+  --pyproject PYPROJECT_PATH
+                        Path to the pyproject.toml file containing the [tool.bash2gitlab.map] section.
+  --force               Overwrite source files even if they have been modified since the last deployment.
+
+usage: bash2gitlab lint [-h] --out OUTPUT_DIR --gitlab-url GITLAB_URL [--token TOKEN] [--project-id PROJECT_ID] [--ref REF] [--include-merged-yaml] [--parallelism PARALLELISM]
+                        [--timeout TIMEOUT] [--dry-run] [-v] [-q]
+
+Run GitLab CI Lint for every *.yml/*.yaml file under the output directory. GitLab connection options. For private instances require --gitlab-url and possibly --token. Use
+--project-id for project-scoped lint when your config relies on includes or project context.
+
+options:
+  -h, --help            show this help message and exit
+  --out OUTPUT_DIR      Directory containing compiled YAML files to lint.
+  --gitlab-url GITLAB_URL
+                        Base GitLab URL (e.g., https://gitlab.com).
+  --token TOKEN         PRIVATE-TOKEN or CI_JOB_TOKEN to authenticate with the API.
+  --project-id PROJECT_ID
+                        Project ID for project-scoped lint (recommended for configs with includes).
+  --ref REF             Git ref to evaluate includes/variables against (project lint only).
+  --include-merged-yaml
+                        Return merged YAML from project-scoped lint (slower).
+  --parallelism PARALLELISM
+                        Max concurrent lint requests (default: CPU count, capped to file count).
+  --timeout TIMEOUT     HTTP timeout per request in seconds (default: 20).
+
+usage: bash2gitlab install-precommit [-h] [--repo-root REPO_ROOT] [--force] [-v] [-q]
+
+options:
+  -h, --help            show this help message and exit
+  --repo-root REPO_ROOT
+                        Repository root (defaults to current directory).
+  --force               Overwrite an existing different hook.
+
+usage: bash2gitlab uninstall-precommit [-h] [--repo-root REPO_ROOT] [--force] [-v] [-q]
+
+options:
+  -h, --help            show this help message and exit
+  --repo-root REPO_ROOT
+                        Repository root (defaults to current directory).
+  --force               Remove even if the hook content does not match.
+
+usage: bash2gitlab doctor [-h] [--dry-run] [-v] [-q]
+
+options:
+  -h, --help     show this help message and exit
+
+usage: bash2gitlab graph [-h] --in INPUT_DIR [--dry-run] [-v] [-q]
+
+options:
+  -h, --help      show this help message and exit
+  --in INPUT_DIR  Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.
+
+usage: bash2gitlab show-config [-h] [--dry-run] [-v] [-q]
+
+universal options:
+  -h, --help     show this help message and exit
+  --dry-run      Simulate the command without filesystem changes.
+  -v, --verbose  Enable verbose (DEBUG) logging output.
+  -q, --quiet    Disable output.

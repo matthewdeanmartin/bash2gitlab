@@ -27,6 +27,7 @@
 │   ├── logging_config.py
 │   ├── mock_ci_vars.py
 │   ├── parse_bash.py
+│   ├── pathlib_polyfills.py
 │   ├── terminal_colors.py
 │   ├── update_checker.py
 │   ├── utils.py
@@ -48,6 +49,9 @@ import os
 import re
 from pathlib import Path
 
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.utils import short_path
+
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
 
@@ -65,16 +69,6 @@ SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(
 
 class SourceSecurityError(RuntimeError):
     pass
-
-
-def is_relative_to(child: Path, parent: Path) -> bool:
-    """Py<3.9-compatible variant of Path.is_relative_to()."""
-    # pylint: disable=broad-exception-caught
-    try:
-        child.relative_to(parent)
-        return True
-    except Exception:
-        return False
 
 
 def secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
@@ -206,7 +200,7 @@ def inline_bash_source(
                     logger.info(
                         "Inlining sourced file: %s -> %s",
                         sourced_script_name,
-                        sourced_script_path,
+                        short_path(sourced_script_path),
                     )
                     inlined = inline_bash_source(
                         sourced_script_path,
@@ -263,6 +257,8 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
+
+from bash2gitlab.utils.utils import short_path
 
 # Use tomllib if available (Python 3.11+), otherwise fall back to tomli
 if sys.version_info >= (3, 11):
@@ -331,14 +327,14 @@ class _Config:
             else:
                 file_config = data
 
-            logger.info(f"Loaded configuration from {config_path}")
+            logger.info(f"Loaded configuration from {short_path(config_path)}")
             return file_config
 
         except tomllib.TOMLDecodeError as e:
-            logger.error(f"Error decoding TOML file {config_path}: {e}")
+            logger.error(f"Error decoding TOML file {short_path(config_path)}: {e}")
             return {}
         except OSError as e:
-            logger.error(f"Error reading file {config_path}: {e}")
+            logger.error(f"Error reading file {short_path(config_path)}: {e}")
             return {}
 
     def load_env_config(self) -> dict[str, str]:
@@ -739,6 +735,7 @@ from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.utils.update_checker import check_for_updates
+from bash2gitlab.utils.utils import short_path
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
@@ -808,9 +805,9 @@ def init_handler(args: argparse.Namespace) -> int:
 
     if not base_path.exists():
         base_path.mkdir(parents=True)
-        logger.info(f"Created project directory: {base_path}")
+        logger.info(f"Created project directory: {short_path(base_path)}")
     elif (base_path / "bash2gitlab.toml").exists():
-        logger.error(f"A 'bash2gitlab.toml' file already exists in '{base_path}'. Aborting.")
+        logger.error(f"A 'bash2gitlab.toml' file already exists in '{short_path(base_path)}'. Aborting.")
         return 1
 
     try:
@@ -1377,12 +1374,26 @@ def main() -> int:
         if not args.output_dir:
             compile_parser.error("argument --out is required")
     elif args.command == "shred":
-        args.input_file = args.input_file or config.input_file
-        args.output_file = args.output_file or config.output_file
+        if hasattr(args, "input_file"):
+            args_input_file = args.input_file
+        else:
+            args_input_file = ""
+        if hasattr(args, "input_folder"):
+            args_input_folder = args.input_folder
+        else:
+            args_input_folder = ""
+        if hasattr(args, "output_dir"):
+            args_output_dir = args.output_dir
+        else:
+            args_output_dir = ""
+        args.input_file = args_input_file or config.input_file
+        args.input_folder = args_input_folder or config.input_dir
+        args.output_dir = args_output_dir or config.output_dir
+
         # Validate required arguments after merging
-        if not args.input_file:
-            shred_parser.error("argument --in is required")
-        if not args.output_file:
+        if not args.input_file and not args.input_folder:
+            shred_parser.error("argument --input-folder or --input-file is required")
+        if not args.output_dir:
             shred_parser.error("argument --out is required")
     elif args.command == "clean":
         args.output_dir = args.output_dir or config.output_dir
@@ -1393,6 +1404,11 @@ def main() -> int:
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
             lint_parser.error("argument --out is required")
+    elif args.command == "graph":
+        # Only merge --out from config; GitLab connection is explicit via CLI
+        args.input_dir = args.input_dir or config.input_dir
+        if not args.input_dir:
+            lint_parser.error("argument --in is required")
     # install-precommit / uninstall-precommit / doctor / graph / show-config do not merge config
 
     # Merge boolean flags
@@ -1430,6 +1446,8 @@ import base64
 import logging
 from collections.abc import Iterator
 from pathlib import Path
+
+from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
 
@@ -1588,7 +1606,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
         seen_pairs.add((base, p))
 
     if not seen_pairs:
-        logger.info("No target pairs found under %s", root)
+        logger.info("No target pairs found under %s", short_path(root))
         return (0, 0, 0)
 
     for base, hashf in sorted(seen_pairs):
@@ -1666,6 +1684,8 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
+
+from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
 
@@ -1872,7 +1892,7 @@ def clone_repository_ssh(
         # Re-raise the exception to notify the caller of the failure.
         raise
 
-    logger.info("Successfully cloned directories into %s", clone_path)
+    logger.info("Successfully cloned directories into %s", short_path(clone_path))
 ```
 ## File: commands\compile_all.py
 ```python
@@ -2820,6 +2840,7 @@ from pathlib import Path
 __all__ = ["run_detect_drift"]
 
 from bash2gitlab.utils.terminal_colors import Colors
+from bash2gitlab.utils.utils import short_path
 
 # Setting up a logger for this module. The calling application can configure the handler.
 logger = logging.getLogger(__name__)
@@ -2917,7 +2938,7 @@ def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
         if not search_path.is_dir():
             logger.warning(f"Search path is not a directory, skipping: {search_path}")
             continue
-        logger.info(f"Searching for .hash files in: {search_path}")
+        logger.info(f"Searching for .hash files in: {short_path(search_path)}")
         yield from search_path.rglob("*.hash")
 
 
@@ -3190,23 +3211,24 @@ def run_doctor() -> int:
 from __future__ import annotations
 
 import logging
+import webbrowser
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
 from bash2gitlab.utils.parse_bash import extract_script_path
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.utils import short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["generate_dependency_graph"]
 
-Graph = dict[Path, set[Path]]
 
-
-def format_dot_output(graph: Graph, root_path: Path) -> str:
+def format_dot_output(graph: dict[Path, set[Path]], root_path: Path) -> str:
     """Formats the dependency graph into the DOT language."""
     dot_lines = [
         "digraph bash2gitlab {",
@@ -3222,35 +3244,35 @@ def format_dot_output(graph: Graph, root_path: Path) -> str:
         '        node [style="filled,rounded", fillcolor="#e6f0fa", color="#0066cc"];',
     ]
 
-    # Define YAML nodes first
-    yaml_files = {node for node in graph if node.suffix.lower() in (".yml", ".yaml")}
-    for file in sorted(yaml_files):
-        relative_path = file.relative_to(root_path)
-        dot_lines.append(f'        "{relative_path}" [label="{relative_path}"];')
+    # YAML nodes
+    yaml_files = {n for n in graph if n.suffix.lower() in (".yml", ".yaml")}
+    for f in sorted(yaml_files):
+        rel = f.relative_to(root_path)
+        dot_lines.append(f'        "{rel}" [label="{rel}"];')
     dot_lines.append("    }")
 
+    # Script nodes
     dot_lines.append("    subgraph cluster_scripts {")
     dot_lines.append('        label="Scripts";')
     dot_lines.append('        style="rounded";')
     dot_lines.append('        color="#22863a";')
     dot_lines.append('        node [style="filled,rounded", fillcolor="#e9f3ea", color="#22863a"];')
 
-    # Define Script nodes
-    script_files = {node for node in graph if node not in yaml_files}
-    for dep_set in graph.values():
-        script_files.update(dep for dep in dep_set if dep not in yaml_files)
+    script_files = {n for n in graph if n not in yaml_files}
+    for deps in graph.values():
+        script_files.update(d for d in deps if d not in yaml_files)
 
-    for file in sorted(script_files):
-        relative_path = file.relative_to(root_path)
-        dot_lines.append(f'        "{relative_path}" [label="{relative_path}"];')
+    for f in sorted(script_files):
+        rel = f.relative_to(root_path)
+        dot_lines.append(f'        "{rel}" [label="{rel}"];')
     dot_lines.append("    }")
 
-    # Define edges
-    for source, dependencies in sorted(graph.items()):
-        source_rel = source.relative_to(root_path)
-        for dep in sorted(dependencies):
-            dep_rel = dep.relative_to(root_path)
-            dot_lines.append(f'    "{source_rel}" -> "{dep_rel}";')
+    # Edges
+    for src, deps in sorted(graph.items()):
+        s_rel = src.relative_to(root_path)
+        for dep in sorted(deps):
+            d_rel = dep.relative_to(root_path)
+            dot_lines.append(f'    "{s_rel}" -> "{d_rel}";')
 
     dot_lines.append("}")
     return "\n".join(dot_lines)
@@ -3259,7 +3281,7 @@ def format_dot_output(graph: Graph, root_path: Path) -> str:
 def parse_shell_script_dependencies(
     script_path: Path,
     root_path: Path,
-    graph: Graph,
+    graph: dict[Path, set[Path]],
     processed_files: set[Path],
 ) -> None:
     """Recursively parses a shell script to find `source` dependencies."""
@@ -3279,10 +3301,8 @@ def parse_shell_script_dependencies(
             match = SOURCE_COMMAND_REGEX.match(line)
             if match:
                 sourced_script_name = match.group("path")
-                # Resolve the path relative to the current script's directory
                 sourced_path = (script_path.parent / sourced_script_name).resolve()
 
-                # Security: Ensure the path is within the project root
                 if not sourced_path.is_relative_to(root_path):
                     logger.error(f"Refusing to trace source '{sourced_path}': escapes allowed root '{root_path}'.")
                     continue
@@ -3297,13 +3317,12 @@ def find_script_references_in_node(
     node: Any,
     yaml_path: Path,
     root_path: Path,
-    graph: Graph,
+    graph: dict[Path, set[Path]],
     processed_scripts: set[Path],
 ) -> None:
     """Recursively traverses the YAML data structure to find script references."""
     if isinstance(node, dict):
         for key, value in node.items():
-            # Check if the key indicates a script block
             if key in ("script", "before_script", "after_script"):
                 find_script_references_in_node(value, yaml_path, root_path, graph, processed_scripts)
             else:
@@ -3314,43 +3333,127 @@ def find_script_references_in_node(
     elif isinstance(node, str):
         script_path_str = extract_script_path(node)
         if script_path_str:
-            # Resolve the path relative to the YAML file's directory
             script_path = (yaml_path.parent / script_path_str).resolve()
-
-            # Security: Ensure the path is within the project root
-            if not script_path.is_relative_to(root_path):
+            if not is_relative_to(script_path, root_path):
                 logger.error(f"Refusing to trace script '{script_path}': escapes allowed root '{root_path}'.")
                 return
-
             graph.setdefault(yaml_path, set()).add(script_path)
             parse_shell_script_dependencies(script_path, root_path, graph, processed_scripts)
 
 
-def generate_dependency_graph(uncompiled_path: Path) -> str:
+def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
+    from graphviz import Source  # type: ignore
+
+    src = Source(dot_output)
+    out_file = src.render(
+        filename=filename_base,
+        directory=str(Path.cwd()),
+        format="svg",
+        cleanup=True,
+    )
+    return Path(out_file)
+
+
+def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
+    # Pure-Python interactive HTML (vis.js)
+    from pyvis.network import Network  # type: ignore
+
+    html_path = Path.cwd() / f"{filename_base}.html"
+    net = Network(height="750px", width="100%", directed=True, cdn_resources="in_line")
+
+    yaml_nodes = {n for n in graph if n.suffix.lower() in (".yml", ".yaml")}
+    script_nodes = set()
+    for deps in graph.values():
+        script_nodes.update(deps)
+    script_nodes |= {n for n in graph if n not in yaml_nodes}
+
+    # Add nodes with lightweight styling
+    for n in sorted(yaml_nodes):
+        rel = str(n.relative_to(root_path))
+        net.add_node(rel, label=rel, title=rel, shape="box", color="#e6f0fa")
+    for n in sorted(script_nodes):
+        rel = str(n.relative_to(root_path))
+        net.add_node(rel, label=rel, title=rel, shape="box", color="#e9f3ea")
+
+    # Add edges
+    for src, deps in graph.items():
+        s_rel = str(src.relative_to(root_path))
+        for dep in deps:
+            d_rel = str(dep.relative_to(root_path))
+            net.add_edge(s_rel, d_rel, arrows="to")
+
+    # Write once; don't auto-open here (caller decides)
+    net.write_html(str(html_path), open_browser=False)
+    return html_path
+
+
+def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
+    # Pure-Python static SVG via Matplotlib
+    import matplotlib.pyplot as plt  # type: ignore
+    import networkx as nx  # type: ignore
+
+    out_path = Path.cwd() / f"{filename_base}.svg"
+    G = nx.DiGraph()
+
+    yaml_nodes = {n for n in graph if n.suffix.lower() in (".yml", ".yaml")}
+    script_nodes = set()
+    for deps in graph.values():
+        script_nodes.update(deps)
+    script_nodes |= {n for n in graph if n not in yaml_nodes}
+
+    def rel(p: Path) -> str:
+        return str(p.relative_to(root_path))
+
+    # Build graph
+    for n in yaml_nodes | script_nodes:
+        G.add_node(rel(n))
+    for src, deps in graph.items():
+        for dep in deps:
+            G.add_edge(rel(src), rel(dep))
+
+    # Layout & draw
+    pos = nx.spring_layout(G, seed=42)
+    plt.figure(figsize=(12, 6))
+    nx.draw_networkx_nodes(G, pos, nodelist=[rel(n) for n in yaml_nodes])
+    nx.draw_networkx_nodes(G, pos, nodelist=[rel(n) for n in script_nodes])
+    nx.draw_networkx_edges(G, pos, arrows=True)
+    nx.draw_networkx_labels(G, pos, font_size=8)
+    plt.axis("off")
+    plt.tight_layout()
+    plt.savefig(out_path, format="svg")
+    plt.close()
+    return out_path
+
+
+def generate_dependency_graph(
+    uncompiled_path: Path,
+    *,
+    open_graph_in_browser: bool = False,
+    renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
+) -> str:
     """
-    Analyzes the source YAML and script files to build a dependency graph.
+    Analyze YAML + scripts to build a dependency graph.
 
     Args:
-        uncompiled_path: The root directory of the uncompiled source files.
+        uncompiled_path: Root directory of the uncompiled source files.
+        open_graph_in_browser: If True, write a graph file to CWD and open it.
+        renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
 
     Returns:
-        A string containing the dependency graph in DOT format.
+        DOT graph as a string (stdout responsibility is left to the caller).
     """
-    graph: Graph = {}
+    graph: dict[Path, set[Path]] = {}
     processed_scripts: set[Path] = set()
     yaml_parser = get_yaml()
     root_path = uncompiled_path.resolve()
 
-    logger.info(f"Starting dependency graph generation in: {root_path}")
+    logger.info(f"Starting dependency graph generation in: {short_path(root_path)}")
 
-    # Discover all YAML files
     template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
-
     if not template_files:
         logger.warning(f"No YAML files found in {root_path}")
         return ""
 
-    # Phase 1: Parse YAML files to find top-level script dependencies
     for yaml_path in template_files:
         logger.debug(f"Parsing YAML file: {yaml_path}")
         graph.setdefault(yaml_path, set())
@@ -3366,9 +3469,48 @@ def generate_dependency_graph(uncompiled_path: Path) -> str:
 
     logger.info(f"Found {len(graph)} source files and traced {len(processed_scripts)} script dependencies.")
 
-    # Phase 2: Format the collected graph data into DOT format
     dot_output = format_dot_output(graph, root_path)
     logger.info("Successfully generated DOT graph output.")
+
+    if open_graph_in_browser:
+        filename_base = f"dependency-graph-{root_path.name}".replace(" ", "_")
+
+        def _auto_pick() -> str:
+            try:
+                import graphviz  # noqa: F401
+
+                return "graphviz"
+            except Exception:
+                try:
+                    import pyvis  # noqa: F401
+
+                    return "pyvis"
+                except Exception:
+                    try:
+                        import matplotlib  # noqa: F401
+                        import networkx  # noqa: F401
+
+                        return "networkx"
+                    except Exception:
+                        return "none"
+
+        chosen = _auto_pick() if renderer == "auto" else renderer
+
+        try:
+            if chosen == "graphviz":
+                out_path = _render_with_graphviz(dot_output, filename_base)
+            elif chosen == "pyvis":
+                out_path = _render_with_pyvis(graph, root_path, filename_base)
+            elif chosen == "networkx":
+                out_path = _render_with_networkx(graph, root_path, filename_base)
+            else:
+                raise RuntimeError(
+                    "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
+                )
+            logger.info("Wrote graph to %s", short_path(out_path))
+            webbrowser.open(out_path.as_uri())
+        except Exception as e:  # pragma: no cover - env dependent
+            logger.error("Failed to render or open the graph: %s", e)
 
     return dot_output
 ```
@@ -3524,6 +3666,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from urllib import error, request
+
+from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
 
@@ -3888,17 +4032,17 @@ def summarize_results(results: Sequence[LintResult]) -> tuple[int, int]:
 
     for r in results:
         if r.ok:
-            logger.info("OK: %s", r.path)
+            logger.info("OK: %s", short_path(r.path))
             if r.warnings:
                 for w in r.warnings:
-                    logger.warning("%s: %s", r.path, w.message)
+                    logger.warning("%s: %s", short_path(r.path), w.message)
         else:
-            logger.error("INVALID: %s (status=%s)", r.path, r.status)
+            logger.error("INVALID: %s (status=%s)", short_path(r.path), r.status)
             for e in r.errors:
                 if e.line is not None:
-                    logger.error("%s:%s: %s", r.path, e.line, e.message)
+                    logger.error("%s:%s: %s", short_path(r.path), e.line, e.message)
                 else:
-                    logger.error("%s: %s", r.path, e.message)
+                    logger.error("%s: %s", short_path(r.path), e.message)
 
     logger.info("Lint summary: %d ok, %d failed", ok, fail)
     return ok, fail
@@ -4354,7 +4498,7 @@ def install(repo_root: Path | None = None, *, force: bool = False) -> None:
     if dest.exists():
         existing = dest.read_text(encoding="utf-8")
         if hook_hash(existing) == new_hash and not force:
-            logger.info("Pre-commit hook is already up to date at %s", dest)
+            logger.info("Pre-commit hook is already up to date at %s", dest.relative_to(repo_root))
             return
         if hook_hash(existing) != new_hash and not force:
             raise PrecommitHookError(f"A different pre-commit hook exists at {dest}. Use force=True to overwrite.")
@@ -4516,6 +4660,7 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
@@ -4685,11 +4830,10 @@ def shred_script_block(
         script_filepath.chmod(0o755)
 
     # Compute bash command relative to YAML
-    relative_path = Path(
-        script_filepath.resolve().relative_to(yaml_dir.resolve())
-        if script_filepath.resolve().is_relative_to(yaml_dir.resolve())  # py>=3.9
-        else script_filename
-    )
+    base = yaml_dir.resolve()
+    target = script_filepath.resolve()
+    relative_path = target.relative_to(base) if is_relative_to(target, base) else Path(script_filename)
+
     # Normalize to posix for YAML
     rel_str = str(relative_path).replace("\\", "/")
     if not rel_str.startswith(".") and "/" not in rel_str:
@@ -5166,6 +5310,69 @@ def is_script(tok: str) -> bool:
 def to_posix(tok: str) -> str:
     """Return a normalized POSIX-style path for consistent downstream handling."""
     return Path(tok.replace("\\", "/")).as_posix()
+```
+## File: utils\pathlib_polyfills.py
+```python
+import os
+from pathlib import Path, PurePath
+
+
+def is_relative_to(child: Path, parent: Path) -> bool:
+    """
+    Check if a path is relative to another.
+
+    Uses the native Path.is_relative_to() on Python 3.9+ and falls back
+    to a polyfill for older versions.
+    """
+    try:
+        # First, try to use the native implementation (available in Python 3.9+)
+        return child.is_relative_to(parent)
+    except AttributeError:
+        # If the native method doesn't exist, fall back to the shim.
+        try:
+            # Resolving paths is important to handle symlinks and '..'
+            child.resolve().relative_to(parent.resolve())
+            return True
+        except ValueError:
+            # This error is raised by relative_to() if the path is not a subpath
+            return False
+
+
+#
+
+
+# 3.9+ -> 3.8
+def with_stem(p: PurePath, new_stem: str) -> PurePath:
+    # Keep all suffixes (e.g., .tar.gz)
+    return p.with_name(new_stem + "".join(p.suffixes))
+
+
+# 3.9+ -> 3.8
+def readlink(p: Path) -> Path:
+    return Path(os.readlink(p))
+
+
+# 3.10+ -> 3.8  (mirrors symlink_to API)
+def hardlink_to(dst: Path, target: Path) -> None:
+    os.link(os.fspath(target), os.fspath(dst))
+
+
+# 3.12+ -> 3.8  (PurePath.relative_to(..., walk_up=True))
+def relative_to_walk_up(path: PurePath, other: PurePath) -> PurePath:
+    return Path(os.path.relpath(os.fspath(path), start=os.fspath(other)))
+
+
+# 3.12+ -> 3.8  (Path.walk)
+def path_walk(root: Path, top_down=True, on_error=None, follow_symlinks=False):
+    for dirpath, dirnames, filenames in os.walk(root, topdown=top_down, onerror=on_error, followlinks=follow_symlinks):
+        base = Path(dirpath)
+        yield base, [base / d for d in dirnames], [base / f for f in filenames]
+
+
+# 3.12+ -> 3.8  (case_sensitive kwarg for glob/rglob/match)
+def glob_cs(p: Path, pattern: str, case_sensitive=None):
+    # Py3.8: just ignore the flag (you can post-filter if you truly need case control)
+    return p.glob(pattern)
 ```
 ## File: utils\terminal_colors.py
 ```python

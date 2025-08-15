@@ -1,4 +1,3 @@
-# tests/test_graph_all.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,7 +43,7 @@ source ./lib/c.sh
     )
     _c = _w(root / "lib" / "c.sh", "#!/usr/bin/env bash\necho c\n")
 
-    graph: graph_mod.Graph = {}
+    graph: dict[Path, set[Path]] = {}
     processed: set[Path] = set()
 
     graph_mod.parse_shell_script_dependencies(a, root, graph, processed)
@@ -65,7 +64,7 @@ source ./lib/c.sh
 def test_parse_script_dependencies_warns_on_missing_file(tmp_path: Path, caplog: pytest.LogCaptureFixture):
     root = tmp_path
     a = _w(root / "a.sh", "source ./missing.sh\n")
-    graph: graph_mod.Graph = {}
+    graph: dict[Path, set[Path]] = {}
     processed: set[Path] = set()
 
     graph_mod.parse_shell_script_dependencies(a, root, graph, processed)
@@ -95,7 +94,7 @@ def test_find_script_references_traces_yaml_to_script_then_sources(tmp_path: Pat
         },
     }
 
-    graph: graph_mod.Graph = {}
+    graph: dict[Path, set[Path]] = {}
     processed: set[Path] = set()
 
     graph_mod.find_script_references_in_node(node, yaml_path, root, graph, processed)

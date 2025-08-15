@@ -12,7 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.8.12] - Unreleased
+## [0.8.13] - 2025-08-15
+
+### Fixed
+- Shred command had wrong CLI argument validation
+
+### Changed
+- `graph` command will attempt other graphing styles if graphviz not available.
+
+## [0.8.12] - 2025-08-14
 
 ### Added
 - Graph command

@@ -1,45 +1,45 @@
 # .gitlab-ci.yml for a GnuCOBOL Payroll Tax Calculation Program
 
 # Define the stages of the CI/CD pipeline
-stages:
-  - build
-  - test
+"stages":
+  - "build"
+  - "test"
 
 # Use a Docker image that has GnuCOBOL pre-installed.
 # You can find various images on Docker Hub or create your own.
-default:
-  image: hurriedreformist/gnucobol:latest
+"default":
+  "image": "hurriedreformist/gnucobol:latest"
 
-variables:
+"variables":
   # Define a variable for the program name to easily reuse it
-  PROGRAM_NAME: payroll_tax
+  "PROGRAM_NAME": "payroll_tax"
   # Define the name for the compiled artifact
-  EXECUTABLE_NAME: payroll_tax_calculator
+  "EXECUTABLE_NAME": "payroll_tax_calculator"
 
 # --- Build Stage ---
 # This job compiles the GnuCOBOL source code into an executable file.
-build_cobol_program:
-  variables:
-    FIZZ: BUZZ
-    FOO: BAR
-  stage: build
-  script: >-
-    ./src/build_cobol_program.sh
-  artifacts:
+"build_cobol_program":
+  "variables":
+    "FIZZ": "BUZZ"
+    "FOO": "BAR"
+  "stage": "build"
+  "script": >-
+    ./build_cobol_program.sh
+  "artifacts":
     # Pass the compiled executable to the next stage (test).
     # The artifact will be available in subsequent jobs.
-    paths:
-      - ${EXECUTABLE_NAME}
+    "paths":
+      - "${EXECUTABLE_NAME}"
     # Set an expiration for the artifact to keep the system clean.
-    expire_in: 1 week
+    "expire_in": "1 week"
 
 # --- Test Stage ---
 # This job runs the compiled program with some test data to verify its output.
-test_payroll_calculation:
-  stage: test
-  script: >-
-    ./src/test_payroll_calculation.sh
-  dependencies:
+"test_payroll_calculation":
+  "stage": "test"
+  "script": >-
+    ./test_payroll_calculation.sh
+  "dependencies":
     # This job depends on the successful completion of the 'build_cobol_program' job.
-    - build_cobol_program
+    - "build_cobol_program"
 

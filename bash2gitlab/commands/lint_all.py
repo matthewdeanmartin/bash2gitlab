@@ -47,6 +47,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib import error, request
 
+from bash2gitlab.utils.utils import short_path
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["LintIssue", "LintResult", "lint_single_text", "lint_single_file", "lint_output_folder", "summarize_results"]
@@ -410,17 +412,17 @@ def summarize_results(results: Sequence[LintResult]) -> tuple[int, int]:
 
     for r in results:
         if r.ok:
-            logger.info("OK: %s", r.path)
+            logger.info("OK: %s", short_path(r.path))
             if r.warnings:
                 for w in r.warnings:
-                    logger.warning("%s: %s", r.path, w.message)
+                    logger.warning("%s: %s", short_path(r.path), w.message)
         else:
-            logger.error("INVALID: %s (status=%s)", r.path, r.status)
+            logger.error("INVALID: %s (status=%s)", short_path(r.path), r.status)
             for e in r.errors:
                 if e.line is not None:
-                    logger.error("%s:%s: %s", r.path, e.line, e.message)
+                    logger.error("%s:%s: %s", short_path(r.path), e.line, e.message)
                 else:
-                    logger.error("%s: %s", r.path, e.message)
+                    logger.error("%s: %s", short_path(r.path), e.message)
 
     logger.info("Lint summary: %d ok, %d failed", ok, fail)
     return ok, fail

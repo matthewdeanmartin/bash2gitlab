@@ -201,7 +201,7 @@ def install(repo_root: Path | None = None, *, force: bool = False) -> None:
     if dest.exists():
         existing = dest.read_text(encoding="utf-8")
         if hook_hash(existing) == new_hash and not force:
-            logger.info("Pre-commit hook is already up to date at %s", dest)
+            logger.info("Pre-commit hook is already up to date at %s", dest.relative_to(repo_root))
             return
         if hook_hash(existing) != new_hash and not force:
             raise PrecommitHookError(f"A different pre-commit hook exists at {dest}. Use force=True to overwrite.")

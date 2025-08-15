@@ -7,6 +7,9 @@ import os
 import re
 from pathlib import Path
 
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.utils import short_path
+
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
 
@@ -24,16 +27,6 @@ SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(
 
 class SourceSecurityError(RuntimeError):
     pass
-
-
-def is_relative_to(child: Path, parent: Path) -> bool:
-    """Py<3.9-compatible variant of Path.is_relative_to()."""
-    # pylint: disable=broad-exception-caught
-    try:
-        child.relative_to(parent)
-        return True
-    except Exception:
-        return False
 
 
 def secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
@@ -165,7 +158,7 @@ def inline_bash_source(
                     logger.info(
                         "Inlining sourced file: %s -> %s",
                         sourced_script_name,
-                        sourced_script_path,
+                        short_path(sourced_script_path),
                     )
                     inlined = inline_bash_source(
                         sourced_script_path,

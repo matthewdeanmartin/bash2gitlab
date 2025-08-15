@@ -5,6 +5,8 @@ import logging
 from collections.abc import Iterator
 from pathlib import Path
 
+from bash2gitlab.utils.utils import short_path
+
 logger = logging.getLogger(__name__)
 
 # --- Helpers -----------------------------------------------------------------
@@ -162,7 +164,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
         seen_pairs.add((base, p))
 
     if not seen_pairs:
-        logger.info("No target pairs found under %s", root)
+        logger.info("No target pairs found under %s", short_path(root))
         return (0, 0, 0)
 
     for base, hashf in sorted(seen_pairs):

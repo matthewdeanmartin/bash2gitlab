@@ -25,6 +25,7 @@ from pathlib import Path
 __all__ = ["run_detect_drift"]
 
 from bash2gitlab.utils.terminal_colors import Colors
+from bash2gitlab.utils.utils import short_path
 
 # Setting up a logger for this module. The calling application can configure the handler.
 logger = logging.getLogger(__name__)
@@ -122,7 +123,7 @@ def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
         if not search_path.is_dir():
             logger.warning(f"Search path is not a directory, skipping: {search_path}")
             continue
-        logger.info(f"Searching for .hash files in: {search_path}")
+        logger.info(f"Searching for .hash files in: {short_path(search_path)}")
         yield from search_path.rglob("*.hash")
 
 

@@ -57,6 +57,7 @@ from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.utils.update_checker import check_for_updates
+from bash2gitlab.utils.utils import short_path
 from bash2gitlab.watch_files import start_watch
 
 logger = logging.getLogger(__name__)
@@ -126,9 +127,9 @@ def init_handler(args: argparse.Namespace) -> int:
 
     if not base_path.exists():
         base_path.mkdir(parents=True)
-        logger.info(f"Created project directory: {base_path}")
+        logger.info(f"Created project directory: {short_path(base_path)}")
     elif (base_path / "bash2gitlab.toml").exists():
-        logger.error(f"A 'bash2gitlab.toml' file already exists in '{base_path}'. Aborting.")
+        logger.error(f"A 'bash2gitlab.toml' file already exists in '{short_path(base_path)}'. Aborting.")
         return 1
 
     try:
@@ -695,12 +696,26 @@ def main() -> int:
         if not args.output_dir:
             compile_parser.error("argument --out is required")
     elif args.command == "shred":
-        args.input_file = args.input_file or config.input_file
-        args.output_file = args.output_file or config.output_file
+        if hasattr(args, "input_file"):
+            args_input_file = args.input_file
+        else:
+            args_input_file = ""
+        if hasattr(args, "input_folder"):
+            args_input_folder = args.input_folder
+        else:
+            args_input_folder = ""
+        if hasattr(args, "output_dir"):
+            args_output_dir = args.output_dir
+        else:
+            args_output_dir = ""
+        args.input_file = args_input_file or config.input_file
+        args.input_folder = args_input_folder or config.input_dir
+        args.output_dir = args_output_dir or config.output_dir
+
         # Validate required arguments after merging
-        if not args.input_file:
-            shred_parser.error("argument --in is required")
-        if not args.output_file:
+        if not args.input_file and not args.input_folder:
+            shred_parser.error("argument --input-folder or --input-file is required")
+        if not args.output_dir:
             shred_parser.error("argument --out is required")
     elif args.command == "clean":
         args.output_dir = args.output_dir or config.output_dir
@@ -711,6 +726,11 @@ def main() -> int:
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
             lint_parser.error("argument --out is required")
+    elif args.command == "graph":
+        # Only merge --out from config; GitLab connection is explicit via CLI
+        args.input_dir = args.input_dir or config.input_dir
+        if not args.input_dir:
+            lint_parser.error("argument --in is required")
     # install-precommit / uninstall-precommit / doctor / graph / show-config do not merge config
 
     # Merge boolean flags
