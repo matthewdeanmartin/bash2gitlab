@@ -55,7 +55,7 @@ class _Color:
     ENDC: str = "\033[0m"
 
 
-def _get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
+def get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
     """Get a warning logging function.
 
     Args:
@@ -69,7 +69,7 @@ def _get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
     return print
 
 
-def _can_use_color() -> bool:
+def can_use_color() -> bool:
     """Determine if color output is allowed.
 
     Returns:
@@ -87,7 +87,7 @@ def _can_use_color() -> bool:
         return False
 
 
-def _cache_paths(package_name: str) -> tuple[Path, Path]:
+def cache_paths(package_name: str) -> tuple[Path, Path]:
     """Compute cache directory and file path for a package.
 
     Args:
@@ -101,7 +101,7 @@ def _cache_paths(package_name: str) -> tuple[Path, Path]:
     return cache_dir, cache_file
 
 
-def _is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
+def is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
     """Check if cache file is fresh.
 
     Args:
@@ -120,7 +120,7 @@ def _is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
     return False
 
 
-def _save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
+def save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
     """Save data to cache.
 
     Args:
@@ -142,7 +142,7 @@ def reset_cache(package_name: str) -> None:
     Args:
         package_name (str): Package name to clear from cache.
     """
-    _, cache_file = _cache_paths(package_name)
+    _, cache_file = cache_paths(package_name)
     try:
         if cache_file.exists():
             cache_file.unlink(missing_ok=True)
@@ -150,7 +150,7 @@ def reset_cache(package_name: str) -> None:
         pass
 
 
-def _fetch_pypi_json(url: str, timeout: float) -> dict:
+def fetch_pypi_json(url: str, timeout: float) -> dict:
     """Fetch JSON metadata from PyPI.
 
     Args:
@@ -165,7 +165,7 @@ def _fetch_pypi_json(url: str, timeout: float) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _get_latest_version_from_pypi(
+def get_latest_version_from_pypi(
     package_name: str,
     *,
     include_prereleases: bool,
@@ -193,7 +193,7 @@ def _get_latest_version_from_pypi(
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            data = _fetch_pypi_json(url, timeout)
+            data = fetch_pypi_json(url, timeout)
             releases = data.get("releases", {})
             if not releases:
                 info_ver = data.get("info", {}).get("version")
@@ -220,7 +220,7 @@ def _get_latest_version_from_pypi(
     raise NetworkError(str(last_err))
 
 
-def _format_update_message(
+def format_update_message(
     package_name: str,
     current: _version.Version,
     latest: _version.Version,
@@ -236,7 +236,7 @@ def _format_update_message(
         str: Formatted update message.
     """
     pypi_url = f"https://pypi.org/project/{package_name}/"
-    if _can_use_color():
+    if can_use_color():
         c = _Color()
         return (
             f"{c.YELLOW}A new version of {package_name} is available: {c.GREEN}{latest}{c.YELLOW} "
@@ -271,31 +271,31 @@ def check_for_updates(
     Returns:
         str | None: Formatted update message if update available, else None.
     """
-    warn = _get_logger(logger)
-    cache_dir, cache_file = _cache_paths(package_name)
-    if _is_fresh(cache_file, cache_ttl_seconds):
+    warn = get_logger(logger)
+    cache_dir, cache_file = cache_paths(package_name)
+    if is_fresh(cache_file, cache_ttl_seconds):
         return None
     try:
-        latest_str = _get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
+        latest_str = get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
         if not latest_str:
-            _save_cache(cache_dir, cache_file, {"latest": None})
+            save_cache(cache_dir, cache_file, {"latest": None})
             return None
         current = _version.parse(current_version)
         latest = _version.parse(latest_str)
         if latest > current:
-            _save_cache(cache_dir, cache_file, {"latest": latest_str})
-            return _format_update_message(package_name, current, latest)
-        _save_cache(cache_dir, cache_file, {"latest": latest_str})
+            save_cache(cache_dir, cache_file, {"latest": latest_str})
+            return format_update_message(package_name, current, latest)
+        save_cache(cache_dir, cache_file, {"latest": latest_str})
         return None
     except PackageNotFoundError:
         warn(f"Package '{package_name}' not found on PyPI.")
-        _save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"latest": None})
         return None
     except NetworkError:
-        _save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"latest": None})
         return None
     except Exception:
-        _save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"latest": None})
         return None
 
 

@@ -58,7 +58,7 @@ def test_install_requires_git_repo(tmp_path):
     repo_root = tmp_path / "not_a_repo"
     repo_root.mkdir()
     # reset config singleton with no file present
-    cfg_module._reset_for_testing(config_path_override=None)
+    cfg_module.reset_for_testing(config_path_override=None)
     mod = reload_precommit_module()
     with pytest.raises(mod.PrecommitHookError):
         mod.install(repo_root)
@@ -66,7 +66,7 @@ def test_install_requires_git_repo(tmp_path):
 
 def test_install_requires_config_when_missing(tmp_path):
     repo = make_git_repo(tmp_path)
-    cfg_module._reset_for_testing(config_path_override=None)
+    cfg_module.reset_for_testing(config_path_override=None)
     mod = reload_precommit_module()
 
     with pytest.raises(mod.PrecommitHookError) as ei:
@@ -76,7 +76,7 @@ def test_install_requires_config_when_missing(tmp_path):
 
 def test_install_with_env_vars(tmp_path, monkeypatch):
     repo = make_git_repo(tmp_path)
-    cfg_module._reset_for_testing(config_path_override=None)
+    cfg_module.reset_for_testing(config_path_override=None)
     mod = reload_precommit_module()
 
     monkeypatch.setenv("BASH2GITLAB_INPUT_DIR", "ci")
@@ -95,7 +95,7 @@ def test_install_with_env_vars(tmp_path, monkeypatch):
 def test_uninstall_when_missing_is_ok(tmp_path, caplog):
     repo = make_git_repo(tmp_path)
     write_pyproject(repo)
-    cfg_module._reset_for_testing(config_path_override=None)
+    cfg_module.reset_for_testing(config_path_override=None)
     mod = reload_precommit_module()
 
     mod.uninstall(repo)  # should not raise
@@ -105,7 +105,7 @@ def test_uninstall_when_missing_is_ok(tmp_path, caplog):
 def test_uninstall_conflict_requires_force(tmp_path):
     repo = make_git_repo(tmp_path)
     write_pyproject(repo)
-    cfg_module._reset_for_testing(config_path_override=None)
+    cfg_module.reset_for_testing(config_path_override=None)
     mod = reload_precommit_module()
 
     # write a non-matching hook

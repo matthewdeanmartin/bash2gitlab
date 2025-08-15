@@ -12,7 +12,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.8.11] - 2025-08-13
+## [0.8.12] - Unreleased
+
+### Added
+- Graph command
+- Doctor command for diagnostics
+- Show config command to show how cascading config resolves
+
+### Fixed
+
+- Shred write to a folder now.
+- Shred will take --in-file or --in-folder
+- Shred records `!reference [.job, key]` as bash comment
+- Shred now logs with relative path.
+- Shred should now use path relative to yaml not cwd
+- Leading `.` got stripped from file names. Fixed
+
+
+## [0.8.11] - 2025-08-14
 
 ### Added
 

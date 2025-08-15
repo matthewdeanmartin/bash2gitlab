@@ -26,7 +26,7 @@ class SourceSecurityError(RuntimeError):
     pass
 
 
-def _is_relative_to(child: Path, parent: Path) -> bool:
+def is_relative_to(child: Path, parent: Path) -> bool:
     """Py<3.9-compatible variant of Path.is_relative_to()."""
     # pylint: disable=broad-exception-caught
     try:
@@ -36,7 +36,7 @@ def _is_relative_to(child: Path, parent: Path) -> bool:
         return False
 
 
-def _secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
+def secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
     """
     Resolve 'user_path' (which may contain ../ and symlinks) against base_dir,
     then ensure the final real path is inside allowed_root.
@@ -50,7 +50,7 @@ def _secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
     # Ensure the real path (after following symlinks) is within allowed_root
     allowed_root = allowed_root.resolve(strict=True)
     if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS"):
-        if not _is_relative_to(candidate, allowed_root):
+        if not is_relative_to(candidate, allowed_root):
             raise SourceSecurityError(f"Refusing to source '{candidate}': escapes allowed root '{allowed_root}'.")
     return candidate
 
@@ -117,7 +117,7 @@ def inline_bash_source(
 
     # Normalize and security-check the entry script itself
     try:
-        main_script_path = _secure_join(
+        main_script_path = secure_join(
             base_dir=main_script_path.parent if main_script_path.is_absolute() else Path.cwd(),
             user_path=str(main_script_path),
             allowed_root=allowed_root,
@@ -148,7 +148,7 @@ def inline_bash_source(
                     # A source command was found, process the sourced file
                     sourced_script_name = match.group("path")
                     try:
-                        sourced_script_path = _secure_join(
+                        sourced_script_path = secure_join(
                             base_dir=main_script_path.parent,
                             user_path=sourced_script_name,
                             allowed_root=allowed_root,

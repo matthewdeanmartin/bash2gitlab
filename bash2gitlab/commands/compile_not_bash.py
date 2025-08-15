@@ -17,7 +17,7 @@ import os
 import re
 from pathlib import Path
 
-__all__ = ["_maybe_inline_interpreter_command"]
+__all__ = ["maybe_inline_interpreter_command"]
 
 logger = logging.getLogger(__name__)
 
@@ -128,14 +128,14 @@ _INTERP_LINE = re.compile(
 )
 
 
-def _shell_single_quote(s: str) -> str:
+def shell_single_quote(s: str) -> str:
     """Safely single-quote *s* for POSIX shell.
     Turns: abc'def  ->  'abc'"'"'def'
     """
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
 
-def _normalize_interp(interp: str) -> str:
+def normalize_interp(interp: str) -> str:
     """Map interpreter aliases to their base key for lookups.
     e.g., python3.12 → python.
     """
@@ -144,14 +144,14 @@ def _normalize_interp(interp: str) -> str:
     return interp
 
 
-def _resolve_interpreter_target(
+def resolve_interpreter_target(
     interp: str, module: str | None, path_str: str | None, scripts_root: Path
 ) -> tuple[Path, str]:
     """Resolve the target file and a display label from either a module or a path.
     For python -m, map "a.b.c" -> a/b/c.py
     """
     if module:
-        if not _normalize_interp(interp) == "python":
+        if not normalize_interp(interp) == "python":
             raise ValueError(f"-m is only supported for python, got: {interp}")
         rel = Path(module.replace(".", "/") + ".py")
         return scripts_root / rel, f"python -m {module}"
@@ -162,17 +162,17 @@ def _resolve_interpreter_target(
     raise ValueError("Neither module nor path provided.")
 
 
-def _is_reasonable_ext(interp: str, file: Path) -> bool:
+def is_reasonable_ext(interp: str, file: Path) -> bool:
     if ALLOW_ANY_EXT:
         return True
-    base = _normalize_interp(interp)
+    base = normalize_interp(interp)
     exts = _INTERPRETER_EXTS.get(base)
     if not exts:
         return True
     return file.suffix.lower() in exts
 
 
-def _read_script_bytes(p: Path) -> str | None:
+def read_script_bytes(p: Path) -> str | None:
     try:
         text = p.read_text(encoding="utf-8")
     # reading local workspace file
@@ -189,7 +189,7 @@ def _read_script_bytes(p: Path) -> str | None:
     return text
 
 
-def _build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | None) -> str | None:
+def build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | None) -> str | None:
     if flag is None:
         return None
     r = rest or ""
@@ -201,7 +201,7 @@ def _build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | 
     return f"{interp} {flag} {quoted}{r}"
 
 
-def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
+def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
     """If *line* looks like an interpreter execution we can inline, return:
     [BEGIN_MARK, <interp -flag 'code'>, END_MARK]. Otherwise return None.
     """
@@ -210,13 +210,13 @@ def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str
         return None
 
     interp_raw = m.group("interp")
-    interp = _normalize_interp(interp_raw)
+    interp = normalize_interp(interp_raw)
     module = m.group("module")
     path_str = m.group("path")
     rest = m.group("rest") or ""
 
     try:
-        target_file, shown = _resolve_interpreter_target(interp_raw, module, path_str, scripts_root)
+        target_file, shown = resolve_interpreter_target(interp_raw, module, path_str, scripts_root)
     except ValueError as e:
         logger.debug("Interpreter inline skip: %s", e)
         return None
@@ -225,15 +225,15 @@ def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str
         logger.warning("Could not inline %s: file not found at %s; preserving original.", shown, target_file)
         return None
 
-    if not _is_reasonable_ext(interp, target_file):
+    if not is_reasonable_ext(interp, target_file):
         logger.debug("Interpreter inline skip: extension %s not expected for %s", target_file.suffix, interp)
         return None
 
-    code = _read_script_bytes(target_file)
+    code = read_script_bytes(target_file)
     if code is None:
         return None
 
-    quoted = _shell_single_quote(code)
+    quoted = shell_single_quote(code)
 
     # size guard
     if len(quoted) > MAX_INLINE_LEN:
@@ -250,7 +250,7 @@ def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str
         logger.debug("Interpreter inline skip: no eval flag known for %s", interp)
         return None
 
-    inlined_cmd = _build_eval_command(interp, flag, quoted, rest)
+    inlined_cmd = build_eval_command(interp, flag, quoted, rest)
     if inlined_cmd is None:
         return None
 

@@ -1,14 +1,26 @@
-"""Take a gitlab template with inline yaml and split it up into yaml and shell commands. Useful for project initialization"""
+"""
+Take a gitlab template with inline yaml and split it up into yaml and shell
+commands. Useful for project initialization.
+
+Fixes:
+ - Support shredding a *file* or an entire *folder* tree
+ - Force --out to be a *directory* (scripts live next to output YAML)
+ - Script refs are made *relative to the YAML file* (e.g., "./script.sh")
+ - Any YAML ``!reference [...]`` items in scripts are emitted as *bash comments*
+ - Logging prints *paths relative to CWD* to reduce noise
+"""
 
 from __future__ import annotations
 
 import io
 import logging
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
@@ -18,12 +30,27 @@ logger = logging.getLogger(__name__)
 
 SHEBANG = "#!/bin/bash"
 
-__all__ = ["run_shred_gitlab"]
+__all__ = [
+    "run_shred_gitlab_file",
+    "run_shred_gitlab_tree",
+    # Back-compat alias (old name processed a single file)
+    "run_shred_gitlab",
+]
 
 
-def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
+# --- helpers -----------------------------------------------------------------
+
+
+def rel(p: Path) -> str:
+    """Return the path relative to CWD when possible for quieter logs."""
+    try:
+        return str(p.resolve().relative_to(Path.cwd()))
+    except Exception:
+        return str(p)
+
+
+def dump_inline_no_doc_markers(yaml: YAML, node: Any) -> str:
     buf = io.StringIO()
-    # Temporarily suppress doc markers, then restore whatever was set globally
     prev_start, prev_end = yaml.explicit_start, yaml.explicit_end
     try:
         yaml.explicit_start = False
@@ -31,142 +58,120 @@ def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
         yaml.dump(node, buf)
     finally:
         yaml.explicit_start, yaml.explicit_end = prev_start, prev_end
-    # Trim a single trailing newline that ruamel usually adds
     return buf.getvalue().rstrip("\n")
 
 
 def create_script_filename(job_name: str, script_key: str) -> str:
-    """
-    Creates a standardized, safe filename for a script.
+    """Create a standardized, safe filename for a script.
 
-    Args:
-        job_name (str): The name of the GitLab CI job.
-        script_key (str): The key of the script block (e.g., 'script', 'before_script').
-
-    Returns:
-        str: A safe, descriptive filename like 'job-name_script.sh'.
+    For the main 'script' key, just use the job name. For others, append the key.
     """
-    # Sanitize job_name: replace spaces and invalid characters with hyphens
     sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
-    # Clean up multiple hyphens
     sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
+    return f"{sanitized_job_name}.sh" if script_key == "script" else f"{sanitized_job_name}_{script_key}.sh"
 
-    # For the main 'script' key, just use the job name. For others, append the key.
-    if script_key == "script":
-        return f"{sanitized_job_name}.sh"
-    return f"{sanitized_job_name}_{script_key}.sh"
+
+def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> list[str]:
+    """Convert YAML items from a script block into bash lines.
+
+    - Strings are kept as-is.
+    - Other YAML nodes are dumped to text with no doc markers.
+    - ``!reference [...]`` turns into a bash comment line so the intent isn't lost.
+    - Empty/whitespace lines are dropped.
+    """
+    raw_lines: list[str] = []
+
+    if isinstance(script_content, str):
+        raw_lines.extend(script_content.splitlines())
+    else:
+        for item in script_content:  # ruamel CommentedSeq-like or list
+            if isinstance(item, str):
+                raw_lines.append(item)
+            elif isinstance(item, TaggedScalar) and str(item.tag).endswith("reference"):
+                dumped = dump_inline_no_doc_markers(yaml, item)
+                raw_lines.append(f"# {dumped}")
+            elif item is not None:
+                dumped = dump_inline_no_doc_markers(yaml, item)
+                # If the dump still contains an explicit !reference tag, comment it out
+                if dumped.lstrip().startswith("!reference"):
+                    raw_lines.append(f"# {dumped}")
+                else:
+                    raw_lines.append(dumped)
+
+    # Filter empties
+    return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+
+
+# --- shredders ---------------------------------------------------------------
 
 
 def shred_variables_block(
     variables_data: dict,
     base_name: str,
     scripts_output_path: Path,
+    *,
     dry_run: bool = False,
 ) -> str | None:
-    """
-    Extracts a variables block into a .sh file containing export statements.
+    """Extract variables dict into a ``.sh`` file of ``export`` statements.
 
-    Args:
-        variables_data (dict): The dictionary of variables.
-        base_name (str): The base for the filename (e.g., 'global' or a sanitized job name).
-        scripts_output_path (Path): The directory to save the new .sh file.
-        dry_run (bool): If True, don't write any files.
-
-    Returns:
-        str | None: The filename of the created variables script for sourcing, or None.
+    Returns the filename (not full path) of the created variables script, or ``None``.
     """
     if not variables_data or not isinstance(variables_data, dict):
         return None
 
-    variable_lines = []
+    variable_lines: list[str] = []
     for key, value in variables_data.items():
-        # Simple stringification for the value.
-        # Shell-safe escaping is complex; this handles basic cases by quoting.
         value_str = str(value).replace('"', '\\"')
         variable_lines.append(f'export {key}="{value_str}"')
 
     if not variable_lines:
         return None
 
-    # For global, filename is global_variables.sh. For jobs, it's job-name_variables.sh
     script_filename = f"{base_name}_variables.sh"
     script_filepath = scripts_output_path / script_filename
     full_script_content = "\n".join(variable_lines) + "\n"
 
-    logger.info(f"Shredding variables for '{base_name}' to '{script_filepath}'")
+    logger.info("Shredding variables for '%s' to '%s'", base_name, rel(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
         script_filepath.write_text(full_script_content, encoding="utf-8")
-        # Make the script executable for consistency, though not strictly required for sourcing
         script_filepath.chmod(0o755)
 
     return script_filename
 
 
 def shred_script_block(
+    *,
     script_content: list[str | Any] | str,
     job_name: str,
     script_key: str,
     scripts_output_path: Path,
+    yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
     job_vars_filename: str | None = None,
 ) -> tuple[str | None, str | None]:
-    """
-    Extracts a script block into a .sh file and returns the command to run it.
-    The generated script will source global and job-specific variable files if they exist.
+    """Extract a script block into a ``.sh`` file and return (script_path, bash_command).
 
-    Args:
-        script_content (Union[list[str], str]): The script content from the YAML.
-        job_name (str): The name of the job.
-        script_key (str): The key of the script ('script', 'before_script', etc.).
-        scripts_output_path (Path): The directory to save the new .sh file.
-        dry_run (bool): If True, don't write any files.
-        global_vars_filename (str, optional): Filename of the global variables script.
-        job_vars_filename (str, optional): Filename of the job-specific variables script.
-
-    Returns:
-        A tuple containing:
-        - The path to the new script file (or None if no script was created).
-        - The command to execute the new script (e.g., './scripts/my-job.sh').
+    The generated bash command will reference the script *relative to the YAML file*.
     """
     if not script_content:
         return None, None
 
     yaml = get_yaml()
 
-    # This block will handle converting CommentedSeq and its contents (which may include
-    # CommentedMap objects) into a simple list of strings.
-    processed_lines = []
-    if isinstance(script_content, str):
-        processed_lines.extend(script_content.splitlines())
-    elif script_content:  # It's a list-like object (e.g., ruamel.yaml.CommentedSeq)
-
-        for item in script_content:
-            if isinstance(item, str):
-                processed_lines.append(item)
-            elif item is not None:
-                # Any non-string item (like a CommentedMap that ruamel parsed from "key: value")
-                # should be dumped back into a string representation.
-                item_as_string = dump_inline_no_doc_markers(yaml, item)
-                if item_as_string:
-                    processed_lines.append(item_as_string)
-
-    # Filter out empty or whitespace-only lines from the final list
-    script_lines = [line for line in processed_lines if line and line.strip()]
-
+    script_lines = bashify_script_items(script_content, yaml)
     if not script_lines:
-        logger.debug(f"Skipping empty script block in job '{job_name}' for key '{script_key}'.")
+        logger.debug("Skipping empty script block in job '%s' for key '%s'.", job_name, script_key)
         return None, None
 
     script_filename = create_script_filename(job_name, script_key)
     script_filepath = scripts_output_path / script_filename
-    execution_command = f"./{script_filepath.relative_to(scripts_output_path.parent)}"
 
-    # Build the header with conditional sourcing for local execution
-    header_parts = [SHEBANG]
-    sourcing_block = []
+    # Build header with conditional sourcing for local execution
+    header_parts: list[str] = [SHEBANG]
+    sourcing_block: list[str] = []
     if global_vars_filename:
         sourcing_block.append(f"  . ./{global_vars_filename}")
     if job_vars_filename:
@@ -180,122 +185,137 @@ def shred_script_block(
     script_header = "\n".join(header_parts)
     full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
 
-    logger.info(f"Shredding script from '{job_name}:{script_key}' to '{script_filepath}'")
+    logger.info("Shredding script from '%s:%s' to '%s'", job_name, script_key, rel(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
         script_filepath.write_text(full_script_content, encoding="utf-8")
         script_filepath.chmod(0o755)
 
-    return str(script_filepath), execution_command
+    # Compute bash command relative to YAML
+    relative_path = Path(
+        script_filepath.resolve().relative_to(yaml_dir.resolve())
+        if script_filepath.resolve().is_relative_to(yaml_dir.resolve())  # py>=3.9
+        else script_filename
+    )
+    # Normalize to posix for YAML
+    rel_str = str(relative_path).replace("\\", "/")
+    if not rel_str.startswith(".") and "/" not in rel_str:
+        rel_str = f"./{rel_str}"
+    elif not rel_str.startswith("."):
+        rel_str = "./" + rel_str
+
+    return str(script_filepath), rel_str
 
 
 def process_shred_job(
+    *,
     job_name: str,
     job_data: dict,
     scripts_output_path: Path,
+    yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
 ) -> int:
-    """
-    Processes a single job definition to shred its script and variables blocks.
-
-    Args:
-        job_name (str): The name of the job.
-        job_data (dict): The dictionary representing the job's configuration.
-        scripts_output_path (Path): The directory to save shredded scripts.
-        dry_run (bool): If True, simulate without writing files.
-        global_vars_filename (str, optional): Filename of the global variables script.
-
-    Returns:
-        int: The number of files (scripts and variables) shredded from this job.
-    """
+    """Process a single job definition to shred its script and variables blocks."""
     shredded_count = 0
 
-    # Shred job-specific variables first
-    job_vars_filename = None
-    if "variables" in job_data and isinstance(job_data.get("variables"), dict):
+    # Job-specific variables first
+    job_vars_filename: str | None = None
+    if isinstance(job_data.get("variables"), dict):
         sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
         sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
         job_vars_filename = shred_variables_block(
-            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run
+            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run=dry_run
         )
         if job_vars_filename:
             shredded_count += 1
 
-    # Shred script blocks
-    script_keys = ["script", "before_script", "after_script", "pre_get_sources_script"]
-    for key in script_keys:
+    # Script-like keys to shred
+    for key in ("script", "before_script", "after_script", "pre_get_sources_script"):
         if key in job_data and job_data[key]:
             _, command = shred_script_block(
                 script_content=job_data[key],
                 job_name=job_name,
                 script_key=key,
                 scripts_output_path=scripts_output_path,
+                yaml_dir=yaml_dir,
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
                 job_vars_filename=job_vars_filename,
             )
             if command:
-                # Replace the script block with a single command to execute the new file
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
                 shredded_count += 1
     return shredded_count
 
 
-def run_shred_gitlab(
+# --- public entry points -----------------------------------------------------
+
+
+def iterate_yaml_files(root: Path) -> Iterable[Path]:
+    for path in root.rglob("*.yml"):
+        yield path
+    for path in root.rglob("*.yaml"):
+        yield path
+
+
+def run_shred_gitlab_file(
+    *,
     input_yaml_path: Path,
-    output_yaml_path: Path,
+    output_dir: Path,
     dry_run: bool = False,
-) -> tuple[int, int]:
-    """
-    Loads a GitLab CI YAML file, shreds all script and variable blocks into
-    separate .sh files, and saves the modified YAML.
+) -> tuple[int, int, Path]:
+    """Shred a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
 
-    Args:
-        input_yaml_path (Path): Path to the input .gitlab-ci.yml file.
-        output_yaml_path (Path): Path to write the modified .gitlab-ci.yml file.
-        dry_run (bool): If True, simulate the process without writing any files.
-
-    Returns:
-        A tuple containing:
-        - The total number of jobs processed.
-        - The total number of .sh files created (scripts and variables).
+    Returns (jobs_processed, total_files_created, output_yaml_path).
     """
     if not input_yaml_path.is_file():
         raise FileNotFoundError(f"Input YAML file not found: {input_yaml_path}")
 
-    if output_yaml_path.is_dir():
-        output_yaml_path = output_yaml_path / input_yaml_path.name
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)  # force directory
 
-    logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
     yaml = get_yaml()
     yaml.indent(mapping=2, sequence=4, offset=2)
+
+    logger.info("Loading GitLab CI configuration from: %s", rel(input_yaml_path))
     data = yaml.load(input_yaml_path)
+
+    # Layout: write YAML and scripts side-by-side under output_dir[/subdirs]
+    output_yaml_path = output_dir / input_yaml_path.name
+    scripts_dir = output_yaml_path.parent
+    yaml_dir = output_yaml_path.parent
 
     jobs_processed = 0
     total_files_created = 0
 
-    # First, process the top-level 'variables' block, if it exists.
-    global_vars_filename = None
-    if "variables" in data and isinstance(data.get("variables"), dict):
+    # Top-level variables -> global_variables.sh next to YAML
+    global_vars_filename: str | None = None
+    if isinstance(data.get("variables"), dict):
         logger.info("Processing global variables block.")
-        global_vars_filename = shred_variables_block(data["variables"], "global", output_yaml_path.parent, dry_run)
+        global_vars_filename = shred_variables_block(data["variables"], "global", scripts_dir, dry_run=dry_run)
         if global_vars_filename:
             total_files_created += 1
 
-    # Process all top-level keys that look like jobs
+    # Jobs
     for key, value in data.items():
-        # Heuristic: A job is a dictionary that contains a 'script' key.
         if isinstance(value, dict) and "script" in value:
-            logger.debug(f"Processing job: {key}")
+            logger.debug("Processing job: %s", key)
             jobs_processed += 1
-            total_files_created += process_shred_job(key, value, output_yaml_path.parent, dry_run, global_vars_filename)
+            total_files_created += process_shred_job(
+                job_name=key,
+                job_data=value,
+                scripts_output_path=scripts_dir,
+                yaml_dir=yaml_dir,
+                dry_run=dry_run,
+                global_vars_filename=global_vars_filename,
+            )
 
     if total_files_created > 0:
-        logger.info(f"Shredded {total_files_created} file(s) from {jobs_processed} job(s).")
+        logger.info("Shredded %s file(s) from %s job(s).", total_files_created, jobs_processed)
         if not dry_run:
-            logger.info(f"Writing modified YAML to: {output_yaml_path}")
+            logger.info("Writing modified YAML to: %s", rel(output_yaml_path))
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             with output_yaml_path.open("w", encoding="utf-8") as f:
                 yaml.dump(data, f)
@@ -306,4 +326,38 @@ def run_shred_gitlab(
         output_yaml_path.parent.mkdir(exist_ok=True)
         generate_mock_ci_variables_script(str(output_yaml_path.parent / "mock_ci_variables.sh"))
 
-    return jobs_processed, total_files_created
+    return jobs_processed, total_files_created, output_yaml_path
+
+
+def run_shred_gitlab_tree(
+    *,
+    input_root: Path,
+    output_dir: Path,
+    dry_run: bool = False,
+) -> tuple[int, int, int]:
+    """Shred *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
+
+    The relative directory structure under ``input_root`` is preserved in ``output_dir``.
+
+    Returns (yaml_files_processed, total_jobs_processed, total_files_created).
+    """
+    if not input_root.is_dir():
+        raise FileNotFoundError(f"Input folder not found: {input_root}")
+
+    yaml_files_processed = 0
+    total_jobs = 0
+    total_created = 0
+
+    for in_file in iterate_yaml_files(input_root):
+        rel_dir = in_file.parent.relative_to(input_root)
+        out_subdir = (output_dir / rel_dir).resolve()
+        jobs, created, _ = run_shred_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
+        yaml_files_processed += 1
+        total_jobs += jobs
+        total_created += created
+
+    return yaml_files_processed, total_jobs, total_created
+
+
+# Back-compat alias (old API name) – keep single-file semantics
+run_shred_gitlab = run_shred_gitlab_file

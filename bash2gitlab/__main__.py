@@ -44,11 +44,14 @@ from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.detect_drift import run_detect_drift
+from bash2gitlab.commands.doctor import run_doctor
+from bash2gitlab.commands.graph_all import generate_dependency_graph
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
-from bash2gitlab.commands.shred_all import run_shred_gitlab
+from bash2gitlab.commands.show_config import run_show_config
+from bash2gitlab.commands.shred_all import run_shred_gitlab_file, run_shred_gitlab_tree
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
@@ -198,26 +201,49 @@ def drift_handler(args: argparse.Namespace) -> int:
 
 
 def shred_handler(args: argparse.Namespace) -> int:
-    """Handler for the 'shred' command."""
+    """Handler for the 'shred' command (file *or* folder)."""
     logger.info("Starting bash2gitlab shredder...")
 
-    # Resolve the file and directory paths
-    in_file = Path(args.input_file).resolve()
-    out_file = Path(args.output_file).resolve()
+    out_dir = Path(args.output_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)  # force folder semantics
 
     dry_run = bool(args.dry_run)
 
     try:
-        jobs, scripts = run_shred_gitlab(input_yaml_path=in_file, output_yaml_path=out_file, dry_run=dry_run)
-
-        if dry_run:
-            logger.info(f"DRY RUN: Would have processed {jobs} jobs and created {scripts} script(s).")
+        if args.input_file:
+            jobs, scripts, out_yaml = run_shred_gitlab_file(
+                input_yaml_path=Path(args.input_file).resolve(),
+                output_dir=out_dir,
+                dry_run=dry_run,
+            )
+            if dry_run:
+                logger.info("DRY RUN: Would have processed %s jobs and created %s script(s).", jobs, scripts)
+            else:
+                logger.info("✅ Processed %s jobs and created %s script(s).", jobs, scripts)
+                logger.info("Modified YAML written to: %s", out_yaml)
         else:
-            logger.info(f"✅ Successfully processed {jobs} jobs and created {scripts} script(s).")
-            logger.info(f"Modified YAML written to: {out_file}")
+            yml_count, jobs, scripts = run_shred_gitlab_tree(
+                input_root=Path(args.input_folder).resolve(),
+                output_dir=out_dir,
+                dry_run=dry_run,
+            )
+            if dry_run:
+                logger.info(
+                    "DRY RUN: Would have processed %s YAML file(s), %s jobs, and created %s script(s).",
+                    yml_count,
+                    jobs,
+                    scripts,
+                )
+            else:
+                logger.info(
+                    "✅ Processed %s YAML file(s), %s jobs, and created %s script(s).",
+                    yml_count,
+                    jobs,
+                    scripts,
+                )
         return 0
     except FileNotFoundError as e:
-        logger.error(f"❌ An error occurred: {e}")
+        logger.error("❌ An error occurred: %s", e)
         return 10
 
 
@@ -299,6 +325,34 @@ def uninstall_precommit_handler(args: argparse.Namespace) -> int:
         return 200
 
 
+def doctor_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'doctor' command."""
+    # The run_doctor function already prints messages and returns an exit code.
+    return run_doctor()
+
+
+def graph_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'graph' command."""
+    in_dir = Path(args.input_dir).resolve()
+    if not in_dir.is_dir():
+        logger.error(f"Input directory does not exist or is not a directory: {in_dir}")
+        return 10
+
+    dot_output = generate_dependency_graph(in_dir)
+    if dot_output:
+        print(dot_output)
+        return 0
+    else:
+        logger.warning("No graph data generated. Check input directory and file structure.")
+        return 1
+
+
+def show_config_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'show-config' command."""
+    # The run_show_config function already prints messages and returns an exit code.
+    return run_show_config()
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared CLI flags to a subparser."""
     parser.add_argument(
@@ -372,19 +426,35 @@ def main() -> int:
 
     # --- Shred Command ---
     shred_parser = subparsers.add_parser(
-        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
+        "shred",
+        help="Shred GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
+        description=(
+            "Use either --in-file (single YAML) or --in-folder (process tree).\n"
+            "--out must be a directory; output YAML and scripts are written side-by-side."
+        ),
     )
-    shred_parser.add_argument(
-        "--in",
+
+    group = shred_parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--in-file",
         dest="input_file",
-        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
+        help="Input GitLab CI YAML file to shred (e.g., .gitlab-ci.yml).",
     )
+    group.add_argument(
+        "--in-folder",
+        dest="input_folder",
+        help="Folder to recursively shred (*.yml, *.yaml).",
+    )
+
     shred_parser.add_argument(
         "--out",
-        dest="output_file",
-        help="Output path for the modified GitLab CI file.",
+        dest="output_dir",
+        required=True,
+        help="Output directory (will be created). YAML and scripts are written here.",
     )
+
     add_common_arguments(shred_parser)
+
     shred_parser.set_defaults(func=shred_handler)
 
     # detect drift command
@@ -582,6 +652,33 @@ def main() -> int:
     uninstall_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     uninstall_pc.set_defaults(func=uninstall_precommit_handler)
 
+    # --- Doctor Command ---
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Run a series of health checks on the project and environment."
+    )
+    add_common_arguments(doctor_parser)
+    doctor_parser.set_defaults(func=doctor_handler)
+
+    # --- Graph Command ---
+    graph_parser = subparsers.add_parser(
+        "graph", help="Generate a DOT language dependency graph of your project's YAML and script files."
+    )
+    graph_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=not bool(config.input_dir),
+        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
+    )
+    add_common_arguments(graph_parser)
+    graph_parser.set_defaults(func=graph_handler)
+
+    # --- Show Config Command ---
+    show_config_parser = subparsers.add_parser(
+        "show-config", help="Display the current bash2gitlab configuration and its sources."
+    )
+    add_common_arguments(show_config_parser)
+    show_config_parser.set_defaults(func=show_config_handler)
+
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
     argcomplete.autocomplete(parser)
@@ -614,7 +711,7 @@ def main() -> int:
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
             lint_parser.error("argument --out is required")
-    # install-precommit / uninstall-precommit do not merge config
+    # install-precommit / uninstall-precommit / doctor / graph / show-config do not merge config
 
     # Merge boolean flags
     args.verbose = getattr(args, "verbose", False) or config.verbose or False

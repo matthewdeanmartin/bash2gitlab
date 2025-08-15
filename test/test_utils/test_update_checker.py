@@ -1,7 +1,7 @@
 import os
 from unittest import mock
 
-from bash2gitlab.utils.update_checker import _can_use_color, _Color, check_for_updates, reset_cache
+from bash2gitlab.utils.update_checker import _Color, can_use_color, check_for_updates, reset_cache
 
 
 def test_finds_newer_version():
@@ -83,7 +83,7 @@ def test_prerelease_check_finds_newer():
         assert "A new version of pandas is available" in result
 
 
-@mock.patch("bash2gitlab.utils.update_checker._can_use_color", return_value=True)
+@mock.patch("bash2gitlab.utils.update_checker.can_use_color", return_value=True)
 def test_color_output_enabled(mock_color):
     """Test that ANSI color codes are present when color is enabled."""
     reset_cache("requests")
@@ -97,7 +97,7 @@ def test_color_output_enabled(mock_color):
 def test_color_output_disabled_in_ci():
     """Test that color is disabled when a CI environment variable is set."""
     reset_cache("httpx")
-    assert not _can_use_color()
+    assert not can_use_color()
     result = check_for_updates(package_name="httpx", current_version="0.1.0")
     assert result is not None
     c = _Color()

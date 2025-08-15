@@ -8,11 +8,14 @@
 │   ├── compile_all.py
 │   ├── compile_not_bash.py
 │   ├── detect_drift.py
+│   ├── doctor.py
+│   ├── graph_all.py
 │   ├── init_project.py
 │   ├── lint_all.py
 │   ├── map_commit.py
 │   ├── map_deploy.py
 │   ├── precommit.py
+│   ├── show_config.py
 │   └── shred_all.py
 ├── config.py
 ├── hookspecs.py
@@ -24,6 +27,7 @@
 │   ├── logging_config.py
 │   ├── mock_ci_vars.py
 │   ├── parse_bash.py
+│   ├── terminal_colors.py
 │   ├── update_checker.py
 │   ├── utils.py
 │   ├── yaml_factory.py
@@ -63,7 +67,7 @@ class SourceSecurityError(RuntimeError):
     pass
 
 
-def _is_relative_to(child: Path, parent: Path) -> bool:
+def is_relative_to(child: Path, parent: Path) -> bool:
     """Py<3.9-compatible variant of Path.is_relative_to()."""
     # pylint: disable=broad-exception-caught
     try:
@@ -73,7 +77,7 @@ def _is_relative_to(child: Path, parent: Path) -> bool:
         return False
 
 
-def _secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
+def secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
     """
     Resolve 'user_path' (which may contain ../ and symlinks) against base_dir,
     then ensure the final real path is inside allowed_root.
@@ -87,7 +91,7 @@ def _secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
     # Ensure the real path (after following symlinks) is within allowed_root
     allowed_root = allowed_root.resolve(strict=True)
     if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS"):
-        if not _is_relative_to(candidate, allowed_root):
+        if not is_relative_to(candidate, allowed_root):
             raise SourceSecurityError(f"Refusing to source '{candidate}': escapes allowed root '{allowed_root}'.")
     return candidate
 
@@ -154,7 +158,7 @@ def inline_bash_source(
 
     # Normalize and security-check the entry script itself
     try:
-        main_script_path = _secure_join(
+        main_script_path = secure_join(
             base_dir=main_script_path.parent if main_script_path.is_absolute() else Path.cwd(),
             user_path=str(main_script_path),
             allowed_root=allowed_root,
@@ -185,7 +189,7 @@ def inline_bash_source(
                     # A source command was found, process the sourced file
                     sourced_script_name = match.group("path")
                     try:
-                        sourced_script_path = _secure_join(
+                        sourced_script_path = secure_join(
                             base_dir=main_script_path.parent,
                             user_path=sourced_script_name,
                             allowed_root=allowed_root,
@@ -233,7 +237,7 @@ from pathlib import Path
 
 from pluggy import HookimplMarker
 
-from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
+from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
 from bash2gitlab.utils.parse_bash import extract_script_path as _extract
 
 hookimpl = HookimplMarker("bash2gitlab")
@@ -246,7 +250,7 @@ class Defaults:
 
     @hookimpl(tryfirst=True)  # firstresult=True
     def inline_command(self, line: str, scripts_root: Path) -> list[str] | None:
-        return _maybe_inline_interpreter_command(line, scripts_root)
+        return maybe_inline_interpreter_command(line, scripts_root)
 ```
 ## File: config.py
 ```python
@@ -291,11 +295,11 @@ class _Config:
             config_path_override (Path | None): If provided, this specific config file
                 will be loaded, bypassing the normal search. For testing.
         """
-        self._config_path_override = config_path_override
-        self._file_config: dict[str, Any] = self._load_file_config()
-        self._env_config: dict[str, str] = self._load_env_config()
+        self.config_path_override = config_path_override
+        self.file_config: dict[str, Any] = self.load_file_config()
+        self.env_config: dict[str, str] = self.load_env_config()
 
-    def _find_config_file(self) -> Path | None:
+    def find_config_file(self) -> Path | None:
         """Searches for a configuration file in the current directory and its parents."""
         current_dir = Path.cwd()
         for directory in [current_dir, *current_dir.parents]:
@@ -306,9 +310,9 @@ class _Config:
                     return config_path
         return None
 
-    def _load_file_config(self) -> dict[str, Any]:
+    def load_file_config(self) -> dict[str, Any]:
         """Loads configuration from the first TOML file found or a test override."""
-        config_path = self._config_path_override or self._find_config_file()
+        config_path = self.config_path_override or self.find_config_file()
         if not config_path:
             return {}
 
@@ -337,7 +341,7 @@ class _Config:
             logger.error(f"Error reading file {config_path}: {e}")
             return {}
 
-    def _load_env_config(self) -> dict[str, str]:
+    def load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
         file_config = {}
         for key, value in os.environ.items():
@@ -347,22 +351,22 @@ class _Config:
                 logger.debug(f"Loaded from environment: {config_key}")
         return file_config
 
-    def _get_str(self, key: str) -> str | None:
+    def get_str(self, key: str) -> str | None:
         """Gets a string value, respecting precedence."""
-        value = self._env_config.get(key)
+        value = self.env_config.get(key)
         if value is not None:
             return value
 
-        value = self._file_config.get(key)
+        value = self.file_config.get(key)
         return str(value) if value is not None else None
 
-    def _get_bool(self, key: str) -> bool | None:
+    def get_bool(self, key: str) -> bool | None:
         """Gets a boolean value, respecting precedence."""
-        value = self._env_config.get(key)
+        value = self.env_config.get(key)
         if value is not None:
             return value.lower() in ("true", "1", "t", "y", "yes")
 
-        value = self._file_config.get(key)
+        value = self.file_config.get(key)
         if value is not None:
             if not isinstance(value, bool):
                 logger.warning(f"Config value for '{key}' is not a boolean. Coercing to bool.")
@@ -370,9 +374,9 @@ class _Config:
 
         return None
 
-    def _get_int(self, key: str) -> int | None:
+    def get_int(self, key: str) -> int | None:
         """Gets an integer value, respecting precedence."""
-        value = self._env_config.get(key)
+        value = self.env_config.get(key)
         if value is not None:
             try:
                 return int(value)
@@ -380,7 +384,7 @@ class _Config:
                 logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
                 return None
 
-        value = self._file_config.get(key)
+        value = self.file_config.get(key)
         if value is not None:
             try:
                 return int(value)
@@ -393,44 +397,44 @@ class _Config:
     # --- Compile Command Properties ---
     @property
     def input_dir(self) -> str | None:
-        return self._get_str("input_dir")
+        return self.get_str("input_dir")
 
     @property
     def output_dir(self) -> str | None:
-        return self._get_str("output_dir")
+        return self.get_str("output_dir")
 
     @property
     def parallelism(self) -> int | None:
-        return self._get_int("parallelism")
+        return self.get_int("parallelism")
 
     # --- Shred Command Properties ---
     @property
     def input_file(self) -> str | None:
-        return self._get_str("input_file")
+        return self.get_str("input_file")
 
     @property
     def output_file(self) -> str | None:
-        return self._get_str("output_file")
+        return self.get_str("output_file")
 
     # --- Shared Properties ---
     @property
     def dry_run(self) -> bool | None:
-        return self._get_bool("dry_run")
+        return self.get_bool("dry_run")
 
     @property
     def verbose(self) -> bool | None:
-        return self._get_bool("verbose")
+        return self.get_bool("verbose")
 
     @property
     def quiet(self) -> bool | None:
-        return self._get_bool("quiet")
+        return self.get_bool("quiet")
 
 
 # Singleton instance for the rest of the application to use.
 config = _Config()
 
 
-def _reset_for_testing(config_path_override: Path | None = None):
+def reset_for_testing(config_path_override: Path | None = None):
     """
     Resets the singleton config instance. For testing purposes only.
     Allows specifying a direct path to a config file.
@@ -666,7 +670,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.11"
+__version__ = "0.8.12"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -722,11 +726,14 @@ from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.detect_drift import run_detect_drift
+from bash2gitlab.commands.doctor import run_doctor
+from bash2gitlab.commands.graph_all import generate_dependency_graph
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
-from bash2gitlab.commands.shred_all import run_shred_gitlab
+from bash2gitlab.commands.show_config import run_show_config
+from bash2gitlab.commands.shred_all import run_shred_gitlab_file, run_shred_gitlab_tree
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
@@ -876,26 +883,49 @@ def drift_handler(args: argparse.Namespace) -> int:
 
 
 def shred_handler(args: argparse.Namespace) -> int:
-    """Handler for the 'shred' command."""
+    """Handler for the 'shred' command (file *or* folder)."""
     logger.info("Starting bash2gitlab shredder...")
 
-    # Resolve the file and directory paths
-    in_file = Path(args.input_file).resolve()
-    out_file = Path(args.output_file).resolve()
+    out_dir = Path(args.output_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)  # force folder semantics
 
     dry_run = bool(args.dry_run)
 
     try:
-        jobs, scripts = run_shred_gitlab(input_yaml_path=in_file, output_yaml_path=out_file, dry_run=dry_run)
-
-        if dry_run:
-            logger.info(f"DRY RUN: Would have processed {jobs} jobs and created {scripts} script(s).")
+        if args.input_file:
+            jobs, scripts, out_yaml = run_shred_gitlab_file(
+                input_yaml_path=Path(args.input_file).resolve(),
+                output_dir=out_dir,
+                dry_run=dry_run,
+            )
+            if dry_run:
+                logger.info("DRY RUN: Would have processed %s jobs and created %s script(s).", jobs, scripts)
+            else:
+                logger.info("✅ Processed %s jobs and created %s script(s).", jobs, scripts)
+                logger.info("Modified YAML written to: %s", out_yaml)
         else:
-            logger.info(f"✅ Successfully processed {jobs} jobs and created {scripts} script(s).")
-            logger.info(f"Modified YAML written to: {out_file}")
+            yml_count, jobs, scripts = run_shred_gitlab_tree(
+                input_root=Path(args.input_folder).resolve(),
+                output_dir=out_dir,
+                dry_run=dry_run,
+            )
+            if dry_run:
+                logger.info(
+                    "DRY RUN: Would have processed %s YAML file(s), %s jobs, and created %s script(s).",
+                    yml_count,
+                    jobs,
+                    scripts,
+                )
+            else:
+                logger.info(
+                    "✅ Processed %s YAML file(s), %s jobs, and created %s script(s).",
+                    yml_count,
+                    jobs,
+                    scripts,
+                )
         return 0
     except FileNotFoundError as e:
-        logger.error(f"❌ An error occurred: {e}")
+        logger.error("❌ An error occurred: %s", e)
         return 10
 
 
@@ -977,6 +1007,34 @@ def uninstall_precommit_handler(args: argparse.Namespace) -> int:
         return 200
 
 
+def doctor_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'doctor' command."""
+    # The run_doctor function already prints messages and returns an exit code.
+    return run_doctor()
+
+
+def graph_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'graph' command."""
+    in_dir = Path(args.input_dir).resolve()
+    if not in_dir.is_dir():
+        logger.error(f"Input directory does not exist or is not a directory: {in_dir}")
+        return 10
+
+    dot_output = generate_dependency_graph(in_dir)
+    if dot_output:
+        print(dot_output)
+        return 0
+    else:
+        logger.warning("No graph data generated. Check input directory and file structure.")
+        return 1
+
+
+def show_config_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'show-config' command."""
+    # The run_show_config function already prints messages and returns an exit code.
+    return run_show_config()
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared CLI flags to a subparser."""
     parser.add_argument(
@@ -1050,19 +1108,35 @@ def main() -> int:
 
     # --- Shred Command ---
     shred_parser = subparsers.add_parser(
-        "shred", help="Shred a GitLab CI file, extracting inline scripts into separate .sh files."
+        "shred",
+        help="Shred GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
+        description=(
+            "Use either --in-file (single YAML) or --in-folder (process tree).\n"
+            "--out must be a directory; output YAML and scripts are written side-by-side."
+        ),
     )
-    shred_parser.add_argument(
-        "--in",
+
+    group = shred_parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--in-file",
         dest="input_file",
-        help="Input GitLab CI file to shred (e.g., .gitlab-ci.yml).",
+        help="Input GitLab CI YAML file to shred (e.g., .gitlab-ci.yml).",
     )
+    group.add_argument(
+        "--in-folder",
+        dest="input_folder",
+        help="Folder to recursively shred (*.yml, *.yaml).",
+    )
+
     shred_parser.add_argument(
         "--out",
-        dest="output_file",
-        help="Output path for the modified GitLab CI file.",
+        dest="output_dir",
+        required=True,
+        help="Output directory (will be created). YAML and scripts are written here.",
     )
+
     add_common_arguments(shred_parser)
+
     shred_parser.set_defaults(func=shred_handler)
 
     # detect drift command
@@ -1260,6 +1334,33 @@ def main() -> int:
     uninstall_pc.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
     uninstall_pc.set_defaults(func=uninstall_precommit_handler)
 
+    # --- Doctor Command ---
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Run a series of health checks on the project and environment."
+    )
+    add_common_arguments(doctor_parser)
+    doctor_parser.set_defaults(func=doctor_handler)
+
+    # --- Graph Command ---
+    graph_parser = subparsers.add_parser(
+        "graph", help="Generate a DOT language dependency graph of your project's YAML and script files."
+    )
+    graph_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=not bool(config.input_dir),
+        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
+    )
+    add_common_arguments(graph_parser)
+    graph_parser.set_defaults(func=graph_handler)
+
+    # --- Show Config Command ---
+    show_config_parser = subparsers.add_parser(
+        "show-config", help="Display the current bash2gitlab configuration and its sources."
+    )
+    add_common_arguments(show_config_parser)
+    show_config_parser.set_defaults(func=show_config_handler)
+
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
     argcomplete.autocomplete(parser)
@@ -1292,7 +1393,7 @@ def main() -> int:
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
             lint_parser.error("argument --out is required")
-    # install-precommit / uninstall-precommit do not merge config
+    # install-precommit / uninstall-precommit / doctor / graph / show-config do not merge config
 
     # Merge boolean flags
     args.verbose = getattr(args, "verbose", False) or config.verbose or False
@@ -1335,7 +1436,7 @@ logger = logging.getLogger(__name__)
 # --- Helpers -----------------------------------------------------------------
 
 
-def _partner_hash_file(base_file: Path) -> Path:
+def partner_hash_file(base_file: Path) -> Path:
     """Return the expected .hash file for a target file.
 
     Example: foo/bar.yml -> foo/bar.yml.hash
@@ -1343,7 +1444,7 @@ def _partner_hash_file(base_file: Path) -> Path:
     return base_file.with_suffix(base_file.suffix + ".hash")
 
 
-def _base_from_hash(hash_file: Path) -> Path:
+def base_from_hash(hash_file: Path) -> Path:
     """Return the expected base file for a .hash file.
 
     Works even on older Python without Path.removesuffix().
@@ -1368,11 +1469,11 @@ def iter_target_pairs(root: Path) -> Iterator[tuple[Path, Path]]:
         if p.is_dir():
             continue
         if p.name.endswith(".hash"):
-            base = _base_from_hash(p)
+            base = base_from_hash(p)
             if base.exists() and base.is_file():
                 yield (base, p)
         else:
-            hashf = _partner_hash_file(p)
+            hashf = partner_hash_file(p)
             if hashf.exists() and hashf.is_file():
                 # Pair will also be seen when rglob hits the .hash file; skip duplicates
                 continue
@@ -1399,14 +1500,14 @@ def list_stray_files(root: Path) -> list[Path]:
             pass
 
         if p.name.endswith(".hash"):
-            base = _base_from_hash(p)
+            base = base_from_hash(p)
             if base.exists():
                 paired_bases.add(base)
                 paired_hashes.add(p)
             else:
                 strays.append(p)
         else:
-            hashf = _partner_hash_file(p)
+            hashf = partner_hash_file(p)
             if hashf.exists():
                 paired_bases.add(p)
                 paired_hashes.add(hashf)
@@ -1422,11 +1523,11 @@ def list_stray_files(root: Path) -> list[Path]:
 # --- Hash verification --------------------------------------------------------
 
 
-def _read_current_text(path: Path) -> str:
+def read_current_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _read_hash_text(hash_file: Path) -> str | None:
+def read_hash_text(hash_file: Path) -> str | None:
     """Decode base64 content of *hash_file* to text.
 
     Returns None if decoding fails.
@@ -1448,10 +1549,10 @@ def is_target_unchanged(base_file: Path, hash_file: Path) -> bool | None:
         - False if they differ
         - None if the hash file cannot be decoded
     """
-    expected = _read_hash_text(hash_file)
+    expected = read_hash_text(hash_file)
     if expected is None:
         return None
-    current = _read_current_text(base_file)
+    current = read_current_text(base_file)
     return current == expected
 
 
@@ -1480,7 +1581,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
     for p in root.rglob("*.hash"):
         if p.is_dir():
             continue
-        base = _base_from_hash(p)
+        base = base_from_hash(p)
         if not base.exists() or not base.is_file():
             # Stray .hash; leave it
             continue
@@ -1795,7 +1896,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
-from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
+from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
@@ -1826,7 +1927,7 @@ BANNER = f"""# DO NOT EDIT
 """
 
 
-def _as_items(
+def as_items(
     seq_or_list: list[TaggedScalar | str] | CommentedSeq | str,
 ) -> tuple[list[Any], bool, CommentedSeq | None]:
     """Normalize input to a Python list of items.
@@ -1849,7 +1950,7 @@ def _as_items(
     return list(seq_or_list), False, None
 
 
-def _rebuild_seq_like(
+def rebuild_seq_like(
     processed: list[Any],
     was_commented_seq: bool,
     original_seq: CommentedSeq | None,
@@ -1878,7 +1979,7 @@ def _rebuild_seq_like(
     return new_seq
 
 
-def _compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any]:
+def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any]:
     """
     Merge consecutive plain strings into a single LiteralScalarString,
     leaving YAML nodes (e.g., TaggedScalar) as boundaries.
@@ -1886,7 +1987,7 @@ def _compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[An
     out: list[Any] = []
     buf: list[str] = []
 
-    def _flush():
+    def flush():
         nonlocal buf, out
         if not buf:
             return
@@ -1903,10 +2004,10 @@ def _compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[An
             buf.append(it)
             continue
         # Boundary (TaggedScalar or any non-str ruamel node): flush and keep node
-        _flush()
+        flush()
         out.append(it)
 
-    _flush()
+    flush()
     return out
 
 
@@ -1932,7 +2033,7 @@ def process_script_list(
         ``LiteralScalarString`` when safe to collapse; otherwise returns a list or
         ``CommentedSeq`` (matching the input style) to preserve YAML features.
     """
-    items, was_commented_seq, original_seq = _as_items(script_list)
+    items, was_commented_seq, original_seq = as_items(script_list)
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
@@ -1958,7 +2059,10 @@ def process_script_list(
             script_path_str = extract_script_path(item)
 
         if script_path_str:
-            rel_path = script_path_str.strip().lstrip("./")
+            if script_path_str.strip().startswith("./") or script_path_str.strip().startswith("\\."):
+                rel_path = script_path_str.strip()[2:]
+            else:
+                rel_path = script_path_str.strip()
             script_path = scripts_root / rel_path
             try:
                 bash_code = read_bash_script(script_path)
@@ -1983,7 +2087,7 @@ def process_script_list(
             if alt:
                 processed_items.extend(alt)
             else:
-                interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
+                interp_inline = maybe_inline_interpreter_command(item, scripts_root)
                 if interp_inline and isinstance(interp_inline, list):
                     processed_items.extend(interp_inline)
                 elif interp_inline and isinstance(interp_inline, str):
@@ -2005,10 +2109,10 @@ def process_script_list(
 
     # Preserve sequence shape; if input was a CommentedSeq, return one
     # Case 2: Keep sequence shape but compact adjacent plain strings into a single literal
-    compact_items = _compact_runs_to_literal(processed_items, min_lines=2)
+    compact_items = compact_runs_to_literal(processed_items, min_lines=2)
 
     # Preserve sequence style (CommentedSeq vs list) to match input
-    return _rebuild_seq_like(compact_items, was_commented_seq, original_seq)
+    return rebuild_seq_like(compact_items, was_commented_seq, original_seq)
 
 
 def process_job(job_data: dict, scripts_root: Path) -> int:
@@ -2146,7 +2250,7 @@ def write_yaml_and_hash(
     logger.debug(f"Updated hash file: {short_path(hash_file)}")
 
 
-def _unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
+def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
     """Return a unified diff between *old* and *new* content with filenames.
 
     keepends=True preserves newline structure for line-accurate diffs in logs.
@@ -2161,7 +2265,7 @@ def _unified_diff(old: str, new: str, path: Path, from_label: str = "current", t
     )
 
 
-def _diff_stats(diff_text: str) -> tuple[int, int, int]:
+def diff_stats(diff_text: str) -> tuple[int, int, int]:
     """Compute (changed_lines, insertions, deletions) from unified diff text.
 
     We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
@@ -2196,10 +2300,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         current_content = output_file.read_text(encoding="utf-8")
 
         if not yaml_is_same(current_content, new_content):
-            diff_text = _unified_diff(
+            diff_text = unified_diff(
                 normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
             )
-            changed, ins, rem = _diff_stats(diff_text)
+            changed, ins, rem = diff_stats(diff_text)
             logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
             logger.debug(diff_text)
             return True
@@ -2262,7 +2366,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     is_same = yaml_is_same(last_known_content, current_content)
     # current_doc != last_known_doc
     if is_current_corrupt or (current_doc != last_known_doc and not is_same):
-        diff_text = _unified_diff(
+        diff_text = unified_diff(
             normalize_for_compare(last_known_content),
             normalize_for_compare(current_content),
             output_file,
@@ -2299,10 +2403,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # Now, we check if the *newly generated* content is different from the current content.
     if not yaml_is_same(current_content, new_content):
         # NEW: log diff + counts before writing
-        diff_text = _unified_diff(
+        diff_text = unified_diff(
             normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
         )
-        changed, ins, rem = _diff_stats(diff_text)
+        changed, ins, rem = diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
             short_path(output_file),
@@ -2319,7 +2423,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     return False
 
 
-def _compile_single_file(
+def compile_single_file(
     source_path: Path,
     output_file: Path,
     scripts_path: Path,
@@ -2402,12 +2506,12 @@ def run_compile_all(
             for src, out, variables, label in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
-            results = pool.starmap(_compile_single_file, args_list)
+            results = pool.starmap(compile_single_file, args_list)
         total_inlined_count += sum(inlined for inlined, _ in results)
         written_files_count += sum(written for _, written in results)
     else:
         for src, out, variables, label in files_to_process:
-            inlined_for_file, wrote = _compile_single_file(
+            inlined_for_file, wrote = compile_single_file(
                 src, out, uncompiled_path, variables, uncompiled_path, dry_run, label
             )
             total_inlined_count += inlined_for_file
@@ -2445,7 +2549,7 @@ import os
 import re
 from pathlib import Path
 
-__all__ = ["_maybe_inline_interpreter_command"]
+__all__ = ["maybe_inline_interpreter_command"]
 
 logger = logging.getLogger(__name__)
 
@@ -2556,14 +2660,14 @@ _INTERP_LINE = re.compile(
 )
 
 
-def _shell_single_quote(s: str) -> str:
+def shell_single_quote(s: str) -> str:
     """Safely single-quote *s* for POSIX shell.
     Turns: abc'def  ->  'abc'"'"'def'
     """
     return "'" + s.replace("'", "'\"'\"'") + "'"
 
 
-def _normalize_interp(interp: str) -> str:
+def normalize_interp(interp: str) -> str:
     """Map interpreter aliases to their base key for lookups.
     e.g., python3.12 → python.
     """
@@ -2572,14 +2676,14 @@ def _normalize_interp(interp: str) -> str:
     return interp
 
 
-def _resolve_interpreter_target(
+def resolve_interpreter_target(
     interp: str, module: str | None, path_str: str | None, scripts_root: Path
 ) -> tuple[Path, str]:
     """Resolve the target file and a display label from either a module or a path.
     For python -m, map "a.b.c" -> a/b/c.py
     """
     if module:
-        if not _normalize_interp(interp) == "python":
+        if not normalize_interp(interp) == "python":
             raise ValueError(f"-m is only supported for python, got: {interp}")
         rel = Path(module.replace(".", "/") + ".py")
         return scripts_root / rel, f"python -m {module}"
@@ -2590,17 +2694,17 @@ def _resolve_interpreter_target(
     raise ValueError("Neither module nor path provided.")
 
 
-def _is_reasonable_ext(interp: str, file: Path) -> bool:
+def is_reasonable_ext(interp: str, file: Path) -> bool:
     if ALLOW_ANY_EXT:
         return True
-    base = _normalize_interp(interp)
+    base = normalize_interp(interp)
     exts = _INTERPRETER_EXTS.get(base)
     if not exts:
         return True
     return file.suffix.lower() in exts
 
 
-def _read_script_bytes(p: Path) -> str | None:
+def read_script_bytes(p: Path) -> str | None:
     try:
         text = p.read_text(encoding="utf-8")
     # reading local workspace file
@@ -2617,7 +2721,7 @@ def _read_script_bytes(p: Path) -> str | None:
     return text
 
 
-def _build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | None) -> str | None:
+def build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | None) -> str | None:
     if flag is None:
         return None
     r = rest or ""
@@ -2629,7 +2733,7 @@ def _build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | 
     return f"{interp} {flag} {quoted}{r}"
 
 
-def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
+def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
     """If *line* looks like an interpreter execution we can inline, return:
     [BEGIN_MARK, <interp -flag 'code'>, END_MARK]. Otherwise return None.
     """
@@ -2638,13 +2742,13 @@ def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str
         return None
 
     interp_raw = m.group("interp")
-    interp = _normalize_interp(interp_raw)
+    interp = normalize_interp(interp_raw)
     module = m.group("module")
     path_str = m.group("path")
     rest = m.group("rest") or ""
 
     try:
-        target_file, shown = _resolve_interpreter_target(interp_raw, module, path_str, scripts_root)
+        target_file, shown = resolve_interpreter_target(interp_raw, module, path_str, scripts_root)
     except ValueError as e:
         logger.debug("Interpreter inline skip: %s", e)
         return None
@@ -2653,15 +2757,15 @@ def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str
         logger.warning("Could not inline %s: file not found at %s; preserving original.", shown, target_file)
         return None
 
-    if not _is_reasonable_ext(interp, target_file):
+    if not is_reasonable_ext(interp, target_file):
         logger.debug("Interpreter inline skip: extension %s not expected for %s", target_file.suffix, interp)
         return None
 
-    code = _read_script_bytes(target_file)
+    code = read_script_bytes(target_file)
     if code is None:
         return None
 
-    quoted = _shell_single_quote(code)
+    quoted = shell_single_quote(code)
 
     # size guard
     if len(quoted) > MAX_INLINE_LEN:
@@ -2678,7 +2782,7 @@ def _maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str
         logger.debug("Interpreter inline skip: no eval flag known for %s", interp)
         return None
 
-    inlined_cmd = _build_eval_command(interp, flag, quoted, rest)
+    inlined_cmd = build_eval_command(interp, flag, quoted, rest)
     if inlined_cmd is None:
         return None
 
@@ -2710,55 +2814,18 @@ from __future__ import annotations
 import base64
 import difflib
 import logging
-import os
 from collections.abc import Generator
 from pathlib import Path
 
 __all__ = ["run_detect_drift"]
 
-
-# ANSI color codes for pretty printing the diff.
-# This class now checks for NO_COLOR and CI environment variables to automatically
-# disable color and other ANSI escape codes for better accessibility and CI/CD logs.
-class Colors:
-    # The NO_COLOR spec (no-color.org) and the common 'CI' variable for Continuous Integration
-    # environments are used to disable ANSI escape codes.
-    _enabled = "NO_COLOR" not in os.environ and "CI" not in os.environ
-
-    if _enabled:
-        HEADER = "\033[95m"
-        OKBLUE = "\033[94m"
-        OKCYAN = "\033[96m"
-        OKGREEN = "\033[92m"
-        WARNING = "\033[93m"
-        FAIL = "\033[91m"
-        ENDC = "\033[0m"
-        BOLD = "\033[1m"
-        UNDERLINE = "\033[4m"
-        RED_BG = "\033[41m"
-        GREEN_BG = "\033[42m"
-    else:
-        # If colors are disabled, all attributes are empty strings.
-        HEADER, OKBLUE, OKCYAN, OKGREEN, WARNING, FAIL, ENDC, BOLD, UNDERLINE, RED_BG, GREEN_BG = (
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        )
-
+from bash2gitlab.utils.terminal_colors import Colors
 
 # Setting up a logger for this module. The calling application can configure the handler.
 logger = logging.getLogger(__name__)
 
 
-def _decode_hash_content(hash_file: Path) -> str | None:
+def decode_hash_content(hash_file: Path) -> str | None:
     """
     Reads and decodes the base64 content of a .hash file.
 
@@ -2783,7 +2850,7 @@ def _decode_hash_content(hash_file: Path) -> str | None:
         return None
 
 
-def _get_source_file_from_hash(hash_file: Path) -> Path:
+def get_source_file_from_hash(hash_file: Path) -> Path:
     """
     Derives the original source file path from a hash file path.
     Example: /path/to/file.yml.hash -> /path/to/file.yml
@@ -2803,7 +2870,7 @@ def _get_source_file_from_hash(hash_file: Path) -> Path:
     return Path(s)
 
 
-def _generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
+def generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
     """
     Generates a colorized (if enabled), unified diff string between two content strings.
 
@@ -2884,14 +2951,14 @@ def run_detect_drift(
     print(f"Found {len(hash_files)} hash file(s). Checking for drift...")
 
     for hash_file in hash_files:
-        source_file = _get_source_file_from_hash(hash_file)
+        source_file = get_source_file_from_hash(hash_file)
 
         if not source_file.exists():
             logger.error(f"Drift check failed: Source file '{source_file}' is missing for hash file '{hash_file}'.")
             error_count += 1
             continue
 
-        decoded_content = _decode_hash_content(hash_file)
+        decoded_content = decode_hash_content(hash_file)
         if decoded_content is None:
             # Error already logged in the helper function
             error_count += 1
@@ -2906,7 +2973,7 @@ def run_detect_drift(
 
         if current_content != decoded_content:
             drift_detected_count += 1
-            diff_text = _generate_pretty_diff(current_content, decoded_content, source_file)
+            diff_text = generate_pretty_diff(current_content, decoded_content, source_file)
 
             # Print a clear, formatted report for the user, adapting to color support.
             if Colors.ENDC:  # Check if colors are enabled
@@ -2956,6 +3023,354 @@ def run_detect_drift(
 
     print("All compiled files match their hashes.")
     return 0
+```
+## File: commands\doctor.py
+```python
+from __future__ import annotations
+
+import logging
+import re
+import shutil
+import subprocess  # nosec
+from pathlib import Path
+
+from bash2gitlab.commands.clean_all import list_stray_files as list_stray_output_files
+from bash2gitlab.commands.graph_all import find_script_references_in_node
+from bash2gitlab.config import config
+from bash2gitlab.utils.terminal_colors import Colors
+from bash2gitlab.utils.yaml_factory import get_yaml
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["run_doctor"]
+
+
+def check(message: str, success: bool) -> bool:
+    """Prints a formatted check message and returns the success status."""
+    status = f"{Colors.OKGREEN}✔ OK{Colors.ENDC}" if success else f"{Colors.FAIL}✖ FAILED{Colors.ENDC}"
+    print(f"  [{status}] {message}")
+    return success
+
+
+def get_command_version(cmd: str) -> str:
+    """Gets the version of a command-line tool."""
+    if not shutil.which(cmd):
+        return f"{Colors.WARNING}not found{Colors.ENDC}"
+    try:
+        result = subprocess.run(  # nosec
+            [cmd, "--version"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=5,
+        )
+        # Get the first line of output and strip whitespace
+        return result.stdout.splitlines()[0].strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.debug(f"Could not get version for {cmd}: {e}")
+        return f"{Colors.FAIL}Error checking version{Colors.ENDC}"
+
+
+def find_unreferenced_source_files(uncompiled_path: Path) -> set[Path]:
+    """Finds script files in the source directory that are not referenced by any YAML."""
+    root_path = uncompiled_path.resolve()
+    all_scripts = set(root_path.rglob("*.sh")) | set(root_path.rglob("*.py"))
+    referenced_scripts: set[Path] = set()
+    # processed_scripts: set[Path] = set()  # To avoid cycles in script parsing
+
+    yaml_parser = get_yaml()
+    template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
+
+    # Build a set of all referenced scripts by adapting graph logic
+    for yaml_path in template_files:
+        try:
+            content = yaml_path.read_text("utf-8")
+            yaml_data = yaml_parser.load(content)
+            if yaml_data:
+                # Dummy graph, we only care about the side effect on referenced_scripts
+                dummy_graph: dict[Path, set[Path]] = {}
+                find_script_references_in_node(
+                    yaml_data, yaml_path, root_path, dummy_graph, processed_scripts=referenced_scripts
+                )
+
+        except Exception:  # nosec
+            # Ignore parsing errors, focus is on finding valid references
+            pass
+
+    # The above only adds the top-level scripts. Now, find sourced scripts.
+    scripts_to_scan = list(referenced_scripts)
+    scanned_for_source: set[Path] = set()
+
+    while scripts_to_scan:
+        script = scripts_to_scan.pop(0)
+        if script in scanned_for_source or not script.is_file():
+            continue
+        scanned_for_source.add(script)
+        try:
+            content = script.read_text("utf-8")
+            for line in content.splitlines():
+                match = re.search(r"^\s*(?:source|\.)\s+([\w./\\-]+)", line)
+                if match:
+                    sourced_path = (script.parent / match.group(1)).resolve()
+                    if sourced_path.is_file() and sourced_path not in referenced_scripts:
+                        referenced_scripts.add(sourced_path)
+                        scripts_to_scan.append(sourced_path)
+
+        except Exception:  # nosec
+            pass
+
+    return all_scripts - referenced_scripts
+
+
+def run_doctor() -> int:
+    """Runs a series of health checks on the project and environment."""
+    print(f"{Colors.BOLD}🩺 Running bash2gitlab doctor...{Colors.ENDC}\n")
+    issues_found = 0
+
+    # --- Configuration Checks ---
+    print(f"{Colors.BOLD}Configuration:{Colors.ENDC}")
+    input_dir_str = config.input_dir
+    output_dir_str = config.output_dir
+
+    if check("Input directory is configured", bool(input_dir_str)):
+        input_dir = Path(input_dir_str or "")
+        if not check(f"Input directory exists: '{input_dir}'", input_dir.is_dir()):
+            issues_found += 1
+    else:
+        issues_found += 1
+
+    if check("Output directory is configured", bool(output_dir_str)):
+        output_dir = Path(output_dir_str or "")
+        if not check(f"Output directory exists: '{output_dir}'", output_dir.is_dir()):
+            print(f"  {Colors.WARNING}  -> Note: This is not an error if you haven't compiled yet.{Colors.ENDC}")
+    else:
+        issues_found += 1
+
+    # --- External Dependencies ---
+    print(f"\n{Colors.BOLD}External Dependencies:{Colors.ENDC}")
+    print(f"  - Bash version: {get_command_version('bash')}")
+    print(f"  - Git version:  {get_command_version('git')}")
+    print(f"  - PowerShell:   {get_command_version('pwsh')}")
+
+    # --- Project Health ---
+    print(f"\n{Colors.BOLD}Project Health:{Colors.ENDC}")
+    if input_dir_str and Path(input_dir_str).is_dir():
+        unreferenced_files = find_unreferenced_source_files(Path(input_dir_str))
+        if unreferenced_files:
+            issues_found += 1
+            check("No unreferenced script files in source directory", False)
+            for f in sorted(unreferenced_files):
+                print(f"    {Colors.WARNING}  -> Stray source file: {f.relative_to(input_dir_str)}{Colors.ENDC}")
+        else:
+            check("No unreferenced script files in source directory", True)
+
+    if output_dir_str and Path(output_dir_str).is_dir():
+        stray_files = list_stray_output_files(Path(output_dir_str))
+        if stray_files:
+            issues_found += 1
+            check("No unhashed/stray files in output directory", False)
+            for f in sorted(stray_files):
+                print(f"    {Colors.WARNING}  -> Stray output file: {f.relative_to(output_dir_str)}{Colors.ENDC}")
+        else:
+            check("No unhashed/stray files in output directory", True)
+
+    # --- Summary ---
+    print("-" * 40)
+    if issues_found == 0:
+        print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ All checks passed. Your project looks healthy!{Colors.ENDC}")
+        return 0
+    else:
+        print(
+            f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
+        )
+        return 1
+```
+## File: commands\graph_all.py
+```python
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+from ruamel.yaml.error import YAMLError
+
+from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
+from bash2gitlab.utils.parse_bash import extract_script_path
+from bash2gitlab.utils.yaml_factory import get_yaml
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["generate_dependency_graph"]
+
+Graph = dict[Path, set[Path]]
+
+
+def format_dot_output(graph: Graph, root_path: Path) -> str:
+    """Formats the dependency graph into the DOT language."""
+    dot_lines = [
+        "digraph bash2gitlab {",
+        "    rankdir=LR;",
+        "    node [shape=box, style=rounded];",
+        "    graph [bgcolor=transparent];",
+        '    edge [color="#cccccc"];',
+        '    node [fontname="Inter", fontsize=10];',
+        "    subgraph cluster_yaml {",
+        '        label="YAML Sources";',
+        '        style="rounded";',
+        '        color="#0066cc";',
+        '        node [style="filled,rounded", fillcolor="#e6f0fa", color="#0066cc"];',
+    ]
+
+    # Define YAML nodes first
+    yaml_files = {node for node in graph if node.suffix.lower() in (".yml", ".yaml")}
+    for file in sorted(yaml_files):
+        relative_path = file.relative_to(root_path)
+        dot_lines.append(f'        "{relative_path}" [label="{relative_path}"];')
+    dot_lines.append("    }")
+
+    dot_lines.append("    subgraph cluster_scripts {")
+    dot_lines.append('        label="Scripts";')
+    dot_lines.append('        style="rounded";')
+    dot_lines.append('        color="#22863a";')
+    dot_lines.append('        node [style="filled,rounded", fillcolor="#e9f3ea", color="#22863a"];')
+
+    # Define Script nodes
+    script_files = {node for node in graph if node not in yaml_files}
+    for dep_set in graph.values():
+        script_files.update(dep for dep in dep_set if dep not in yaml_files)
+
+    for file in sorted(script_files):
+        relative_path = file.relative_to(root_path)
+        dot_lines.append(f'        "{relative_path}" [label="{relative_path}"];')
+    dot_lines.append("    }")
+
+    # Define edges
+    for source, dependencies in sorted(graph.items()):
+        source_rel = source.relative_to(root_path)
+        for dep in sorted(dependencies):
+            dep_rel = dep.relative_to(root_path)
+            dot_lines.append(f'    "{source_rel}" -> "{dep_rel}";')
+
+    dot_lines.append("}")
+    return "\n".join(dot_lines)
+
+
+def parse_shell_script_dependencies(
+    script_path: Path,
+    root_path: Path,
+    graph: Graph,
+    processed_files: set[Path],
+) -> None:
+    """Recursively parses a shell script to find `source` dependencies."""
+    if script_path in processed_files:
+        return
+    processed_files.add(script_path)
+
+    if not script_path.is_file():
+        logger.warning(f"Dependency not found and will be skipped: {script_path}")
+        return
+
+    graph.setdefault(script_path, set())
+
+    try:
+        content = script_path.read_text("utf-8")
+        for line in content.splitlines():
+            match = SOURCE_COMMAND_REGEX.match(line)
+            if match:
+                sourced_script_name = match.group("path")
+                # Resolve the path relative to the current script's directory
+                sourced_path = (script_path.parent / sourced_script_name).resolve()
+
+                # Security: Ensure the path is within the project root
+                if not sourced_path.is_relative_to(root_path):
+                    logger.error(f"Refusing to trace source '{sourced_path}': escapes allowed root '{root_path}'.")
+                    continue
+
+                graph[script_path].add(sourced_path)
+                parse_shell_script_dependencies(sourced_path, root_path, graph, processed_files)
+    except Exception as e:
+        logger.error(f"Failed to read or parse script {script_path}: {e}")
+
+
+def find_script_references_in_node(
+    node: Any,
+    yaml_path: Path,
+    root_path: Path,
+    graph: Graph,
+    processed_scripts: set[Path],
+) -> None:
+    """Recursively traverses the YAML data structure to find script references."""
+    if isinstance(node, dict):
+        for key, value in node.items():
+            # Check if the key indicates a script block
+            if key in ("script", "before_script", "after_script"):
+                find_script_references_in_node(value, yaml_path, root_path, graph, processed_scripts)
+            else:
+                find_script_references_in_node(value, yaml_path, root_path, graph, processed_scripts)
+    elif isinstance(node, list):
+        for item in node:
+            find_script_references_in_node(item, yaml_path, root_path, graph, processed_scripts)
+    elif isinstance(node, str):
+        script_path_str = extract_script_path(node)
+        if script_path_str:
+            # Resolve the path relative to the YAML file's directory
+            script_path = (yaml_path.parent / script_path_str).resolve()
+
+            # Security: Ensure the path is within the project root
+            if not script_path.is_relative_to(root_path):
+                logger.error(f"Refusing to trace script '{script_path}': escapes allowed root '{root_path}'.")
+                return
+
+            graph.setdefault(yaml_path, set()).add(script_path)
+            parse_shell_script_dependencies(script_path, root_path, graph, processed_scripts)
+
+
+def generate_dependency_graph(uncompiled_path: Path) -> str:
+    """
+    Analyzes the source YAML and script files to build a dependency graph.
+
+    Args:
+        uncompiled_path: The root directory of the uncompiled source files.
+
+    Returns:
+        A string containing the dependency graph in DOT format.
+    """
+    graph: Graph = {}
+    processed_scripts: set[Path] = set()
+    yaml_parser = get_yaml()
+    root_path = uncompiled_path.resolve()
+
+    logger.info(f"Starting dependency graph generation in: {root_path}")
+
+    # Discover all YAML files
+    template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
+
+    if not template_files:
+        logger.warning(f"No YAML files found in {root_path}")
+        return ""
+
+    # Phase 1: Parse YAML files to find top-level script dependencies
+    for yaml_path in template_files:
+        logger.debug(f"Parsing YAML file: {yaml_path}")
+        graph.setdefault(yaml_path, set())
+        try:
+            content = yaml_path.read_text("utf-8")
+            yaml_data = yaml_parser.load(content)
+            if yaml_data:
+                find_script_references_in_node(yaml_data, yaml_path, root_path, graph, processed_scripts)
+        except YAMLError as e:
+            logger.error(f"Failed to parse YAML file {yaml_path}: {e}")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred with {yaml_path}: {e}")
+
+    logger.info(f"Found {len(graph)} source files and traced {len(processed_scripts)} script dependencies.")
+
+    # Phase 2: Format the collected graph data into DOT format
+    dot_output = format_dot_output(graph, root_path)
+    logger.info("Successfully generated DOT graph output.")
+
+    return dot_output
 ```
 ## File: commands\init_project.py
 ```python
@@ -3164,7 +3579,7 @@ class LintResult:
 # ---------------------------------------------------------------------------
 
 
-def _api_url(
+def api_url(
     base_url: str,
     project_id: int | None,
 ) -> str:
@@ -3183,7 +3598,7 @@ def _api_url(
     return f"{base}/api/v4/projects/{project_id}/ci/lint"
 
 
-def _post_json(
+def post_json(
     url: str,
     payload: dict,
     *,
@@ -3268,7 +3683,7 @@ def lint_single_text(
     Returns:
         A :class:`LintResult` with structured details.
     """
-    url = _api_url(gitlab_url, project_id)
+    url = api_url(gitlab_url, project_id)
 
     payload: dict = {"content": content}
 
@@ -3278,13 +3693,13 @@ def lint_single_text(
     if project_id is not None and include_merged_yaml:
         payload["include_merged_yaml"] = True
 
-    resp = _post_json(url, payload, private_token=private_token, timeout=timeout)
+    resp = post_json(url, payload, private_token=private_token, timeout=timeout)
 
     # GitLab returns varing shapes across versions. Normalize defensively.
     status = str(resp.get("status") or ("valid" if resp.get("valid") else "invalid"))
     valid = bool(resp.get("valid", status == "valid"))
 
-    def _collect(kind: str) -> list[LintIssue]:
+    def collect(kind: str) -> list[LintIssue]:
         out: list[LintIssue] = []
         items = resp.get(kind) or []
         if isinstance(items, list):
@@ -3301,8 +3716,8 @@ def lint_single_text(
                     out.append(LintIssue(severity=kind.rstrip("s"), message=str(m)))
         return out
 
-    errors = _collect("errors")
-    warnings = _collect("warnings")
+    errors = collect("errors")
+    warnings = collect("warnings")
     merged_yaml: str | None = None
     if include_merged_yaml:
         merged_yaml = resp.get("merged_yaml") or resp.get("mergedYaml")
@@ -3365,7 +3780,7 @@ def lint_single_file(
 _YAML_GLOBS: tuple[str, ...] = ("*.yml", "*.yaml")
 
 
-def _discover_yaml_files(root: Path) -> list[Path]:
+def discover_yaml_files(root: Path) -> list[Path]:
     """Recursively find YAML files under *root*.
 
     Files with suffixes ``.yml`` or ``.yaml`` are included.
@@ -3404,7 +3819,7 @@ def lint_output_folder(
     Returns:
         List of :class:`LintResult`, one per file.
     """
-    files = _discover_yaml_files(output_root)
+    files = discover_yaml_files(output_root)
     if not files:
         logger.warning("No YAML files found under %s", output_root)
         return []
@@ -3981,19 +4396,123 @@ def uninstall(repo_root: Path | None = None, *, force: bool = False) -> None:
     dest.unlink()
     logger.info("Removed pre-commit hook at %s", dest.relative_to(repo_root))
 ```
+## File: commands\show_config.py
+```python
+from __future__ import annotations
+
+import logging
+import os
+from pathlib import Path
+from typing import Any
+
+from bash2gitlab.config import _Config, config
+from bash2gitlab.utils.terminal_colors import Colors
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["run_show_config"]
+
+
+def get_value_and_source(key: str, config_instance: _Config) -> tuple[Any, str, str | None]:
+    """
+    Determines the value and source of a configuration key.
+
+    Returns:
+        A tuple of (value, source_type, source_detail).
+    """
+    env_var_name = config_instance._ENV_VAR_PREFIX + key.upper()
+    env_value = os.environ.get(env_var_name)
+
+    if env_value is not None:
+        # Re-evaluate the value using the config's type-aware methods
+        value = getattr(config_instance, key)
+        return value, "Environment Variable", env_var_name
+
+    # Check file config
+    file_config_value = config_instance.file_config.get(key)
+    if file_config_value is not None:
+        value = getattr(config_instance, key)
+        config_path = config_instance.config_path_override or config_instance.find_config_file()
+        source_detail = str(config_path.relative_to(Path.cwd())) if config_path else "Unknown file"
+        return value, "Configuration File", source_detail
+
+    # If neither, it's a default from the argparse layer or None
+    value = getattr(config_instance, key)
+    return value, "Default", None
+
+
+def run_show_config() -> int:
+    """
+    Displays the resolved configuration values and their sources.
+    """
+    print(f"{Colors.BOLD}bash2gitlab Configuration:{Colors.ENDC}")
+
+    config_keys = [
+        "input_dir",
+        "output_dir",
+        "parallelism",
+        "input_file",
+        "output_file",
+        "dry_run",
+        "verbose",
+        "quiet",
+    ]
+
+    # Find the longest key for alignment
+    max_key_len = max(len(key) for key in config_keys)
+
+    for key in config_keys:
+        value, source_type, source_detail = get_value_and_source(key, config)
+
+        # Colorize the source type for better readability
+        if source_type == "Environment Variable":
+            source_color = Colors.OKCYAN
+        elif source_type == "Configuration File":
+            source_color = Colors.OKGREEN
+        else:
+            source_color = Colors.WARNING
+
+        # Format the output line
+        key_padded = key.ljust(max_key_len)
+        value_str = f"{Colors.BOLD}{value}{Colors.ENDC}" if value is not None else f"{Colors.FAIL}Not Set{Colors.ENDC}"
+        source_str = f"{source_color}({source_type}{Colors.ENDC}"
+        if source_detail:
+            source_str += f": {source_detail}"
+        source_str += ")"
+
+        print(f"  {key_padded} = {value_str} {source_str}")
+
+    config_file_path = config.config_path_override or config.find_config_file()
+    if not config_file_path:
+        print(f"\n{Colors.WARNING}Note: No 'bash2gitlab.toml' or 'pyproject.toml' config file found.{Colors.ENDC}")
+
+    return 0
+```
 ## File: commands\shred_all.py
 ```python
-"""Take a gitlab template with inline yaml and split it up into yaml and shell commands. Useful for project initialization"""
+"""
+Take a gitlab template with inline yaml and split it up into yaml and shell
+commands. Useful for project initialization.
+
+Fixes:
+ - Support shredding a *file* or an entire *folder* tree
+ - Force --out to be a *directory* (scripts live next to output YAML)
+ - Script refs are made *relative to the YAML file* (e.g., "./script.sh")
+ - Any YAML ``!reference [...]`` items in scripts are emitted as *bash comments*
+ - Logging prints *paths relative to CWD* to reduce noise
+"""
 
 from __future__ import annotations
 
 import io
 import logging
 import re
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
+from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
@@ -4003,12 +4522,27 @@ logger = logging.getLogger(__name__)
 
 SHEBANG = "#!/bin/bash"
 
-__all__ = ["run_shred_gitlab"]
+__all__ = [
+    "run_shred_gitlab_file",
+    "run_shred_gitlab_tree",
+    # Back-compat alias (old name processed a single file)
+    "run_shred_gitlab",
+]
 
 
-def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
+# --- helpers -----------------------------------------------------------------
+
+
+def rel(p: Path) -> str:
+    """Return the path relative to CWD when possible for quieter logs."""
+    try:
+        return str(p.resolve().relative_to(Path.cwd()))
+    except Exception:
+        return str(p)
+
+
+def dump_inline_no_doc_markers(yaml: YAML, node: Any) -> str:
     buf = io.StringIO()
-    # Temporarily suppress doc markers, then restore whatever was set globally
     prev_start, prev_end = yaml.explicit_start, yaml.explicit_end
     try:
         yaml.explicit_start = False
@@ -4016,142 +4550,120 @@ def dump_inline_no_doc_markers(yaml: YAML, node) -> str:
         yaml.dump(node, buf)
     finally:
         yaml.explicit_start, yaml.explicit_end = prev_start, prev_end
-    # Trim a single trailing newline that ruamel usually adds
     return buf.getvalue().rstrip("\n")
 
 
 def create_script_filename(job_name: str, script_key: str) -> str:
-    """
-    Creates a standardized, safe filename for a script.
+    """Create a standardized, safe filename for a script.
 
-    Args:
-        job_name (str): The name of the GitLab CI job.
-        script_key (str): The key of the script block (e.g., 'script', 'before_script').
-
-    Returns:
-        str: A safe, descriptive filename like 'job-name_script.sh'.
+    For the main 'script' key, just use the job name. For others, append the key.
     """
-    # Sanitize job_name: replace spaces and invalid characters with hyphens
     sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
-    # Clean up multiple hyphens
     sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
+    return f"{sanitized_job_name}.sh" if script_key == "script" else f"{sanitized_job_name}_{script_key}.sh"
 
-    # For the main 'script' key, just use the job name. For others, append the key.
-    if script_key == "script":
-        return f"{sanitized_job_name}.sh"
-    return f"{sanitized_job_name}_{script_key}.sh"
+
+def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> list[str]:
+    """Convert YAML items from a script block into bash lines.
+
+    - Strings are kept as-is.
+    - Other YAML nodes are dumped to text with no doc markers.
+    - ``!reference [...]`` turns into a bash comment line so the intent isn't lost.
+    - Empty/whitespace lines are dropped.
+    """
+    raw_lines: list[str] = []
+
+    if isinstance(script_content, str):
+        raw_lines.extend(script_content.splitlines())
+    else:
+        for item in script_content:  # ruamel CommentedSeq-like or list
+            if isinstance(item, str):
+                raw_lines.append(item)
+            elif isinstance(item, TaggedScalar) and str(item.tag).endswith("reference"):
+                dumped = dump_inline_no_doc_markers(yaml, item)
+                raw_lines.append(f"# {dumped}")
+            elif item is not None:
+                dumped = dump_inline_no_doc_markers(yaml, item)
+                # If the dump still contains an explicit !reference tag, comment it out
+                if dumped.lstrip().startswith("!reference"):
+                    raw_lines.append(f"# {dumped}")
+                else:
+                    raw_lines.append(dumped)
+
+    # Filter empties
+    return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+
+
+# --- shredders ---------------------------------------------------------------
 
 
 def shred_variables_block(
     variables_data: dict,
     base_name: str,
     scripts_output_path: Path,
+    *,
     dry_run: bool = False,
 ) -> str | None:
-    """
-    Extracts a variables block into a .sh file containing export statements.
+    """Extract variables dict into a ``.sh`` file of ``export`` statements.
 
-    Args:
-        variables_data (dict): The dictionary of variables.
-        base_name (str): The base for the filename (e.g., 'global' or a sanitized job name).
-        scripts_output_path (Path): The directory to save the new .sh file.
-        dry_run (bool): If True, don't write any files.
-
-    Returns:
-        str | None: The filename of the created variables script for sourcing, or None.
+    Returns the filename (not full path) of the created variables script, or ``None``.
     """
     if not variables_data or not isinstance(variables_data, dict):
         return None
 
-    variable_lines = []
+    variable_lines: list[str] = []
     for key, value in variables_data.items():
-        # Simple stringification for the value.
-        # Shell-safe escaping is complex; this handles basic cases by quoting.
         value_str = str(value).replace('"', '\\"')
         variable_lines.append(f'export {key}="{value_str}"')
 
     if not variable_lines:
         return None
 
-    # For global, filename is global_variables.sh. For jobs, it's job-name_variables.sh
     script_filename = f"{base_name}_variables.sh"
     script_filepath = scripts_output_path / script_filename
     full_script_content = "\n".join(variable_lines) + "\n"
 
-    logger.info(f"Shredding variables for '{base_name}' to '{script_filepath}'")
+    logger.info("Shredding variables for '%s' to '%s'", base_name, rel(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
         script_filepath.write_text(full_script_content, encoding="utf-8")
-        # Make the script executable for consistency, though not strictly required for sourcing
         script_filepath.chmod(0o755)
 
     return script_filename
 
 
 def shred_script_block(
+    *,
     script_content: list[str | Any] | str,
     job_name: str,
     script_key: str,
     scripts_output_path: Path,
+    yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
     job_vars_filename: str | None = None,
 ) -> tuple[str | None, str | None]:
-    """
-    Extracts a script block into a .sh file and returns the command to run it.
-    The generated script will source global and job-specific variable files if they exist.
+    """Extract a script block into a ``.sh`` file and return (script_path, bash_command).
 
-    Args:
-        script_content (Union[list[str], str]): The script content from the YAML.
-        job_name (str): The name of the job.
-        script_key (str): The key of the script ('script', 'before_script', etc.).
-        scripts_output_path (Path): The directory to save the new .sh file.
-        dry_run (bool): If True, don't write any files.
-        global_vars_filename (str, optional): Filename of the global variables script.
-        job_vars_filename (str, optional): Filename of the job-specific variables script.
-
-    Returns:
-        A tuple containing:
-        - The path to the new script file (or None if no script was created).
-        - The command to execute the new script (e.g., './scripts/my-job.sh').
+    The generated bash command will reference the script *relative to the YAML file*.
     """
     if not script_content:
         return None, None
 
     yaml = get_yaml()
 
-    # This block will handle converting CommentedSeq and its contents (which may include
-    # CommentedMap objects) into a simple list of strings.
-    processed_lines = []
-    if isinstance(script_content, str):
-        processed_lines.extend(script_content.splitlines())
-    elif script_content:  # It's a list-like object (e.g., ruamel.yaml.CommentedSeq)
-
-        for item in script_content:
-            if isinstance(item, str):
-                processed_lines.append(item)
-            elif item is not None:
-                # Any non-string item (like a CommentedMap that ruamel parsed from "key: value")
-                # should be dumped back into a string representation.
-                item_as_string = dump_inline_no_doc_markers(yaml, item)
-                if item_as_string:
-                    processed_lines.append(item_as_string)
-
-    # Filter out empty or whitespace-only lines from the final list
-    script_lines = [line for line in processed_lines if line and line.strip()]
-
+    script_lines = bashify_script_items(script_content, yaml)
     if not script_lines:
-        logger.debug(f"Skipping empty script block in job '{job_name}' for key '{script_key}'.")
+        logger.debug("Skipping empty script block in job '%s' for key '%s'.", job_name, script_key)
         return None, None
 
     script_filename = create_script_filename(job_name, script_key)
     script_filepath = scripts_output_path / script_filename
-    execution_command = f"./{script_filepath.relative_to(scripts_output_path.parent)}"
 
-    # Build the header with conditional sourcing for local execution
-    header_parts = [SHEBANG]
-    sourcing_block = []
+    # Build header with conditional sourcing for local execution
+    header_parts: list[str] = [SHEBANG]
+    sourcing_block: list[str] = []
     if global_vars_filename:
         sourcing_block.append(f"  . ./{global_vars_filename}")
     if job_vars_filename:
@@ -4165,122 +4677,137 @@ def shred_script_block(
     script_header = "\n".join(header_parts)
     full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
 
-    logger.info(f"Shredding script from '{job_name}:{script_key}' to '{script_filepath}'")
+    logger.info("Shredding script from '%s:%s' to '%s'", job_name, script_key, rel(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
         script_filepath.write_text(full_script_content, encoding="utf-8")
         script_filepath.chmod(0o755)
 
-    return str(script_filepath), execution_command
+    # Compute bash command relative to YAML
+    relative_path = Path(
+        script_filepath.resolve().relative_to(yaml_dir.resolve())
+        if script_filepath.resolve().is_relative_to(yaml_dir.resolve())  # py>=3.9
+        else script_filename
+    )
+    # Normalize to posix for YAML
+    rel_str = str(relative_path).replace("\\", "/")
+    if not rel_str.startswith(".") and "/" not in rel_str:
+        rel_str = f"./{rel_str}"
+    elif not rel_str.startswith("."):
+        rel_str = "./" + rel_str
+
+    return str(script_filepath), rel_str
 
 
 def process_shred_job(
+    *,
     job_name: str,
     job_data: dict,
     scripts_output_path: Path,
+    yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
 ) -> int:
-    """
-    Processes a single job definition to shred its script and variables blocks.
-
-    Args:
-        job_name (str): The name of the job.
-        job_data (dict): The dictionary representing the job's configuration.
-        scripts_output_path (Path): The directory to save shredded scripts.
-        dry_run (bool): If True, simulate without writing files.
-        global_vars_filename (str, optional): Filename of the global variables script.
-
-    Returns:
-        int: The number of files (scripts and variables) shredded from this job.
-    """
+    """Process a single job definition to shred its script and variables blocks."""
     shredded_count = 0
 
-    # Shred job-specific variables first
-    job_vars_filename = None
-    if "variables" in job_data and isinstance(job_data.get("variables"), dict):
+    # Job-specific variables first
+    job_vars_filename: str | None = None
+    if isinstance(job_data.get("variables"), dict):
         sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
         sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
         job_vars_filename = shred_variables_block(
-            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run
+            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run=dry_run
         )
         if job_vars_filename:
             shredded_count += 1
 
-    # Shred script blocks
-    script_keys = ["script", "before_script", "after_script", "pre_get_sources_script"]
-    for key in script_keys:
+    # Script-like keys to shred
+    for key in ("script", "before_script", "after_script", "pre_get_sources_script"):
         if key in job_data and job_data[key]:
             _, command = shred_script_block(
                 script_content=job_data[key],
                 job_name=job_name,
                 script_key=key,
                 scripts_output_path=scripts_output_path,
+                yaml_dir=yaml_dir,
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
                 job_vars_filename=job_vars_filename,
             )
             if command:
-                # Replace the script block with a single command to execute the new file
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
                 shredded_count += 1
     return shredded_count
 
 
-def run_shred_gitlab(
+# --- public entry points -----------------------------------------------------
+
+
+def iterate_yaml_files(root: Path) -> Iterable[Path]:
+    for path in root.rglob("*.yml"):
+        yield path
+    for path in root.rglob("*.yaml"):
+        yield path
+
+
+def run_shred_gitlab_file(
+    *,
     input_yaml_path: Path,
-    output_yaml_path: Path,
+    output_dir: Path,
     dry_run: bool = False,
-) -> tuple[int, int]:
-    """
-    Loads a GitLab CI YAML file, shreds all script and variable blocks into
-    separate .sh files, and saves the modified YAML.
+) -> tuple[int, int, Path]:
+    """Shred a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
 
-    Args:
-        input_yaml_path (Path): Path to the input .gitlab-ci.yml file.
-        output_yaml_path (Path): Path to write the modified .gitlab-ci.yml file.
-        dry_run (bool): If True, simulate the process without writing any files.
-
-    Returns:
-        A tuple containing:
-        - The total number of jobs processed.
-        - The total number of .sh files created (scripts and variables).
+    Returns (jobs_processed, total_files_created, output_yaml_path).
     """
     if not input_yaml_path.is_file():
         raise FileNotFoundError(f"Input YAML file not found: {input_yaml_path}")
 
-    if output_yaml_path.is_dir():
-        output_yaml_path = output_yaml_path / input_yaml_path.name
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)  # force directory
 
-    logger.info(f"Loading GitLab CI configuration from: {input_yaml_path}")
     yaml = get_yaml()
     yaml.indent(mapping=2, sequence=4, offset=2)
+
+    logger.info("Loading GitLab CI configuration from: %s", rel(input_yaml_path))
     data = yaml.load(input_yaml_path)
+
+    # Layout: write YAML and scripts side-by-side under output_dir[/subdirs]
+    output_yaml_path = output_dir / input_yaml_path.name
+    scripts_dir = output_yaml_path.parent
+    yaml_dir = output_yaml_path.parent
 
     jobs_processed = 0
     total_files_created = 0
 
-    # First, process the top-level 'variables' block, if it exists.
-    global_vars_filename = None
-    if "variables" in data and isinstance(data.get("variables"), dict):
+    # Top-level variables -> global_variables.sh next to YAML
+    global_vars_filename: str | None = None
+    if isinstance(data.get("variables"), dict):
         logger.info("Processing global variables block.")
-        global_vars_filename = shred_variables_block(data["variables"], "global", output_yaml_path.parent, dry_run)
+        global_vars_filename = shred_variables_block(data["variables"], "global", scripts_dir, dry_run=dry_run)
         if global_vars_filename:
             total_files_created += 1
 
-    # Process all top-level keys that look like jobs
+    # Jobs
     for key, value in data.items():
-        # Heuristic: A job is a dictionary that contains a 'script' key.
         if isinstance(value, dict) and "script" in value:
-            logger.debug(f"Processing job: {key}")
+            logger.debug("Processing job: %s", key)
             jobs_processed += 1
-            total_files_created += process_shred_job(key, value, output_yaml_path.parent, dry_run, global_vars_filename)
+            total_files_created += process_shred_job(
+                job_name=key,
+                job_data=value,
+                scripts_output_path=scripts_dir,
+                yaml_dir=yaml_dir,
+                dry_run=dry_run,
+                global_vars_filename=global_vars_filename,
+            )
 
     if total_files_created > 0:
-        logger.info(f"Shredded {total_files_created} file(s) from {jobs_processed} job(s).")
+        logger.info("Shredded %s file(s) from %s job(s).", total_files_created, jobs_processed)
         if not dry_run:
-            logger.info(f"Writing modified YAML to: {output_yaml_path}")
+            logger.info("Writing modified YAML to: %s", rel(output_yaml_path))
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             with output_yaml_path.open("w", encoding="utf-8") as f:
                 yaml.dump(data, f)
@@ -4291,7 +4818,41 @@ def run_shred_gitlab(
         output_yaml_path.parent.mkdir(exist_ok=True)
         generate_mock_ci_variables_script(str(output_yaml_path.parent / "mock_ci_variables.sh"))
 
-    return jobs_processed, total_files_created
+    return jobs_processed, total_files_created, output_yaml_path
+
+
+def run_shred_gitlab_tree(
+    *,
+    input_root: Path,
+    output_dir: Path,
+    dry_run: bool = False,
+) -> tuple[int, int, int]:
+    """Shred *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
+
+    The relative directory structure under ``input_root`` is preserved in ``output_dir``.
+
+    Returns (yaml_files_processed, total_jobs_processed, total_files_created).
+    """
+    if not input_root.is_dir():
+        raise FileNotFoundError(f"Input folder not found: {input_root}")
+
+    yaml_files_processed = 0
+    total_jobs = 0
+    total_created = 0
+
+    for in_file in iterate_yaml_files(input_root):
+        rel_dir = in_file.parent.relative_to(input_root)
+        out_subdir = (output_dir / rel_dir).resolve()
+        jobs, created, _ = run_shred_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
+        yaml_files_processed += 1
+        total_jobs += jobs
+        total_created += created
+
+    return yaml_files_processed, total_jobs, total_created
+
+
+# Back-compat alias (old API name) – keep single-file semantics
+run_shred_gitlab = run_shred_gitlab_file
 ```
 ## File: utils\cli_suggestions.py
 ```python
@@ -4533,6 +5094,22 @@ _VALID_SUFFIXES = {".sh", ".ps1", ".bash"}
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
+def split_cmd(cmd_line: str) -> list[str] | None:
+    """
+    Split *cmd_line* into tokens while preserving backslashes (e.g. '.\\foo.sh').
+    Uses POSIX-like rules for quoting/whitespace but disables backslash escaping.
+    """
+    try:
+        lex = shlex.shlex(cmd_line, posix=True)
+        lex.whitespace_split = True  # split on whitespace
+        # lex.commenters = ""               # don't treat '#' as a comment
+        lex.escape = ""  # *** preserve backslashes ***
+        return list(lex)
+    except ValueError:
+        # Unbalanced quotes or similar
+        return None
+
+
 def extract_script_path(cmd_line: str) -> str | None:
     """
     Return a *safe-to-inline* script path or ``None``.
@@ -4541,61 +5118,102 @@ def extract_script_path(cmd_line: str) -> str | None:
         • there are **no interpreter flags**
         • there are **no extra positional arguments**
         • there are **no leading ENV=val assignments**
-
-    Examples that return a path
-    ---------------------------
-    ./build.sh
-    bash build.sh
-    source utils/helpers.sh
-    . scripts/deploy.ps1          # pwsh default
-
-    Examples that return ``None``
-    ------------------------------
-    bash -e build.sh
-    FOO=bar ./build.sh
-    ./build.sh arg1 arg2
-    pwsh -NoProfile run.ps1
     """
     if not isinstance(cmd_line, str):
         raise Exception()
 
-    try:
-        tokens = shlex.split(cmd_line, posix=True)
-    except ValueError:
-        return None  # malformed quoting
-
+    tokens = split_cmd(cmd_line)
     if not tokens:
         return None
 
-    # ── Disallow leading VAR=val assignments ────────────────────────────────
+    # Disallow leading VAR=val assignments
     if _ENV_ASSIGN_RE.match(tokens[0]):
         return None
 
-    # Case A ─ plain script call ------------------------------------------------
-    if len(tokens) == 1 and _is_script(tokens[0]):
-        return Path(tokens[0]).as_posix()
+    # Case A ─ plain script call
+    if len(tokens) == 1 and is_script(tokens[0]):
+        return to_posix(tokens[0])
 
-    # Case B ─ executor + script ------------------------------------------------
-    if len(tokens) == 2 and _is_executor(tokens[0]) and _is_script(tokens[1]):
-        return Path(tokens[1]).as_posix()
+    # Case B ─ executor + script
+    if len(tokens) == 2 and is_executor(tokens[0]) and is_script(tokens[1]):
+        return to_posix(tokens[1])
 
-    # Case C ─ dot-source -------------------------------------------------------
-    if len(tokens) == 2 and tokens[0] in _DOT_SOURCE and _is_script(tokens[1]):
-        return Path(tokens[1]).as_posix()
+    # Case C ─ dot-source
+    if len(tokens) == 2 and tokens[0] in _DOT_SOURCE and is_script(tokens[1]):
+        return to_posix(tokens[1])
 
-    # Anything else is unsafe to inline
     return None
 
 
 # ───────────────────────── helper predicates ────────────────────────────────
-def _is_executor(tok: str) -> bool:
+def is_executor(tok: str) -> bool:
     """True if token is bash/sh/pwsh *without leading dash*."""
     return tok in _EXECUTORS
 
 
-def _is_script(tok: str) -> bool:
-    """True if token ends with .sh or .ps1 and is not an option flag."""
-    return not tok.startswith("-") and Path(tok).suffix.lower() in _VALID_SUFFIXES
+def is_script(tok: str) -> bool:
+    """
+    True if token ends with a known script suffix and is not an option flag.
+
+    Handles both POSIX-style (./foo.sh) and Windows-style (.\\foo.sh, C:\\path\\bar.ps1).
+    """
+    if tok.startswith("-"):
+        return False
+    normalized = tok.replace("\\", "/")
+    return Path(normalized).suffix.lower() in _VALID_SUFFIXES
+
+
+def to_posix(tok: str) -> str:
+    """Return a normalized POSIX-style path for consistent downstream handling."""
+    return Path(tok.replace("\\", "/")).as_posix()
+```
+## File: utils\terminal_colors.py
+```python
+import os
+
+
+class Colors:
+    """Simple ANSI color codes for terminal output."""
+
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKCYAN = "\033[96m"
+    OKGREEN = "\033[92m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+
+    UNDERLINE = "\033[4m"
+    RED_BG = "\033[41m"
+    GREEN_BG = "\033[42m"
+
+    @classmethod
+    def disable(cls):
+        """Disable all color output."""
+        for attr in dir(cls):
+            if isinstance(getattr(cls, attr), str) and getattr(cls, attr).startswith("\033"):
+                setattr(cls, attr, "")
+
+    @classmethod
+    def enable(cls):
+        """Disable all color output."""
+        cls.HEADER = "\033[95m"
+        cls.OKBLUE = "\033[94m"
+        cls.OKCYAN = "\033[96m"
+        cls.OKGREEN = "\033[92m"
+        cls.WARNING = "\033[93m"
+        cls.FAIL = "\033[91m"
+        cls.ENDC = "\033[0m"
+        cls.BOLD = "\033[1m"
+
+        cls.UNDERLINE = "\033[4m"
+        cls.RED_BG = "\033[41m"
+        cls.GREEN_BG = "\033[42m"
+
+
+if os.environ.get("NO_COLOR") or not os.isatty(1):
+    Colors.disable()
 ```
 ## File: utils\update_checker.py
 ```python
@@ -4656,7 +5274,7 @@ class _Color:
     ENDC: str = "\033[0m"
 
 
-def _get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
+def get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
     """Get a warning logging function.
 
     Args:
@@ -4670,7 +5288,7 @@ def _get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
     return print
 
 
-def _can_use_color() -> bool:
+def can_use_color() -> bool:
     """Determine if color output is allowed.
 
     Returns:
@@ -4688,7 +5306,7 @@ def _can_use_color() -> bool:
         return False
 
 
-def _cache_paths(package_name: str) -> tuple[Path, Path]:
+def cache_paths(package_name: str) -> tuple[Path, Path]:
     """Compute cache directory and file path for a package.
 
     Args:
@@ -4702,7 +5320,7 @@ def _cache_paths(package_name: str) -> tuple[Path, Path]:
     return cache_dir, cache_file
 
 
-def _is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
+def is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
     """Check if cache file is fresh.
 
     Args:
@@ -4721,7 +5339,7 @@ def _is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
     return False
 
 
-def _save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
+def save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
     """Save data to cache.
 
     Args:
@@ -4743,7 +5361,7 @@ def reset_cache(package_name: str) -> None:
     Args:
         package_name (str): Package name to clear from cache.
     """
-    _, cache_file = _cache_paths(package_name)
+    _, cache_file = cache_paths(package_name)
     try:
         if cache_file.exists():
             cache_file.unlink(missing_ok=True)
@@ -4751,7 +5369,7 @@ def reset_cache(package_name: str) -> None:
         pass
 
 
-def _fetch_pypi_json(url: str, timeout: float) -> dict:
+def fetch_pypi_json(url: str, timeout: float) -> dict:
     """Fetch JSON metadata from PyPI.
 
     Args:
@@ -4766,7 +5384,7 @@ def _fetch_pypi_json(url: str, timeout: float) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def _get_latest_version_from_pypi(
+def get_latest_version_from_pypi(
     package_name: str,
     *,
     include_prereleases: bool,
@@ -4794,7 +5412,7 @@ def _get_latest_version_from_pypi(
     last_err: Exception | None = None
     for attempt in range(retries + 1):
         try:
-            data = _fetch_pypi_json(url, timeout)
+            data = fetch_pypi_json(url, timeout)
             releases = data.get("releases", {})
             if not releases:
                 info_ver = data.get("info", {}).get("version")
@@ -4821,7 +5439,7 @@ def _get_latest_version_from_pypi(
     raise NetworkError(str(last_err))
 
 
-def _format_update_message(
+def format_update_message(
     package_name: str,
     current: _version.Version,
     latest: _version.Version,
@@ -4837,7 +5455,7 @@ def _format_update_message(
         str: Formatted update message.
     """
     pypi_url = f"https://pypi.org/project/{package_name}/"
-    if _can_use_color():
+    if can_use_color():
         c = _Color()
         return (
             f"{c.YELLOW}A new version of {package_name} is available: {c.GREEN}{latest}{c.YELLOW} "
@@ -4872,31 +5490,31 @@ def check_for_updates(
     Returns:
         str | None: Formatted update message if update available, else None.
     """
-    warn = _get_logger(logger)
-    cache_dir, cache_file = _cache_paths(package_name)
-    if _is_fresh(cache_file, cache_ttl_seconds):
+    warn = get_logger(logger)
+    cache_dir, cache_file = cache_paths(package_name)
+    if is_fresh(cache_file, cache_ttl_seconds):
         return None
     try:
-        latest_str = _get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
+        latest_str = get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
         if not latest_str:
-            _save_cache(cache_dir, cache_file, {"latest": None})
+            save_cache(cache_dir, cache_file, {"latest": None})
             return None
         current = _version.parse(current_version)
         latest = _version.parse(latest_str)
         if latest > current:
-            _save_cache(cache_dir, cache_file, {"latest": latest_str})
-            return _format_update_message(package_name, current, latest)
-        _save_cache(cache_dir, cache_file, {"latest": latest_str})
+            save_cache(cache_dir, cache_file, {"latest": latest_str})
+            return format_update_message(package_name, current, latest)
+        save_cache(cache_dir, cache_file, {"latest": latest_str})
         return None
     except PackageNotFoundError:
         warn(f"Package '{package_name}' not found on PyPI.")
-        _save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"latest": None})
         return None
     except NetworkError:
-        _save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"latest": None})
         return None
     except Exception:
-        _save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"latest": None})
         return None
 
 

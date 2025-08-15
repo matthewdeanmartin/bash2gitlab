@@ -19,55 +19,18 @@ from __future__ import annotations
 import base64
 import difflib
 import logging
-import os
 from collections.abc import Generator
 from pathlib import Path
 
 __all__ = ["run_detect_drift"]
 
-
-# ANSI color codes for pretty printing the diff.
-# This class now checks for NO_COLOR and CI environment variables to automatically
-# disable color and other ANSI escape codes for better accessibility and CI/CD logs.
-class Colors:
-    # The NO_COLOR spec (no-color.org) and the common 'CI' variable for Continuous Integration
-    # environments are used to disable ANSI escape codes.
-    _enabled = "NO_COLOR" not in os.environ and "CI" not in os.environ
-
-    if _enabled:
-        HEADER = "\033[95m"
-        OKBLUE = "\033[94m"
-        OKCYAN = "\033[96m"
-        OKGREEN = "\033[92m"
-        WARNING = "\033[93m"
-        FAIL = "\033[91m"
-        ENDC = "\033[0m"
-        BOLD = "\033[1m"
-        UNDERLINE = "\033[4m"
-        RED_BG = "\033[41m"
-        GREEN_BG = "\033[42m"
-    else:
-        # If colors are disabled, all attributes are empty strings.
-        HEADER, OKBLUE, OKCYAN, OKGREEN, WARNING, FAIL, ENDC, BOLD, UNDERLINE, RED_BG, GREEN_BG = (
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-        )
-
+from bash2gitlab.utils.terminal_colors import Colors
 
 # Setting up a logger for this module. The calling application can configure the handler.
 logger = logging.getLogger(__name__)
 
 
-def _decode_hash_content(hash_file: Path) -> str | None:
+def decode_hash_content(hash_file: Path) -> str | None:
     """
     Reads and decodes the base64 content of a .hash file.
 
@@ -92,7 +55,7 @@ def _decode_hash_content(hash_file: Path) -> str | None:
         return None
 
 
-def _get_source_file_from_hash(hash_file: Path) -> Path:
+def get_source_file_from_hash(hash_file: Path) -> Path:
     """
     Derives the original source file path from a hash file path.
     Example: /path/to/file.yml.hash -> /path/to/file.yml
@@ -112,7 +75,7 @@ def _get_source_file_from_hash(hash_file: Path) -> Path:
     return Path(s)
 
 
-def _generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
+def generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
     """
     Generates a colorized (if enabled), unified diff string between two content strings.
 
@@ -193,14 +156,14 @@ def run_detect_drift(
     print(f"Found {len(hash_files)} hash file(s). Checking for drift...")
 
     for hash_file in hash_files:
-        source_file = _get_source_file_from_hash(hash_file)
+        source_file = get_source_file_from_hash(hash_file)
 
         if not source_file.exists():
             logger.error(f"Drift check failed: Source file '{source_file}' is missing for hash file '{hash_file}'.")
             error_count += 1
             continue
 
-        decoded_content = _decode_hash_content(hash_file)
+        decoded_content = decode_hash_content(hash_file)
         if decoded_content is None:
             # Error already logged in the helper function
             error_count += 1
@@ -215,7 +178,7 @@ def run_detect_drift(
 
         if current_content != decoded_content:
             drift_detected_count += 1
-            diff_text = _generate_pretty_diff(current_content, decoded_content, source_file)
+            diff_text = generate_pretty_diff(current_content, decoded_content, source_file)
 
             # Print a clear, formatted report for the user, adapting to color support.
             if Colors.ENDC:  # Check if colors are enabled

@@ -59,14 +59,14 @@ def test_read_bash_script_not_found():
 def test_process_script_list_no_scripts():
     """Tests a list with no scripts to ensure it remains unchanged."""
     script_list = ["echo 'hello'", "ls -la"]
-    result = compile_all.process_script_list(script_list, Path("."))
+    result = compile_all.process_script_list(script_list, Path(".."))
     assert result == ["echo 'hello'\nls -la"]
 
 
 def test_process_script_list_already_literal():
     """Tests that a pre-existing LiteralScalarString is passed through."""
     literal = LiteralScalarString("some existing script")
-    result = compile_all.process_script_list(literal, Path("."))
+    result = compile_all.process_script_list(literal, Path(".."))
     assert result == [literal]
 
 

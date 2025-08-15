@@ -129,7 +129,9 @@ bash2gitlab compile --in my-project/ --out compiled/
 | `install-precommit`   | Add git hook to compile before commit                                          |
 | `uninstall-precommit` | Remove precommit hook                                                          |
 | `lint`                | Call gitlab APIs to lint you yaml                                              |
-
+| `show-config`         | Display config after cascade                                                   |
+| `doctor`              | Look for environment problems                                                  |
+| `graph`               | Generate graph inline relationships                                            |
 
 For detailed options on any command, run `bash2gitlab <command> --help`.
 

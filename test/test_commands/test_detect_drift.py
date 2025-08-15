@@ -11,10 +11,10 @@ from pathlib import Path
 from bash2gitlab.commands import detect_drift
 from bash2gitlab.commands.detect_drift import (
     Colors,
-    _decode_hash_content,
-    _generate_pretty_diff,
-    _get_source_file_from_hash,
+    decode_hash_content,
     find_hash_files,
+    generate_pretty_diff,
+    get_source_file_from_hash,
     run_detect_drift,
 )
 
@@ -40,7 +40,7 @@ def test_get_source_file_from_hash():
     """Tests that the source file path is correctly derived from the hash file path."""
     hash_path = Path("/tmp/test/some.file.yml.hash")
     expected_source_path = Path("/tmp/test/some.file.yml")
-    assert _get_source_file_from_hash(hash_path) == expected_source_path
+    assert get_source_file_from_hash(hash_path) == expected_source_path
 
 
 def test_decode_hash_content(tmp_path: Path):
@@ -52,30 +52,30 @@ def test_decode_hash_content(tmp_path: Path):
 
     # Valid case
     create_hash_file(hash_file, original_content)
-    assert _decode_hash_content(hash_file) == original_content
+    assert decode_hash_content(hash_file) == original_content
 
     # Corrupted case (not valid base64)
     create_file(corrupted_file, "not base64!")
-    assert _decode_hash_content(corrupted_file) is None
+    assert decode_hash_content(corrupted_file) is None
 
     # Empty file case
     create_file(empty_file, "")
-    assert _decode_hash_content(empty_file) is None
+    assert decode_hash_content(empty_file) is None
 
     # Non-existent file case
-    assert _decode_hash_content(tmp_path / "nonexistent.hash") is None
+    assert decode_hash_content(tmp_path / "nonexistent.hash") is None
 
 
 def test_generate_pretty_diff_with_color(monkeypatch):
     """Tests that the diff output contains color codes when enabled."""
     # Ensure colors are enabled for this test
-    monkeypatch.setattr(detect_drift.Colors, "_enabled", True)
+    detect_drift.Colors.enable()
     # Re-initialize colors based on the patched value
     monkeypatch.setattr(detect_drift, "Colors", detect_drift.Colors())
 
     content_before = "line 1\nline 2\nline 3"
     content_after = "line 1\nline two\nline 3"
-    diff = _generate_pretty_diff(content_after, content_before, Path("test.txt"))
+    diff = generate_pretty_diff(content_after, content_before, Path("test.txt"))
 
     assert Colors.FAIL in diff  # Should contain red for deletion
     assert Colors.OKGREEN in diff  # Should contain green for addition

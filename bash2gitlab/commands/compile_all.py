@@ -18,7 +18,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
-from bash2gitlab.commands.compile_not_bash import _maybe_inline_interpreter_command
+from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
@@ -49,7 +49,7 @@ BANNER = f"""# DO NOT EDIT
 """
 
 
-def _as_items(
+def as_items(
     seq_or_list: list[TaggedScalar | str] | CommentedSeq | str,
 ) -> tuple[list[Any], bool, CommentedSeq | None]:
     """Normalize input to a Python list of items.
@@ -72,7 +72,7 @@ def _as_items(
     return list(seq_or_list), False, None
 
 
-def _rebuild_seq_like(
+def rebuild_seq_like(
     processed: list[Any],
     was_commented_seq: bool,
     original_seq: CommentedSeq | None,
@@ -101,7 +101,7 @@ def _rebuild_seq_like(
     return new_seq
 
 
-def _compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any]:
+def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any]:
     """
     Merge consecutive plain strings into a single LiteralScalarString,
     leaving YAML nodes (e.g., TaggedScalar) as boundaries.
@@ -109,7 +109,7 @@ def _compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[An
     out: list[Any] = []
     buf: list[str] = []
 
-    def _flush():
+    def flush():
         nonlocal buf, out
         if not buf:
             return
@@ -126,10 +126,10 @@ def _compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[An
             buf.append(it)
             continue
         # Boundary (TaggedScalar or any non-str ruamel node): flush and keep node
-        _flush()
+        flush()
         out.append(it)
 
-    _flush()
+    flush()
     return out
 
 
@@ -155,7 +155,7 @@ def process_script_list(
         ``LiteralScalarString`` when safe to collapse; otherwise returns a list or
         ``CommentedSeq`` (matching the input style) to preserve YAML features.
     """
-    items, was_commented_seq, original_seq = _as_items(script_list)
+    items, was_commented_seq, original_seq = as_items(script_list)
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
@@ -181,7 +181,10 @@ def process_script_list(
             script_path_str = extract_script_path(item)
 
         if script_path_str:
-            rel_path = script_path_str.strip().lstrip("./")
+            if script_path_str.strip().startswith("./") or script_path_str.strip().startswith("\\."):
+                rel_path = script_path_str.strip()[2:]
+            else:
+                rel_path = script_path_str.strip()
             script_path = scripts_root / rel_path
             try:
                 bash_code = read_bash_script(script_path)
@@ -206,7 +209,7 @@ def process_script_list(
             if alt:
                 processed_items.extend(alt)
             else:
-                interp_inline = _maybe_inline_interpreter_command(item, scripts_root)
+                interp_inline = maybe_inline_interpreter_command(item, scripts_root)
                 if interp_inline and isinstance(interp_inline, list):
                     processed_items.extend(interp_inline)
                 elif interp_inline and isinstance(interp_inline, str):
@@ -228,10 +231,10 @@ def process_script_list(
 
     # Preserve sequence shape; if input was a CommentedSeq, return one
     # Case 2: Keep sequence shape but compact adjacent plain strings into a single literal
-    compact_items = _compact_runs_to_literal(processed_items, min_lines=2)
+    compact_items = compact_runs_to_literal(processed_items, min_lines=2)
 
     # Preserve sequence style (CommentedSeq vs list) to match input
-    return _rebuild_seq_like(compact_items, was_commented_seq, original_seq)
+    return rebuild_seq_like(compact_items, was_commented_seq, original_seq)
 
 
 def process_job(job_data: dict, scripts_root: Path) -> int:
@@ -369,7 +372,7 @@ def write_yaml_and_hash(
     logger.debug(f"Updated hash file: {short_path(hash_file)}")
 
 
-def _unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
+def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
     """Return a unified diff between *old* and *new* content with filenames.
 
     keepends=True preserves newline structure for line-accurate diffs in logs.
@@ -384,7 +387,7 @@ def _unified_diff(old: str, new: str, path: Path, from_label: str = "current", t
     )
 
 
-def _diff_stats(diff_text: str) -> tuple[int, int, int]:
+def diff_stats(diff_text: str) -> tuple[int, int, int]:
     """Compute (changed_lines, insertions, deletions) from unified diff text.
 
     We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
@@ -419,10 +422,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         current_content = output_file.read_text(encoding="utf-8")
 
         if not yaml_is_same(current_content, new_content):
-            diff_text = _unified_diff(
+            diff_text = unified_diff(
                 normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
             )
-            changed, ins, rem = _diff_stats(diff_text)
+            changed, ins, rem = diff_stats(diff_text)
             logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
             logger.debug(diff_text)
             return True
@@ -485,7 +488,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     is_same = yaml_is_same(last_known_content, current_content)
     # current_doc != last_known_doc
     if is_current_corrupt or (current_doc != last_known_doc and not is_same):
-        diff_text = _unified_diff(
+        diff_text = unified_diff(
             normalize_for_compare(last_known_content),
             normalize_for_compare(current_content),
             output_file,
@@ -522,10 +525,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # Now, we check if the *newly generated* content is different from the current content.
     if not yaml_is_same(current_content, new_content):
         # NEW: log diff + counts before writing
-        diff_text = _unified_diff(
+        diff_text = unified_diff(
             normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
         )
-        changed, ins, rem = _diff_stats(diff_text)
+        changed, ins, rem = diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
             short_path(output_file),
@@ -542,7 +545,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     return False
 
 
-def _compile_single_file(
+def compile_single_file(
     source_path: Path,
     output_file: Path,
     scripts_path: Path,
@@ -625,12 +628,12 @@ def run_compile_all(
             for src, out, variables, label in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
-            results = pool.starmap(_compile_single_file, args_list)
+            results = pool.starmap(compile_single_file, args_list)
         total_inlined_count += sum(inlined for inlined, _ in results)
         written_files_count += sum(written for _, written in results)
     else:
         for src, out, variables, label in files_to_process:
-            inlined_for_file, wrote = _compile_single_file(
+            inlined_for_file, wrote = compile_single_file(
                 src, out, uncompiled_path, variables, uncompiled_path, dry_run, label
             )
             total_inlined_count += inlined_for_file

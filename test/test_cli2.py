@@ -66,15 +66,6 @@ def _patch_compile_deps(monkeypatch, *, called: dict[str, Any]):
     monkeypatch.setattr(m, "start_watch", fake_start_watch)
 
 
-def _patch_shred_deps(monkeypatch, *, result=(3, 2)):
-    import bash2gitlab.__main__ as m
-
-    def fake_shred_gitlab_ci(**kwargs):
-        return result
-
-    monkeypatch.setattr(m, "run_shred_gitlab", fake_shred_gitlab_ci)
-
-
 def _patch_detect_drift_deps(monkeypatch, *, called: dict[str, Any]):
     import bash2gitlab.__main__ as m
 
@@ -169,44 +160,6 @@ def test_compile_watch_calls_start_watch(monkeypatch, run_cli, tmp_path):
     assert code in (0, None)
     assert "start_watch" in called
     # assert "run_compile_all" not in called
-
-
-def test_shred_with_and_without_scripts_out(monkeypatch, run_cli, tmp_path):
-    _patch_shred_deps(monkeypatch)
-
-    # case 1: out points to a file => scripts_out_dir is parent of out_file
-    in_file = tmp_path / "gitlab.yml"
-    in_file.write_text("stubs", encoding="utf-8")
-    out_file = tmp_path / "out.yml"
-    out_file.write_text("will be overwritten", encoding="utf-8")
-
-    code1 = run_cli(
-        [
-            "bash2yaml",
-            "shred",
-            "--in",
-            str(in_file),
-            "--out",
-            str(out_file),
-            "--dry-run",
-        ]
-    )
-    assert code1 in (0, None)
-
-    # case 2: explicit scripts-out path used as-is
-    scripts_out = tmp_path / "scripts"
-    scripts_out.mkdir()
-    code2 = run_cli(
-        [
-            "bash2yaml",
-            "shred",
-            "--in",
-            str(in_file),
-            "--out",
-            str(out_file),
-        ]
-    )
-    assert code2 in (0, None)
 
 
 def test_detect_drift_variants(monkeypatch, run_cli, tmp_path):

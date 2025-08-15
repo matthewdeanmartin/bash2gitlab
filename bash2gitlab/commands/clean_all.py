@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 # --- Helpers -----------------------------------------------------------------
 
 
-def _partner_hash_file(base_file: Path) -> Path:
+def partner_hash_file(base_file: Path) -> Path:
     """Return the expected .hash file for a target file.
 
     Example: foo/bar.yml -> foo/bar.yml.hash
@@ -18,7 +18,7 @@ def _partner_hash_file(base_file: Path) -> Path:
     return base_file.with_suffix(base_file.suffix + ".hash")
 
 
-def _base_from_hash(hash_file: Path) -> Path:
+def base_from_hash(hash_file: Path) -> Path:
     """Return the expected base file for a .hash file.
 
     Works even on older Python without Path.removesuffix().
@@ -43,11 +43,11 @@ def iter_target_pairs(root: Path) -> Iterator[tuple[Path, Path]]:
         if p.is_dir():
             continue
         if p.name.endswith(".hash"):
-            base = _base_from_hash(p)
+            base = base_from_hash(p)
             if base.exists() and base.is_file():
                 yield (base, p)
         else:
-            hashf = _partner_hash_file(p)
+            hashf = partner_hash_file(p)
             if hashf.exists() and hashf.is_file():
                 # Pair will also be seen when rglob hits the .hash file; skip duplicates
                 continue
@@ -74,14 +74,14 @@ def list_stray_files(root: Path) -> list[Path]:
             pass
 
         if p.name.endswith(".hash"):
-            base = _base_from_hash(p)
+            base = base_from_hash(p)
             if base.exists():
                 paired_bases.add(base)
                 paired_hashes.add(p)
             else:
                 strays.append(p)
         else:
-            hashf = _partner_hash_file(p)
+            hashf = partner_hash_file(p)
             if hashf.exists():
                 paired_bases.add(p)
                 paired_hashes.add(hashf)
@@ -97,11 +97,11 @@ def list_stray_files(root: Path) -> list[Path]:
 # --- Hash verification --------------------------------------------------------
 
 
-def _read_current_text(path: Path) -> str:
+def read_current_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _read_hash_text(hash_file: Path) -> str | None:
+def read_hash_text(hash_file: Path) -> str | None:
     """Decode base64 content of *hash_file* to text.
 
     Returns None if decoding fails.
@@ -123,10 +123,10 @@ def is_target_unchanged(base_file: Path, hash_file: Path) -> bool | None:
         - False if they differ
         - None if the hash file cannot be decoded
     """
-    expected = _read_hash_text(hash_file)
+    expected = read_hash_text(hash_file)
     if expected is None:
         return None
-    current = _read_current_text(base_file)
+    current = read_current_text(base_file)
     return current == expected
 
 
@@ -155,7 +155,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
     for p in root.rglob("*.hash"):
         if p.is_dir():
             continue
-        base = _base_from_hash(p)
+        base = base_from_hash(p)
         if not base.exists() or not base.is_file():
             # Stray .hash; leave it
             continue

@@ -1,13 +1,28 @@
 # Workflow
 
-bash2gitlab is a somewhat opinionated workflow.
+## Shredding
+
+bash2gitlab shredding is not necessarily opinionated.
+
+- Shred your `.gitlab-ci.yml` or other template with `bash2gitlab shred`
+- Open in your IDE for syntax highlighting
+- Lint with shellcheck
+- Find bugs and edit your original yaml to fix via copy-paste.
+- Delete the shredded bash
+
+Round trip shred-compile is not guaranteed, yaml is too quirky.
+
+## Compiling
+
+bash2gitlab compilation is a somewhat opinionated workflow and make the most sense when you are using a centralized
+repo for your gitlab templates.
 
 ## Repo setup
 
 - Create each of your other repos, e.g.
-  - Infrastructure as code
-  - Services/Data tier
-  - User interface
+    - Infrastructure as code
+    - Services/Data tier
+    - User interface
 
 Each of these will need builds scripts, eg.
 
@@ -15,7 +30,7 @@ Each of these will need builds scripts, eg.
 - Compilation and packaging
 - Deployment to some environment
 
-To validate your scripts you can run them locally or run them in a pipeline. 
+To validate your scripts you can run them locally or run them in a pipeline.
 
 This works fine until you have scripts that are duplicated across each of your repos.
 
@@ -26,22 +41,32 @@ Now each bash script will be resolved relative to the executing pipeline. So all
 
 As soon as you inline all your bash, you lose almost all tooling for bash.
 
-## Shred existing yaml templates to bash and yaml
+## Converting pre-existing yaml
 
-## Update bash so it can run locally and on your build server
+- Shred existing yaml templates to bash and yaml
+- Update bash so it can run locally and on your build server
+- Validate bash with shellcheck, etc.
 
-## Validate bash with shellcheck, etc.
+## Compilation
 
-## Generate compiled
+- Generate compiled
+- Add precommit hook so it is compiled each time you attempt to commit
 
-## Reference from other repos
+## Using your new scripts
 
-## Deploy to other repo via copy2local
+- Reference from other repos with `include:` as per usual
 
-## Alternatively, deploy to other repos via "deploy-by-map" (not implemented yet)
+## Debugging after script centralization
 
-## Execute bash locally
+- Deploy to other repo via copy2local
+- Alternatively, deploy to other repos via `map-deploy`
+- Execute bash locally in the various repos
+- Fix bugs in your bash locally
+- Run the commit2central to copy local changes back to the centralized repo (pending feature)
 
-## Fix bugs in your bash locally
+## What could go wrong?
 
-## Run the commit2central to copy local changes back to the centralized repo
+- Compile automatically detects unexpected changes in the generated code.
+- People could edit the compiled code, use `detect-drift` to find that
+- People could edit the compiled code and you delete it all to recompile. Use `clean` to do a careful clean and detect
+  changes.

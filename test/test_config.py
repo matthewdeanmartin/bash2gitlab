@@ -19,7 +19,7 @@ def reset_singleton_and_env():
     original_env = os.environ.copy()
 
     # Reset the singleton before the test runs
-    config_module._reset_for_testing()
+    config_module.reset_for_testing()
 
     yield  # Test runs here
 
@@ -28,7 +28,7 @@ def reset_singleton_and_env():
     os.environ.update(original_env)
 
     # Reset the singleton again after the test
-    config_module._reset_for_testing()
+    config_module.reset_for_testing()
 
 
 def test_load_from_bash2gitlab_toml(tmp_path: Path):
@@ -42,7 +42,7 @@ def test_load_from_bash2gitlab_toml(tmp_path: Path):
     )
 
     # Reset the config to load from the specified path
-    config_module._reset_for_testing(config_path_override=config_file)
+    config_module.reset_for_testing(config_path_override=config_file)
     config = config_module.config
 
     assert config.input_dir == "/path/from/toml"
@@ -65,7 +65,7 @@ def test_load_from_pyproject_toml(tmp_path: Path):
         """
     )
 
-    config_module._reset_for_testing(config_path_override=config_file)
+    config_module.reset_for_testing(config_path_override=config_file)
     config = config_module.config
 
     assert config.input_file == "my_ci.yml"
@@ -92,7 +92,7 @@ def test_env_var_overrides_file_config(tmp_path: Path):
             "BASH2GITLAB_VERBOSE": "true",
         },
     ):
-        config_module._reset_for_testing(config_path_override=config_file)
+        config_module.reset_for_testing(config_path_override=config_file)
         config = config_module.config
 
         # This value should come from the environment variable
@@ -125,7 +125,7 @@ def test_env_var_overrides_file_config(tmp_path: Path):
 def test_boolean_env_var_parsing(env_value: str, expected: bool):
     """Test various string representations for boolean environment variables."""
     with patch.dict(os.environ, {"BASH2GITLAB_DRY_RUN": env_value}):
-        config_module._reset_for_testing()
+        config_module.reset_for_testing()
         config = config_module.config
         assert config.dry_run is expected
 
@@ -134,7 +134,7 @@ def test_no_config_file_found(tmp_path: Path):
     """Test behavior when no config file exists."""
     # Change CWD to a temporary directory where no config file exists
     os.chdir(tmp_path)
-    config_module._reset_for_testing()
+    config_module.reset_for_testing()
     config = config_module.config
 
     assert config.input_dir is None
@@ -153,7 +153,7 @@ def test_config_file_finding_logic(tmp_path: Path):
     os.chdir(sub_dir)
 
     # Reset should now find the file in the parent directory
-    config_module._reset_for_testing()
+    config_module.reset_for_testing()
     config = config_module.config
 
     assert config.input_dir == "found_in_root"
@@ -168,7 +168,7 @@ def test_only_env_vars_no_file():
             "BASH2GITLAB_QUIET": "1",
         },
     ):
-        config_module._reset_for_testing()
+        config_module.reset_for_testing()
         config = config_module.config
 
         assert config.output_file == "/dev/null"

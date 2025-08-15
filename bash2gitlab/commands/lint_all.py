@@ -101,7 +101,7 @@ class LintResult:
 # ---------------------------------------------------------------------------
 
 
-def _api_url(
+def api_url(
     base_url: str,
     project_id: int | None,
 ) -> str:
@@ -120,7 +120,7 @@ def _api_url(
     return f"{base}/api/v4/projects/{project_id}/ci/lint"
 
 
-def _post_json(
+def post_json(
     url: str,
     payload: dict,
     *,
@@ -205,7 +205,7 @@ def lint_single_text(
     Returns:
         A :class:`LintResult` with structured details.
     """
-    url = _api_url(gitlab_url, project_id)
+    url = api_url(gitlab_url, project_id)
 
     payload: dict = {"content": content}
 
@@ -215,13 +215,13 @@ def lint_single_text(
     if project_id is not None and include_merged_yaml:
         payload["include_merged_yaml"] = True
 
-    resp = _post_json(url, payload, private_token=private_token, timeout=timeout)
+    resp = post_json(url, payload, private_token=private_token, timeout=timeout)
 
     # GitLab returns varing shapes across versions. Normalize defensively.
     status = str(resp.get("status") or ("valid" if resp.get("valid") else "invalid"))
     valid = bool(resp.get("valid", status == "valid"))
 
-    def _collect(kind: str) -> list[LintIssue]:
+    def collect(kind: str) -> list[LintIssue]:
         out: list[LintIssue] = []
         items = resp.get(kind) or []
         if isinstance(items, list):
@@ -238,8 +238,8 @@ def lint_single_text(
                     out.append(LintIssue(severity=kind.rstrip("s"), message=str(m)))
         return out
 
-    errors = _collect("errors")
-    warnings = _collect("warnings")
+    errors = collect("errors")
+    warnings = collect("warnings")
     merged_yaml: str | None = None
     if include_merged_yaml:
         merged_yaml = resp.get("merged_yaml") or resp.get("mergedYaml")
@@ -302,7 +302,7 @@ def lint_single_file(
 _YAML_GLOBS: tuple[str, ...] = ("*.yml", "*.yaml")
 
 
-def _discover_yaml_files(root: Path) -> list[Path]:
+def discover_yaml_files(root: Path) -> list[Path]:
     """Recursively find YAML files under *root*.
 
     Files with suffixes ``.yml`` or ``.yaml`` are included.
@@ -341,7 +341,7 @@ def lint_output_folder(
     Returns:
         List of :class:`LintResult`, one per file.
     """
-    files = _discover_yaml_files(output_root)
+    files = discover_yaml_files(output_root)
     if not files:
         logger.warning("No YAML files found under %s", output_root)
         return []

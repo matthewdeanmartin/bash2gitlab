@@ -4,13 +4,13 @@ import base64
 from pathlib import Path
 
 from bash2gitlab.commands.clean_all import (
-    _base_from_hash,
-    _partner_hash_file,
-    _read_hash_text,
+    base_from_hash,
     clean_targets,
     is_target_unchanged,
     iter_target_pairs,
     list_stray_files,
+    partner_hash_file,
+    read_hash_text,
     report_targets,
 )
 
@@ -31,13 +31,13 @@ def make_pair(root: Path, rel: str, content: str) -> tuple[Path, Path]:
     """
     base = write_text(root / rel, content)
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    h = write_text(_partner_hash_file(base), encoded)
+    h = write_text(partner_hash_file(base), encoded)
     return base, h
 
 
 def make_invalid_hash(root: Path, rel: str, content: str, hash_payload: str) -> tuple[Path, Path]:
     base = write_text(root / rel, content)
-    h = write_text(_partner_hash_file(base), hash_payload)
+    h = write_text(partner_hash_file(base), hash_payload)
     return base, h
 
 
@@ -48,13 +48,13 @@ def test_partner_hash_and_base_inverse(tmp_path: Path):
     base = tmp_path / "foo" / "bar.yml"
     base.parent.mkdir(parents=True)
     base.touch()
-    h = _partner_hash_file(base)
+    h = partner_hash_file(base)
     assert h.name == "bar.yml.hash"
     # round-trip base_from_hash
-    assert _base_from_hash(h) == base
+    assert base_from_hash(h) == base
 
     # no .hash suffix returns input path unchanged
-    assert _base_from_hash(base) == base
+    assert base_from_hash(base) == base
 
 
 def test_iter_target_pairs_yields_only_existing_pairs_once(tmp_path: Path):
@@ -91,12 +91,12 @@ def test_list_stray_files_reports_both_kinds(tmp_path: Path):
 
 def test__read_hash_text_valid_and_invalid(tmp_path: Path, caplog):
     base, h = make_pair(tmp_path, "data.txt", "hello")
-    assert _read_hash_text(h) == "hello"
+    assert read_hash_text(h) == "hello"
 
     # Corrupt payload
     bad = write_text(tmp_path / "data2.txt.hash", "!!!!!not base64!!!!")
     with caplog.at_level("WARNING"):
-        assert _read_hash_text(bad) is None
+        assert read_hash_text(bad) is None
         # Ensure we warned about failure
         assert any("Failed to decode hash file" in r.message for r in caplog.records)
 

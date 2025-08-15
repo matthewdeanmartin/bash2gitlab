@@ -39,11 +39,11 @@ class _Config:
             config_path_override (Path | None): If provided, this specific config file
                 will be loaded, bypassing the normal search. For testing.
         """
-        self._config_path_override = config_path_override
-        self._file_config: dict[str, Any] = self._load_file_config()
-        self._env_config: dict[str, str] = self._load_env_config()
+        self.config_path_override = config_path_override
+        self.file_config: dict[str, Any] = self.load_file_config()
+        self.env_config: dict[str, str] = self.load_env_config()
 
-    def _find_config_file(self) -> Path | None:
+    def find_config_file(self) -> Path | None:
         """Searches for a configuration file in the current directory and its parents."""
         current_dir = Path.cwd()
         for directory in [current_dir, *current_dir.parents]:
@@ -54,9 +54,9 @@ class _Config:
                     return config_path
         return None
 
-    def _load_file_config(self) -> dict[str, Any]:
+    def load_file_config(self) -> dict[str, Any]:
         """Loads configuration from the first TOML file found or a test override."""
-        config_path = self._config_path_override or self._find_config_file()
+        config_path = self.config_path_override or self.find_config_file()
         if not config_path:
             return {}
 
@@ -85,7 +85,7 @@ class _Config:
             logger.error(f"Error reading file {config_path}: {e}")
             return {}
 
-    def _load_env_config(self) -> dict[str, str]:
+    def load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
         file_config = {}
         for key, value in os.environ.items():
@@ -95,22 +95,22 @@ class _Config:
                 logger.debug(f"Loaded from environment: {config_key}")
         return file_config
 
-    def _get_str(self, key: str) -> str | None:
+    def get_str(self, key: str) -> str | None:
         """Gets a string value, respecting precedence."""
-        value = self._env_config.get(key)
+        value = self.env_config.get(key)
         if value is not None:
             return value
 
-        value = self._file_config.get(key)
+        value = self.file_config.get(key)
         return str(value) if value is not None else None
 
-    def _get_bool(self, key: str) -> bool | None:
+    def get_bool(self, key: str) -> bool | None:
         """Gets a boolean value, respecting precedence."""
-        value = self._env_config.get(key)
+        value = self.env_config.get(key)
         if value is not None:
             return value.lower() in ("true", "1", "t", "y", "yes")
 
-        value = self._file_config.get(key)
+        value = self.file_config.get(key)
         if value is not None:
             if not isinstance(value, bool):
                 logger.warning(f"Config value for '{key}' is not a boolean. Coercing to bool.")
@@ -118,9 +118,9 @@ class _Config:
 
         return None
 
-    def _get_int(self, key: str) -> int | None:
+    def get_int(self, key: str) -> int | None:
         """Gets an integer value, respecting precedence."""
-        value = self._env_config.get(key)
+        value = self.env_config.get(key)
         if value is not None:
             try:
                 return int(value)
@@ -128,7 +128,7 @@ class _Config:
                 logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
                 return None
 
-        value = self._file_config.get(key)
+        value = self.file_config.get(key)
         if value is not None:
             try:
                 return int(value)
@@ -141,44 +141,44 @@ class _Config:
     # --- Compile Command Properties ---
     @property
     def input_dir(self) -> str | None:
-        return self._get_str("input_dir")
+        return self.get_str("input_dir")
 
     @property
     def output_dir(self) -> str | None:
-        return self._get_str("output_dir")
+        return self.get_str("output_dir")
 
     @property
     def parallelism(self) -> int | None:
-        return self._get_int("parallelism")
+        return self.get_int("parallelism")
 
     # --- Shred Command Properties ---
     @property
     def input_file(self) -> str | None:
-        return self._get_str("input_file")
+        return self.get_str("input_file")
 
     @property
     def output_file(self) -> str | None:
-        return self._get_str("output_file")
+        return self.get_str("output_file")
 
     # --- Shared Properties ---
     @property
     def dry_run(self) -> bool | None:
-        return self._get_bool("dry_run")
+        return self.get_bool("dry_run")
 
     @property
     def verbose(self) -> bool | None:
-        return self._get_bool("verbose")
+        return self.get_bool("verbose")
 
     @property
     def quiet(self) -> bool | None:
-        return self._get_bool("quiet")
+        return self.get_bool("quiet")
 
 
 # Singleton instance for the rest of the application to use.
 config = _Config()
 
 
-def _reset_for_testing(config_path_override: Path | None = None):
+def reset_for_testing(config_path_override: Path | None = None):
     """
     Resets the singleton config instance. For testing purposes only.
     Allows specifying a direct path to a config file.
