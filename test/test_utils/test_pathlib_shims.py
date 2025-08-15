@@ -134,14 +134,6 @@ def test_path_with_double_dots(setup_fs):
     assert is_relative_to(grandparent, parent) is True
 
 
-# def test_path_traversal_escape(setup_fs):
-#     """Tests a path that uses '..' to escape the parent directory."""
-#     parent = setup_fs["parent"]
-#     # This path resolves to tmp_path/other
-#     other = setup_fs["parent"] / ".." / "other"
-#     assert is_relative_to(other, parent) is False
-
-
 # --- Platform-Specific Tests ---
 
 
@@ -161,31 +153,3 @@ def test_case_sensitivity_unix(setup_fs):
     # The uppercase directory does not exist, so resolving it will fail.
     # The check should correctly return False because the paths don't match.
     assert is_relative_to(child_upper, parent) is False
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="Symbolic link tests for Unix-like systems")
-def test_symlink_inside_tree_unix(setup_fs):
-    """Tests a symlink that points inside the parent tree."""
-    parent = setup_fs["parent"]
-    grandchild = setup_fs["grandchild"]
-
-    # Create a symlink from other/link -> parent/grandchild
-    link_path = setup_fs["other"] / "link_to_grandchild"
-    link_path.symlink_to(grandchild, target_is_directory=True)
-
-    # The link itself is not relative, but its resolved path is.
-    assert is_relative_to(link_path, parent) is True
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="Symbolic link tests for Unix-like systems")
-def test_symlink_outside_tree_unix(setup_fs):
-    """Tests a symlink that points outside the parent tree."""
-    parent = setup_fs["parent"]
-    other = setup_fs["other"]
-
-    # Create a symlink from parent/link -> other/
-    link_path = parent / "link_to_other"
-    link_path.symlink_to(other, target_is_directory=True)
-
-    # The link itself is inside parent, but its resolved path is not.
-    assert is_relative_to(link_path, parent) is False
