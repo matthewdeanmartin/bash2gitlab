@@ -8,17 +8,26 @@ keywords = ["bash", "gitlab"]
 license = "MIT"
 requires-python = ">=3.8"
 dependencies = [
+    # Core
     "ruamel.yaml",
-    "colorlog",
-    "argcomplete",
-    "packaging",
     "watchdog>=3.0.0",
+    # Extensibility
     "pluggy",
+    # CLI
+    "argcomplete",
+    # UI
     "textual",
-    # backwards compatibility
+    "colorlog",
+    # graphing
+    "pyvis",
+    "graphviz",
+    "matplotlib",
+    # update checker
+    "packaging",
+    # Config, backwards compatibility
     "toml",
     # yamlfix
-    "pydantic>=2.12.0a1; python_version >= '3.14'"
+    # "pydantic>=2.12.0a1; python_version >= '3.14'"
 #    "importlib-resources; python_version < '3.9'",
 #    "typing_extensions ; python_version < '3.8'",
 ]

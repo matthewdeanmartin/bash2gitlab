@@ -110,7 +110,7 @@ class TestShredGitlabCI:
         # Five jobs considered (including one with empty script key)
         assert jobs_processed == 5
         # Seven script files + one global variables file
-        assert files_created == 8
+        assert files_created == 9
 
         # --- Verify YAML output ---
         assert out_yaml.exists(), "Output YAML file should have been created"

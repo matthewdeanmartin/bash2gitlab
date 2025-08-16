@@ -60,6 +60,9 @@ from bash2gitlab.utils.update_checker import check_for_updates
 from bash2gitlab.utils.utils import short_path
 from bash2gitlab.watch_files import start_watch
 
+# emoji support
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+
 logger = logging.getLogger(__name__)
 
 

@@ -21,6 +21,7 @@
 ├── hookspecs.py
 ├── plugins.py
 ├── py.typed
+├── tui.py
 ├── utils/
 │   ├── cli_suggestions.py
 │   ├── dotenv.py
@@ -535,6 +536,986 @@ def call_seq(func_name: str, value, **kwargs):
 ```
 # when type checking dependents, tell type checkers to use this package's types
 ```
+## File: tui.py
+```python
+#!/usr/bin/env python3
+"""
+Textual TUI for bash2gitlab - Interactive terminal interface
+"""
+
+from __future__ import annotations
+
+import logging
+import logging.config
+import subprocess  # nosec
+import sys
+from typing import Any
+
+from textual import on, work
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Container, Horizontal, Vertical, VerticalScroll
+from textual.message import Message
+from textual.screen import Screen
+from textual.widgets import (
+    Button,
+    Checkbox,
+    Footer,
+    Header,
+    Input,
+    Label,
+    OptionList,
+    RichLog,
+    Static,
+    TabbedContent,
+    TabPane,
+)
+
+from bash2gitlab import __about__
+from bash2gitlab.config import config
+from bash2gitlab.utils.logging_config import generate_config
+
+# emoji support
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+
+
+class CommandForm(Static):
+    """Base class for command forms with common functionality."""
+
+    def __init__(self, command_name: str, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.command_name = command_name
+
+    def compose(self) -> ComposeResult:
+        """Override in subclasses to define form layout."""
+        yield Static("Override compose() in subclass")
+
+    async def execute_command(self) -> None:
+        """Override in subclasses to execute the command."""
+
+    def get_common_args(self) -> list[str]:
+        """Get common arguments like --dry-run, --verbose, etc."""
+        args: list[str] = []
+
+        # Check for dry run option
+        dry_run_widget = self.query_one("#dry-run", Checkbox)
+        if dry_run_widget.value:
+            args.append("--dry-run")
+
+        # Check for verbose option
+        verbose_widget = self.query_one("#verbose", Checkbox)
+        if verbose_widget.value:
+            args.append("--verbose")
+
+        # Check for quiet option
+        quiet_widget = self.query_one("#quiet", Checkbox)
+        if quiet_widget.value:
+            args.append("--quiet")
+
+        return args
+
+
+class CompileForm(CommandForm):
+    """Form for the compile command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("📦 Compile Configuration", classes="form-title")
+
+            with Horizontal():
+                yield Label("Input Directory:", classes="label")
+                yield Input(
+                    value=str(config.input_dir) if config and config.input_dir else "",
+                    placeholder="Path to uncompiled .gitlab-ci.yml directory",
+                    id="input-dir",
+                )
+
+            with Horizontal():
+                yield Label("Output Directory:", classes="label")
+                yield Input(
+                    value=str(config.output_dir) if config and config.output_dir else "",
+                    placeholder="Path for compiled GitLab CI files",
+                    id="output-dir",
+                )
+
+            with Horizontal():
+                yield Label("Parallelism:", classes="label")
+                yield Input(
+                    value=str(config.parallelism) if config and config.parallelism else "4",
+                    placeholder="Number of parallel processes",
+                    id="parallelism",
+                )
+
+            with Horizontal():
+                yield Checkbox("Watch for changes", id="watch")
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("🚀 Compile", variant="success", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the compile command."""
+        args = ["bash2gitlab", "compile"]
+
+        # Get input values
+        input_dir = self.query_one("#input-dir", Input).value.strip()
+        output_dir = self.query_one("#output-dir", Input).value.strip()
+        parallelism = self.query_one("#parallelism", Input).value.strip()
+        watch = self.query_one("#watch", Checkbox).value
+
+        if input_dir:
+            args.extend(["--in", input_dir])
+        if output_dir:
+            args.extend(["--out", output_dir])
+        if parallelism:
+            args.extend(["--parallelism", parallelism])
+        if watch:
+            args.append("--watch")
+
+        args.extend(self.get_common_args())
+
+        # Post message to main app to execute command
+        self.post_message(ExecuteCommand(args))
+
+
+class ShredForm(CommandForm):
+    """Form for the shred command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("✂️ Shred Configuration", classes="form-title")
+
+            with Horizontal():
+                yield Label("Mode:", classes="label")
+                yield OptionList("Single File", "Folder Tree", id="shred-mode")
+
+            with Horizontal():
+                yield Label("Input File:", classes="label")
+                yield Input(placeholder="Path to single .gitlab-ci.yml file", id="input-file")
+
+            with Horizontal():
+                yield Label("Input Folder:", classes="label")
+                yield Input(placeholder="Folder to recursively shred", id="input-folder")
+
+            with Horizontal():
+                yield Label("Output Directory:", classes="label")
+                yield Input(placeholder="Output directory for shredded files", id="output-dir")
+
+            with Horizontal():
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("✂️ Shred", variant="warning", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the shred command."""
+        args = ["bash2gitlab", "shred"]
+
+        # Get input values
+        mode = self.query_one("#shred-mode", OptionList).highlighted
+        input_file = self.query_one("#input-file", Input).value.strip()
+        input_folder = self.query_one("#input-folder", Input).value.strip()
+        output_dir = self.query_one("#output-dir", Input).value.strip()
+
+        if mode == 0:  # Single File
+            if input_file:
+                args.extend(["--in-file", input_file])
+        else:  # Folder Tree
+            if input_folder:
+                args.extend(["--in-folder", input_folder])
+
+        if output_dir:
+            args.extend(["--out", output_dir])
+
+        args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class LintForm(CommandForm):
+    """Form for the lint command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("🔍 Lint Configuration", classes="form-title")
+
+            with Horizontal():
+                yield Label("Output Directory:", classes="label")
+                yield Input(
+                    value=str(config.output_dir) if config and config.output_dir else "",
+                    placeholder="Directory with compiled YAML files",
+                    id="output-dir",
+                )
+
+            with Horizontal():
+                yield Label("GitLab URL:", classes="label")
+                yield Input(placeholder="https://gitlab.com", id="gitlab-url")
+
+            with Horizontal():
+                yield Label("Token:", classes="label")
+                yield Input(placeholder="Private or CI job token", password=True, id="token")
+
+            with Horizontal():
+                yield Label("Project ID:", classes="label")
+                yield Input(placeholder="Optional project ID for project-scoped lint", id="project-id")
+
+            with Horizontal():
+                yield Label("Git Ref:", classes="label")
+                yield Input(placeholder="Git ref (branch/tag/commit)", id="ref")
+
+            with Horizontal():
+                yield Label("Parallelism:", classes="label")
+                yield Input(
+                    value=str(config.parallelism) if config and config.parallelism else "4",
+                    placeholder="Max concurrent requests",
+                    id="parallelism",
+                )
+
+            with Horizontal():
+                yield Label("Timeout:", classes="label")
+                yield Input(value="20.0", placeholder="HTTP timeout in seconds", id="timeout")
+
+            with Horizontal():
+                yield Checkbox("Include merged YAML", id="include-merged")
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("🔍 Lint", variant="primary", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the lint command."""
+        args = ["bash2gitlab", "lint"]
+
+        # Get input values
+        output_dir = self.query_one("#output-dir", Input).value.strip()
+        gitlab_url = self.query_one("#gitlab-url", Input).value.strip()
+        token = self.query_one("#token", Input).value.strip()
+        project_id = self.query_one("#project-id", Input).value.strip()
+        ref = self.query_one("#ref", Input).value.strip()
+        parallelism = self.query_one("#parallelism", Input).value.strip()
+        timeout = self.query_one("#timeout", Input).value.strip()
+        include_merged = self.query_one("#include-merged", Checkbox).value
+
+        if output_dir:
+            args.extend(["--out", output_dir])
+        if gitlab_url:
+            args.extend(["--gitlab-url", gitlab_url])
+        if token:
+            args.extend(["--token", token])
+        if project_id:
+            args.extend(["--project-id", project_id])
+        if ref:
+            args.extend(["--ref", ref])
+        if parallelism:
+            args.extend(["--parallelism", parallelism])
+        if timeout:
+            args.extend(["--timeout", timeout])
+        if include_merged:
+            args.append("--include-merged-yaml")
+
+        args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class CleanForm(CommandForm):
+    """Form for the clean command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("🧹 Clean Configuration", classes="form-title")
+
+            with Horizontal():
+                yield Label("Output Directory:", classes="label")
+                yield Input(
+                    value=str(config.output_dir) if config and config.output_dir else "",
+                    placeholder="Directory to clean",
+                    id="output-dir",
+                )
+
+            with Horizontal():
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Static("⚠️ This will remove unmodified files that bash2gitlab wrote.", classes="warning")
+            yield Button("🧹 Clean", variant="error", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the clean command."""
+        args = ["bash2gitlab", "clean"]
+
+        output_dir = self.query_one("#output-dir", Input).value.strip()
+
+        if output_dir:
+            args.extend(["--out", output_dir])
+
+        args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class InitForm(CommandForm):
+    """Form for the init command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("🆕 Initialize Project", classes="form-title")
+
+            with Horizontal():
+                yield Label("Directory:", classes="label")
+                yield Input(value=".", placeholder="Directory to initialize", id="directory")
+
+            with Horizontal():
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("🆕 Initialize", variant="success", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the init command."""
+        args = ["bash2gitlab", "init"]
+
+        directory = self.query_one("#directory", Input).value.strip()
+
+        if directory and directory != ".":
+            args.append(directory)
+
+        args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class Copy2LocalForm(CommandForm):
+    """Form for the copy2local command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("📥 Copy to Local", classes="form-title")
+
+            with Horizontal():
+                yield Label("Repository URL:", classes="label")
+                yield Input(placeholder="Git repository URL", id="repo-url")
+
+            with Horizontal():
+                yield Label("Branch:", classes="label")
+                yield Input(placeholder="Branch name", id="branch")
+
+            with Horizontal():
+                yield Label("Source Directory:", classes="label")
+                yield Input(placeholder="Directory in repo to copy", id="source-dir")
+
+            with Horizontal():
+                yield Label("Destination:", classes="label")
+                yield Input(placeholder="Local destination directory", id="copy-dir")
+
+            with Horizontal():
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("📥 Copy", variant="primary", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the copy2local command."""
+        args = ["bash2gitlab", "copy2local"]
+
+        repo_url = self.query_one("#repo-url", Input).value.strip()
+        branch = self.query_one("#branch", Input).value.strip()
+        source_dir = self.query_one("#source-dir", Input).value.strip()
+        copy_dir = self.query_one("#copy-dir", Input).value.strip()
+
+        if repo_url:
+            args.extend(["--repo-url", repo_url])
+        if branch:
+            args.extend(["--branch", branch])
+        if source_dir:
+            args.extend(["--source-dir", source_dir])
+        if copy_dir:
+            args.extend(["--copy-dir", copy_dir])
+
+        args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class MapDeployForm(CommandForm):
+    """Form for the map-deploy command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("🗺️ Map Deploy", classes="form-title")
+
+            with Horizontal():
+                yield Label("PyProject Path:", classes="label")
+                yield Input(value="pyproject.toml", placeholder="Path to pyproject.toml", id="pyproject-path")
+
+            with Horizontal():
+                yield Checkbox("Force overwrite", id="force")
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("🗺️ Deploy", variant="primary", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the map-deploy command."""
+        args = ["bash2gitlab", "map-deploy"]
+
+        pyproject_path = self.query_one("#pyproject-path", Input).value.strip()
+        force = self.query_one("#force", Checkbox).value
+
+        if pyproject_path:
+            args.extend(["--pyproject", pyproject_path])
+        if force:
+            args.append("--force")
+
+        args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class CommitMapForm(CommandForm):
+    """Form for the commit-map command."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("↩️ Commit Map", classes="form-title")
+
+            with Horizontal():
+                yield Label("PyProject Path:", classes="label")
+                yield Input(value="pyproject.toml", placeholder="Path to pyproject.toml", id="pyproject-path")
+
+            with Horizontal():
+                yield Checkbox("Force overwrite", id="force")
+                yield Checkbox("Dry run", id="dry-run")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("↩️ Commit", variant="warning", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the commit-map command."""
+        args = ["bash2gitlab", "commit-map"]
+
+        pyproject_path = self.query_one("#pyproject-path", Input).value.strip()
+        force = self.query_one("#force", Checkbox).value
+
+        if pyproject_path:
+            args.extend(["--pyproject", pyproject_path])
+        if force:
+            args.append("--force")
+
+        args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class PrecommitForm(CommandForm):
+    """Form for precommit install/uninstall commands."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("🪝 Precommit Hooks", classes="form-title")
+
+            with Horizontal():
+                yield Label("Repository Root:", classes="label")
+                yield Input(value=".", placeholder="Git repository root", id="repo-root")
+
+            with Horizontal():
+                yield Checkbox("Force", id="force")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            with Horizontal():
+                yield Button("🪝 Install Hook", variant="success", id="install-btn")
+                yield Button("🗑️ Uninstall Hook", variant="error", id="uninstall-btn")
+
+    @on(Button.Pressed, "#install-btn")
+    async def on_install_pressed(self) -> None:
+        """Handle install button press."""
+        args = ["bash2gitlab", "install-precommit"]
+
+        repo_root = self.query_one("#repo-root", Input).value.strip()
+        force = self.query_one("#force", Checkbox).value
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+
+        if repo_root and repo_root != ".":
+            args.extend(["--repo-root", repo_root])
+        if force:
+            args.append("--force")
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+    @on(Button.Pressed, "#uninstall-btn")
+    async def on_uninstall_pressed(self) -> None:
+        """Handle uninstall button press."""
+        args = ["bash2gitlab", "uninstall-precommit"]
+
+        repo_root = self.query_one("#repo-root", Input).value.strip()
+        force = self.query_one("#force", Checkbox).value
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+
+        if repo_root and repo_root != ".":
+            args.extend(["--repo-root", repo_root])
+        if force:
+            args.append("--force")
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+
+class UtilityForm(CommandForm):
+    """Form for utility commands like doctor, graph, show-config, detect-drift."""
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("🔧 Utilities", classes="form-title")
+
+            # Doctor command
+            with Horizontal():
+                yield Button("🩺 Doctor", variant="primary", id="doctor-btn")
+                yield Static("Run health checks")
+
+            # Show config command
+            with Horizontal():
+                yield Button("⚙️ Show Config", variant="primary", id="show-config-btn")
+                yield Static("Display current configuration")
+
+            # Graph command
+            with Container():
+                with Horizontal():
+                    yield Label("Input Directory:", classes="label")
+                    yield Input(
+                        value=str(config.input_dir) if config and config.input_dir else "",
+                        placeholder="Input directory for graph",
+                        id="graph-input-dir",
+                    )
+                yield Button("📊 Generate Graph", variant="primary", id="graph-btn")
+
+            # Detect drift command
+            with Container():
+                with Horizontal():
+                    yield Label("Output Directory:", classes="label")
+                    yield Input(
+                        value=str(config.output_dir) if config and config.output_dir else "",
+                        placeholder="Output directory to check",
+                        id="drift-output-dir",
+                    )
+                yield Button("🔍 Detect Drift", variant="warning", id="drift-btn")
+
+            with Horizontal():
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+    @on(Button.Pressed, "#doctor-btn")
+    async def on_doctor_pressed(self) -> None:
+        """Handle doctor button press."""
+        args = ["bash2gitlab", "doctor"]
+
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+    @on(Button.Pressed, "#show-config-btn")
+    async def on_show_config_pressed(self) -> None:
+        """Handle show-config button press."""
+        args = ["bash2gitlab", "show-config"]
+
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+    @on(Button.Pressed, "#graph-btn")
+    async def on_graph_pressed(self) -> None:
+        """Handle graph button press."""
+        args = ["bash2gitlab", "graph"]
+
+        input_dir = self.query_one("#graph-input-dir", Input).value.strip()
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+
+        if input_dir:
+            args.extend(["--in", input_dir])
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+    @on(Button.Pressed, "#drift-btn")
+    async def on_drift_pressed(self) -> None:
+        """Handle detect-drift button press."""
+        args = ["bash2gitlab", "detect-drift"]
+
+        output_dir = self.query_one("#drift-output-dir", Input).value.strip()
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+
+        if output_dir:
+            args.extend(["--out", output_dir])
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+
+class ExecuteCommand(Message):
+    """Message to request command execution."""
+
+    def __init__(self, args: list[str]) -> None:
+        super().__init__()
+        self.args = args
+
+
+class CommandScreen(Screen):
+    """Screen for executing commands and showing output."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Close"),
+        Binding("ctrl+c", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, command_args: list[str], **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.command_args = command_args
+        self.process: subprocess.Popen | None = None
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        with Vertical():
+            yield Label(f"Executing: {' '.join(self.command_args)}", classes="command-title")
+            yield RichLog(id="output", wrap=True, highlight=True, markup=True)
+            with Horizontal():
+                yield Button("Cancel", variant="error", id="cancel-btn")
+                yield Button("Close", variant="primary", id="close-btn", disabled=True)
+        yield Footer()
+
+    async def on_mount(self) -> None:
+        """Start command execution when screen mounts."""
+        self.execute_command()
+
+    @work(exclusive=True)
+    async def execute_command(self) -> None:
+        """Execute the command and stream output."""
+        log = self.query_one("#output", RichLog)
+
+        try:
+            log.write(f"[bold green]Starting command:[/bold green] {' '.join(self.command_args)}")
+
+            self.process = subprocess.Popen(  # nosec
+                self.command_args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                encoding="utf-8",
+                bufsize=1,
+            )
+
+            # Stream output
+            while True:
+                if self.process.stdout:
+                    output = self.process.stdout.readline()
+                    if output == "" and self.process.poll() is not None:
+                        break
+                    if output:
+                        log.write(output.rstrip())
+
+            return_code = self.process.poll()
+
+            if return_code == 0:
+                log.write("[bold green]✅ Command completed successfully[/bold green]")
+            else:
+                log.write(f"[bold red]❌ Command failed with exit code {return_code}[/bold red]")
+
+        except Exception as e:
+            log.write(f"[bold red]❌ Error executing command: {e}[/bold red]")
+        finally:
+            # Enable close button
+            self.query_one("#close-btn", Button).disabled = False
+            self.query_one("#cancel-btn", Button).disabled = True
+
+    @on(Button.Pressed, "#cancel-btn")
+    async def on_cancel_pressed(self) -> None:
+        """Cancel the running command."""
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+            log = self.query_one("#output", RichLog)
+            log.write("[bold yellow]⚠️ Command cancelled by user[/bold yellow]")
+
+    @on(Button.Pressed, "#close-btn")
+    def on_close_pressed(self) -> None:
+        """Close the command screen."""
+        self.app.pop_screen()
+
+    def action_close(self) -> None:
+        """Close the screen."""
+        self.app.pop_screen()
+
+    def action_cancel(self) -> None:
+        """Cancel the command."""
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+
+
+class Bash2GitlabTUI(App):
+    """Main TUI application for bash2gitlab."""
+
+    CSS = """
+    .form-title {
+        text-align: center;
+        text-style: bold;
+        color: $accent;
+        margin: 1;
+    }
+
+    .label {
+        width: 20;
+        text-align: right;
+        margin-right: 1;
+    }
+
+    .warning {
+        color: $warning;
+        text-style: italic;
+        margin: 1;
+    }
+
+    .command-title {
+        text-align: center;
+        text-style: bold;
+        margin: 1;
+    }
+
+    TabbedContent {
+        height: 1fr;
+    }
+
+    TabPane {
+        padding: 1;
+    }
+
+    Button {
+        margin: 1;
+    }
+
+    Horizontal {
+        height: auto;
+        margin: 1 0;
+    }
+
+    Input {
+        width: 1fr;
+    }
+
+    Checkbox, Switch {
+        margin-right: 2;
+    }
+    """
+
+    TITLE = f"bash2gitlab TUI v{__about__.__version__}"
+
+    BINDINGS = [
+        Binding("ctrl+q", "quit", "Quit", priority=True),
+        Binding("ctrl+h", "help", "Help"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+
+        with TabbedContent(initial="compile"):
+            with TabPane("Compile", id="compile"):
+                yield CompileForm("compile")
+
+            with TabPane("Shred", id="shred"):
+                yield ShredForm("shred")
+
+            with TabPane("Lint", id="lint"):
+                yield LintForm("lint")
+
+            with TabPane("Clean", id="clean"):
+                yield CleanForm("clean")
+
+            with TabPane("Init", id="init"):
+                yield InitForm("init")
+
+            with TabPane("Copy2Local", id="copy2local"):
+                yield Copy2LocalForm("copy2local")
+
+            with TabPane("Map Deploy", id="map-deploy"):
+                yield MapDeployForm("map-deploy")
+
+            with TabPane("Commit Map", id="commit-map"):
+                yield CommitMapForm("commit-map")
+
+            with TabPane("Precommit", id="precommit"):
+                yield PrecommitForm("precommit")
+
+            with TabPane("Utilities", id="utilities"):
+                yield UtilityForm("utilities")
+
+        yield Footer()
+
+    @on(Button.Pressed, "#execute-btn")
+    async def on_execute_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle execute button presses from forms."""
+        # Find the parent form and execute its command
+        form = event.button.parent
+        while form and not isinstance(form, CommandForm):
+            form = form.parent
+
+        if form:
+            await form.execute_command()  # type: ignore[attr-defined]
+
+    @on(ExecuteCommand)
+    async def on_execute_command(self, message: ExecuteCommand) -> None:
+        """Handle command execution requests."""
+        # Push a new screen to show command execution
+        screen = CommandScreen(message.args)
+        await self.push_screen(screen)
+
+    def action_help(self) -> None:
+        """Show help information."""
+        help_text = f"""
+# bash2gitlab TUI v{__about__.__version__}
+
+## Navigation
+- Use Tab/Shift+Tab to navigate between form fields
+- Use arrow keys to navigate in option lists
+- Press Enter to activate buttons and checkboxes
+- Use Ctrl+Q to quit the application
+
+## Commands
+
+### Compile
+Compile uncompiled GitLab CI directory structure into standard format.
+- **Input Directory**: Path to directory containing uncompiled .gitlab-ci.yml
+- **Output Directory**: Where compiled files will be written
+- **Parallelism**: Number of files to process simultaneously
+- **Watch**: Monitor source files for changes and auto-recompile
+
+### Shred
+Extract inline scripts from GitLab CI YAML files into separate .sh files.
+- **Mode**: Choose between single file or folder tree processing
+- **Input File/Folder**: Source YAML file or directory
+- **Output Directory**: Where shredded files will be written
+
+### Lint
+Validate compiled GitLab CI YAML against a GitLab instance.
+- **GitLab URL**: Base URL of GitLab instance (e.g., https://gitlab.com)
+- **Token**: Private token or CI job token for authentication
+- **Project ID**: Optional project ID for project-scoped linting
+- **Include Merged YAML**: Return complete merged YAML (slower)
+
+### Clean
+Remove unmodified files that bash2gitlab previously generated.
+- **Output Directory**: Directory to clean
+
+### Init  
+Initialize a new bash2gitlab project with interactive configuration.
+- **Directory**: Project directory to initialize
+
+### Copy2Local
+Copy directories from remote repositories to local filesystem.
+- **Repository URL**: Git repository URL (HTTP/HTTPS/SSH)
+- **Branch**: Branch to copy from
+- **Source Directory**: Directory within repo to copy
+- **Destination**: Local destination directory
+
+### Map Deploy/Commit Map
+Deploy/commit files based on mapping configuration in pyproject.toml.
+- **PyProject Path**: Path to pyproject.toml with mapping config
+- **Force**: Overwrite files even if they've been modified
+
+### Precommit
+Install or uninstall Git pre-commit hooks for bash2gitlab.
+- **Repository Root**: Git repository root directory
+- **Force**: Overwrite existing hooks
+
+### Utilities
+- **Doctor**: Run system health checks
+- **Show Config**: Display current configuration
+- **Generate Graph**: Create dependency graph (DOT format)  
+- **Detect Drift**: Check for manual edits to generated files
+
+## Common Options
+- **Dry Run**: Simulate command without making changes
+- **Verbose**: Enable detailed logging output
+- **Quiet**: Suppress output messages
+
+Press Escape to close this help.
+        """
+
+        class HelpScreen(Screen):
+            BINDINGS = [("escape", "close", "Close")]
+
+            def compose(self) -> ComposeResult:
+                yield Header()
+                with VerticalScroll():
+                    yield Static(help_text, id="help-text")
+                yield Footer()
+
+            def action_close(self) -> None:
+                self.app.pop_screen()
+
+        self.push_screen(HelpScreen())
+
+    async def action_quit(self) -> None:
+        """Quit the application."""
+        self.exit()
+
+
+def main() -> None:
+    """Main entry point for the TUI."""
+    # Setup logging
+    if config:
+        log_level = "INFO" if not config.verbose else "DEBUG"
+        if config.quiet:
+            log_level = "CRITICAL"
+    else:
+        log_level = "INFO"
+
+    try:
+        logging.config.dictConfig(generate_config(level=log_level))
+    except:
+        # Fallback logging setup
+        logging.basicConfig(level=getattr(logging, log_level))
+
+    app = Bash2GitlabTUI()
+    app.run()
+
+
+if __name__ == "__main__":
+    main()
+```
 ## File: watch_files.py
 ```python
 """
@@ -737,6 +1718,9 @@ from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.utils.update_checker import check_for_updates
 from bash2gitlab.utils.utils import short_path
 from bash2gitlab.watch_files import start_watch
+
+# emoji support
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 logger = logging.getLogger(__name__)
 
@@ -3215,6 +4199,10 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Literal
 
+import matplotlib.pyplot as plt
+import networkx as nx
+from graphviz import Source
+from pyvis.network import Network
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
@@ -3303,7 +4291,7 @@ def parse_shell_script_dependencies(
                 sourced_script_name = match.group("path")
                 sourced_path = (script_path.parent / sourced_script_name).resolve()
 
-                if not sourced_path.is_relative_to(root_path):
+                if not is_relative_to(sourced_path, root_path):
                     logger.error(f"Refusing to trace source '{sourced_path}': escapes allowed root '{root_path}'.")
                     continue
 
@@ -3342,7 +4330,6 @@ def find_script_references_in_node(
 
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
-    from graphviz import Source  # type: ignore
 
     src = Source(dot_output)
     out_file = src.render(
@@ -3356,7 +4343,6 @@ def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
 
 def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
     # Pure-Python interactive HTML (vis.js)
-    from pyvis.network import Network  # type: ignore
 
     html_path = Path.cwd() / f"{filename_base}.html"
     net = Network(height="750px", width="100%", directed=True, cdn_resources="in_line")
@@ -3388,9 +4374,6 @@ def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_b
 
 
 def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
-    # Pure-Python static SVG via Matplotlib
-    import matplotlib.pyplot as plt  # type: ignore
-    import networkx as nx  # type: ignore
 
     out_path = Path.cwd() / f"{filename_base}.svg"
     G = nx.DiGraph()
@@ -4644,6 +5627,7 @@ Fixes:
  - Script refs are made *relative to the YAML file* (e.g., "./script.sh")
  - Any YAML ``!reference [...]`` items in scripts are emitted as *bash comments*
  - Logging prints *paths relative to CWD* to reduce noise
+ - Generate Makefile with proper dependency patterns for before_/after_ scripts
 """
 
 from __future__ import annotations
@@ -4737,6 +5721,139 @@ def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> l
 
     # Filter empties
     return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+
+
+def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dry_run: bool = False) -> None:
+    """Generate a Makefile with proper dependency patterns for GitLab CI jobs.
+
+    Args:
+        jobs_info: Dict mapping job names to their script info
+        output_dir: Directory where Makefile should be created
+        dry_run: Whether to actually write the file
+    """
+    makefile_lines: list[str] = [
+        "# Auto-generated Makefile for GitLab CI jobs",
+        "# Use 'make <job_name>' to run a job with proper before/after script handling",
+        "",
+        ".PHONY: help",
+        "",
+    ]
+
+    # Collect all job names for help target
+    job_names = list(jobs_info.keys())
+
+    # Help target
+    makefile_lines.extend(
+        [
+            "help:",
+            "\t@echo 'Available jobs:'",
+        ]
+    )
+    for job_name in sorted(job_names):
+        makefile_lines.append(f"\t@echo '  {job_name}'")
+    makefile_lines.extend(
+        [
+            "\t@echo ''",
+            "\t@echo 'Use: make <job_name> to run a job'",
+            "",
+        ]
+    )
+
+    # Generate rules for each job
+    for job_name, scripts in jobs_info.items():
+        sanitized_name = re.sub(r"[^\w.-]", "-", job_name.lower())
+        sanitized_name = re.sub(r"-+", "-", sanitized_name).strip("-")
+
+        # Determine dependencies and targets
+        dependencies: list[str] = []
+        targets_after_main: list[str] = []
+
+        # Before script dependency
+        if "before_script" in scripts:
+            before_target = f"{sanitized_name}_before_script"
+            dependencies.append(before_target)
+
+        # After script runs after main job
+        if "after_script" in scripts:
+            after_target = f"{sanitized_name}_after_script"
+            targets_after_main.append(after_target)
+
+        # Main job rule
+        makefile_lines.append(f".PHONY: {sanitized_name}")
+        if dependencies:
+            makefile_lines.append(f"{sanitized_name}: {' '.join(dependencies)}")
+        else:
+            makefile_lines.append(f"{sanitized_name}:")
+
+        # Execute the main script
+        if "script" in scripts:
+            makefile_lines.append(f"\t@echo 'Running {job_name} main script...'")
+            makefile_lines.append(f"\t@./{scripts['script']}")
+        else:
+            makefile_lines.append(f"\t@echo 'No main script for {job_name}'")
+
+        # Execute after scripts if they exist
+        for after_target in targets_after_main:
+            makefile_lines.append(f"\t@$(MAKE) {after_target}")
+
+        makefile_lines.append("")
+
+        # Before script rule
+        if "before_script" in scripts:
+            before_target = f"{sanitized_name}_before_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {before_target}",
+                    f"{before_target}:",
+                    f"\t@echo 'Running {job_name} before script...'",
+                    f"\t@./{scripts['before_script']}",
+                    "",
+                ]
+            )
+
+        # After script rule
+        if "after_script" in scripts:
+            after_target = f"{sanitized_name}_after_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {after_target}",
+                    f"{after_target}:",
+                    f"\t@echo 'Running {job_name} after script...'",
+                    f"\t@./{scripts['after_script']}",
+                    "",
+                ]
+            )
+
+        # Pre-get-sources script rule (standalone)
+        if "pre_get_sources_script" in scripts:
+            pre_target = f"{sanitized_name}_pre_get_sources_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {pre_target}",
+                    f"{pre_target}:",
+                    f"\t@echo 'Running {job_name} pre-get-sources script...'",
+                    f"\t@./{scripts['pre_get_sources_script']}",
+                    "",
+                ]
+            )
+
+    # Add a rule to run all jobs
+    if job_names:
+        makefile_lines.extend(
+            [
+                ".PHONY: all",
+                f"all: {' '.join(sorted(job_names))}",
+                "",
+            ]
+        )
+
+    makefile_content = "\n".join(makefile_lines)
+    makefile_path = output_dir / "Makefile"
+
+    logger.info("Generating Makefile at: %s", rel(makefile_path))
+
+    if not dry_run:
+        makefile_path.write_text(makefile_content, encoding="utf-8")
 
 
 # --- shredders ---------------------------------------------------------------
@@ -4852,9 +5969,13 @@ def process_shred_job(
     yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
-) -> int:
-    """Process a single job definition to shred its script and variables blocks."""
+) -> tuple[int, dict[str, str]]:
+    """Process a single job definition to shred its script and variables blocks.
+
+    Returns (shredded_count, scripts_info) where scripts_info maps script_key to filename.
+    """
     shredded_count = 0
+    scripts_info: dict[str, str] = {}
 
     # Job-specific variables first
     job_vars_filename: str | None = None
@@ -4883,7 +6004,10 @@ def process_shred_job(
             if command:
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
                 shredded_count += 1
-    return shredded_count
+                # Store just the filename for Makefile generation
+                scripts_info[key] = command.lstrip("./")
+
+    return shredded_count, scripts_info
 
 
 # --- public entry points -----------------------------------------------------
@@ -4925,6 +6049,7 @@ def run_shred_gitlab_file(
 
     jobs_processed = 0
     total_files_created = 0
+    jobs_info: dict[str, dict[str, str]] = {}
 
     # Top-level variables -> global_variables.sh next to YAML
     global_vars_filename: str | None = None
@@ -4939,7 +6064,7 @@ def run_shred_gitlab_file(
         if isinstance(value, dict) and "script" in value:
             logger.debug("Processing job: %s", key)
             jobs_processed += 1
-            total_files_created += process_shred_job(
+            shredded_count, scripts_info = process_shred_job(
                 job_name=key,
                 job_data=value,
                 scripts_output_path=scripts_dir,
@@ -4947,6 +6072,9 @@ def run_shred_gitlab_file(
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
             )
+            total_files_created += shredded_count
+            if scripts_info:
+                jobs_info[key] = scripts_info
 
     if total_files_created > 0:
         logger.info("Shredded %s file(s) from %s job(s).", total_files_created, jobs_processed)
@@ -4957,6 +6085,12 @@ def run_shred_gitlab_file(
                 yaml.dump(data, f)
     else:
         logger.info("No script or variable blocks found to shred.")
+
+    # Generate Makefile if we have jobs
+    if jobs_info:
+        generate_makefile(jobs_info, output_dir, dry_run=dry_run)
+        if not dry_run:
+            total_files_created += 1  # Count the Makefile
 
     if not dry_run:
         output_yaml_path.parent.mkdir(exist_ok=True)
@@ -5431,6 +6565,8 @@ Key improvements over prior version:
 - Robust networking with timeouts, retries, and explicit User-Agent
 - Safe, simple JSON cache with TTL to avoid frequent network calls
 - Correct prerelease handling using packaging.version
+- Yanked version detection with warnings
+- Development version detection and reporting
 - Optional colorized output that respects NO_COLOR/CI/TERM and TTY
 - Non-invasive logging: caller may pass a logger or rely on a safe default
 - Narrow exception surface with custom error types
@@ -5478,17 +6614,28 @@ class NetworkError(Exception):
 class _Color:
     YELLOW: str = "\033[93m"
     GREEN: str = "\033[92m"
+    RED: str = "\033[91m"
+    BLUE: str = "\033[94m"
     ENDC: str = "\033[0m"
+
+
+@dataclass(frozen=True)
+class VersionInfo:
+    """Information about available versions."""
+
+    latest_stable: str | None
+    latest_dev: str | None
+    current_yanked: bool
 
 
 def get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
     """Get a warning logging function.
 
     Args:
-        user_logger (logging.Logger | None): Logger instance or None.
+        user_logger: Logger instance or None.
 
     Returns:
-        Callable[[str], None]: Logger warning method or built-in print.
+        Logger warning method or built-in print.
     """
     if isinstance(user_logger, logging.Logger):
         return user_logger.warning
@@ -5499,7 +6646,7 @@ def can_use_color() -> bool:
     """Determine if color output is allowed.
 
     Returns:
-        bool: True if output can be colorized.
+        True if output can be colorized.
     """
     if os.environ.get("NO_COLOR"):
         return False
@@ -5517,10 +6664,10 @@ def cache_paths(package_name: str) -> tuple[Path, Path]:
     """Compute cache directory and file path for a package.
 
     Args:
-        package_name (str): Name of the package.
+        package_name: Name of the package.
 
     Returns:
-        tuple[Path, Path]: Cache directory and file path.
+        Cache directory and file path.
     """
     cache_dir = Path(tempfile.gettempdir()) / "python_update_checker"
     cache_file = cache_dir / f"{package_name}_cache.json"
@@ -5531,11 +6678,11 @@ def is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
     """Check if cache file is fresh.
 
     Args:
-        cache_file (Path): Path to cache file.
-        ttl_seconds (int): TTL in seconds.
+        cache_file: Path to cache file.
+        ttl_seconds: TTL in seconds.
 
     Returns:
-        bool: True if cache is within TTL.
+        True if cache is within TTL.
     """
     try:
         if cache_file.exists():
@@ -5550,9 +6697,9 @@ def save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
     """Save data to cache.
 
     Args:
-        cache_dir (Path): Cache directory.
-        cache_file (Path): Cache file path.
-        payload (dict): Data to store.
+        cache_dir: Cache directory.
+        cache_file: Cache file path.
+        payload: Data to store.
     """
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -5566,7 +6713,7 @@ def reset_cache(package_name: str) -> None:
     """Remove cache entry for a given package.
 
     Args:
-        package_name (str): Package name to clear from cache.
+        package_name: Package name to clear from cache.
     """
     _, cache_file = cache_paths(package_name)
     try:
@@ -5580,36 +6727,75 @@ def fetch_pypi_json(url: str, timeout: float) -> dict:
     """Fetch JSON metadata from PyPI.
 
     Args:
-        url (str): URL to fetch.
-        timeout (float): Timeout in seconds.
+        url: URL to fetch.
+        timeout: Timeout in seconds.
 
     Returns:
-        dict: Parsed JSON data.
+        Parsed JSON data.
     """
     req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
     with request.urlopen(req, timeout=timeout) as resp:  # nosec
         return json.loads(resp.read().decode("utf-8"))
 
 
-def get_latest_version_from_pypi(
+def is_dev_version(version_str: str) -> bool:
+    """Check if a version string represents a development version.
+
+    Args:
+        version_str: Version string to check.
+
+    Returns:
+        True if this is a development version.
+    """
+    try:
+        v = _version.parse(version_str)
+        return v.is_devrelease
+    except _version.InvalidVersion:
+        return False
+
+
+def is_version_yanked(releases: dict, version_str: str) -> bool:
+    """Check if a specific version has been yanked.
+
+    Args:
+        releases: PyPI releases data.
+        version_str: Version string to check.
+
+    Returns:
+        True if the version is yanked.
+    """
+    version_releases = releases.get(version_str, [])
+    if not version_releases:
+        return False
+
+    # Check if any release file for this version is yanked
+    for release in version_releases:
+        if release.get("yanked", False):
+            return True
+    return False
+
+
+def get_version_info_from_pypi(
     package_name: str,
+    current_version: str,
     *,
     include_prereleases: bool,
     timeout: float = 5.0,
     retries: int = 2,
     backoff: float = 0.5,
-) -> str | None:
-    """Get latest version from PyPI.
+) -> VersionInfo:
+    """Get version information from PyPI.
 
     Args:
-        package_name (str): Package name.
-        include_prereleases (bool): Whether to include prereleases.
-        timeout (float): Request timeout.
-        retries (int): Number of retries.
-        backoff (float): Backoff factor between retries.
+        package_name: Package name.
+        current_version: Current version to check if yanked.
+        include_prereleases: Whether to include prereleases.
+        timeout: Request timeout.
+        retries: Number of retries.
+        backoff: Backoff factor between retries.
 
     Returns:
-        str | None: Latest version string, None if unavailable.
+        Version information including latest stable, dev, and yank status.
 
     Raises:
         PackageNotFoundError: If the package does not exist.
@@ -5617,64 +6803,141 @@ def get_latest_version_from_pypi(
     """
     url = f"https://pypi.org/pypi/{package_name}/json"
     last_err: Exception | None = None
+
     for attempt in range(retries + 1):
         try:
             data = fetch_pypi_json(url, timeout)
             releases = data.get("releases", {})
+
             if not releases:
                 info_ver = data.get("info", {}).get("version")
-                return str(info_ver) if info_ver else None
-            parsed: list[_version.Version] = []
+                return VersionInfo(
+                    latest_stable=str(info_ver) if info_ver else None, latest_dev=None, current_yanked=False
+                )
+
+            # Check if current version is yanked
+            current_yanked = is_version_yanked(releases, current_version)
+
+            # Parse all valid versions
+            stable_versions: list[_version.Version] = []
+            dev_versions: list[_version.Version] = []
+
             for v_str in releases.keys():
                 try:
                     v = _version.parse(v_str)
                 except _version.InvalidVersion:
                     continue
-                if v.is_prerelease and not include_prereleases:
+
+                # Skip yanked versions when looking for latest
+                if is_version_yanked(releases, v_str):
                     continue
-                parsed.append(v)
-            if not parsed:
-                return None
-            return str(max(parsed))
+
+                if v.is_devrelease:
+                    dev_versions.append(v)
+                elif v.is_prerelease:
+                    if include_prereleases:
+                        stable_versions.append(v)
+                else:
+                    stable_versions.append(v)
+
+            latest_stable = str(max(stable_versions)) if stable_versions else None
+            latest_dev = str(max(dev_versions)) if dev_versions else None
+
+            return VersionInfo(latest_stable=latest_stable, latest_dev=latest_dev, current_yanked=current_yanked)
+
         except error.HTTPError as e:
             if e.code == 404:
                 raise PackageNotFoundError from e
             last_err = e
         except (error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
             last_err = e
-        time.sleep(backoff * (attempt + 1))
+
+        if attempt < retries:
+            time.sleep(backoff * (attempt + 1))
+
     raise NetworkError(str(last_err))
 
 
 def format_update_message(
     package_name: str,
-    current: _version.Version,
-    latest: _version.Version,
+    current_version_str: str,
+    version_info: VersionInfo,
 ) -> str:
     """Format the update notification message.
 
     Args:
-        package_name (str): Package name.
-        current (_version.Version): Current version.
-        latest (_version.Version): Latest version.
+        package_name: Package name.
+        current_version_str: Current version string.
+        version_info: Version information from PyPI.
 
     Returns:
-        str: Formatted update message.
+        Formatted update message.
     """
     pypi_url = f"https://pypi.org/project/{package_name}/"
-    if can_use_color():
-        c = _Color()
-        return (
-            f"{c.YELLOW}A new version of {package_name} is available: {c.GREEN}{latest}{c.YELLOW} "
-            f"(you are using {current}).\n"
-            f"Please upgrade using your preferred package manager.\n"
-            f"More info: {pypi_url}{c.ENDC}"
-        )
-    return (
-        f"A new version of {package_name} is available: {latest} (you are using {current}).\n"
-        f"Please upgrade using your preferred package manager.\n"
-        f"More info: {pypi_url}"
-    )
+    messages: list[str] = []
+
+    try:
+        current = _version.parse(current_version_str)
+    except _version.InvalidVersion:
+        current = None
+
+    c = _Color() if can_use_color() else None
+
+    # Check if current version is yanked
+    if version_info.current_yanked:
+        if c:
+            yank_msg = (
+                f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} "
+                f"has been yanked from PyPI!{c.ENDC}"
+            )
+        else:
+            yank_msg = (
+                f"WARNING: Your current version {current_version_str} of {package_name} " f"has been yanked from PyPI!"
+            )
+        messages.append(yank_msg)
+
+    # Check for stable updates
+    if version_info.latest_stable and current:
+        try:
+            latest_stable = _version.parse(version_info.latest_stable)
+            if latest_stable > current:
+                if c:
+                    stable_msg = (
+                        f"{c.YELLOW}A new stable version of {package_name} is available: "
+                        f"{c.GREEN}{latest_stable}{c.YELLOW} (you are using {current}).{c.ENDC}"
+                    )
+                else:
+                    stable_msg = (
+                        f"A new stable version of {package_name} is available: "
+                        f"{latest_stable} (you are using {current})."
+                    )
+                messages.append(stable_msg)
+        except _version.InvalidVersion:
+            pass
+
+    # Check for dev versions
+    if version_info.latest_dev:
+        try:
+            latest_dev = _version.parse(version_info.latest_dev)
+            if current is None or latest_dev > current:
+                if c:
+                    dev_msg = (
+                        f"{c.BLUE}Development version available: {c.GREEN}{latest_dev}{c.BLUE} "
+                        f"(use at your own risk).{c.ENDC}"
+                    )
+                else:
+                    dev_msg = f"Development version available: {latest_dev} (use at your own risk)."
+                messages.append(dev_msg)
+        except _version.InvalidVersion:
+            pass
+
+    if messages:
+        upgrade_msg = "Please upgrade using your preferred package manager."
+        info_msg = f"More info: {pypi_url}"
+        messages.extend([upgrade_msg, info_msg])
+        return "\n".join(messages)
+
+    return ""
 
 
 def check_for_updates(
@@ -5688,40 +6951,47 @@ def check_for_updates(
     """Check PyPI for a newer version of a package.
 
     Args:
-        package_name (str): The PyPI package name to check.
-        current_version (str): The currently installed version string.
-        logger (logging.Logger | None): Optional logger for warnings.
-        cache_ttl_seconds (int): Cache time-to-live in seconds.
-        include_prereleases (bool): Whether to consider prereleases newer.
+        package_name: The PyPI package name to check.
+        current_version: The currently installed version string.
+        logger: Optional logger for warnings.
+        cache_ttl_seconds: Cache time-to-live in seconds.
+        include_prereleases: Whether to consider prereleases newer.
 
     Returns:
-        str | None: Formatted update message if update available, else None.
+        Formatted update message if update available, else None.
     """
     warn = get_logger(logger)
     cache_dir, cache_file = cache_paths(package_name)
+
     if is_fresh(cache_file, cache_ttl_seconds):
         return None
+
     try:
-        latest_str = get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
-        if not latest_str:
-            save_cache(cache_dir, cache_file, {"latest": None})
-            return None
-        current = _version.parse(current_version)
-        latest = _version.parse(latest_str)
-        if latest > current:
-            save_cache(cache_dir, cache_file, {"latest": latest_str})
-            return format_update_message(package_name, current, latest)
-        save_cache(cache_dir, cache_file, {"latest": latest_str})
-        return None
+        version_info = get_version_info_from_pypi(
+            package_name, current_version, include_prereleases=include_prereleases
+        )
+
+        message = format_update_message(package_name, current_version, version_info)
+
+        # Cache the results
+        cache_payload = {
+            "latest_stable": version_info.latest_stable,
+            "latest_dev": version_info.latest_dev,
+            "current_yanked": version_info.current_yanked,
+        }
+        save_cache(cache_dir, cache_file, cache_payload)
+
+        return message if message else None
+
     except PackageNotFoundError:
         warn(f"Package '{package_name}' not found on PyPI.")
-        save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"error": "not_found"})
         return None
     except NetworkError:
-        save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"error": "network"})
         return None
     except Exception:
-        save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"error": "unknown"})
         return None
 
 

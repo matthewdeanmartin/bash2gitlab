@@ -8,6 +8,7 @@ Fixes:
  - Script refs are made *relative to the YAML file* (e.g., "./script.sh")
  - Any YAML ``!reference [...]`` items in scripts are emitted as *bash comments*
  - Logging prints *paths relative to CWD* to reduce noise
+ - Generate Makefile with proper dependency patterns for before_/after_ scripts
 """
 
 from __future__ import annotations
@@ -101,6 +102,139 @@ def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> l
 
     # Filter empties
     return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+
+
+def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dry_run: bool = False) -> None:
+    """Generate a Makefile with proper dependency patterns for GitLab CI jobs.
+
+    Args:
+        jobs_info: Dict mapping job names to their script info
+        output_dir: Directory where Makefile should be created
+        dry_run: Whether to actually write the file
+    """
+    makefile_lines: list[str] = [
+        "# Auto-generated Makefile for GitLab CI jobs",
+        "# Use 'make <job_name>' to run a job with proper before/after script handling",
+        "",
+        ".PHONY: help",
+        "",
+    ]
+
+    # Collect all job names for help target
+    job_names = list(jobs_info.keys())
+
+    # Help target
+    makefile_lines.extend(
+        [
+            "help:",
+            "\t@echo 'Available jobs:'",
+        ]
+    )
+    for job_name in sorted(job_names):
+        makefile_lines.append(f"\t@echo '  {job_name}'")
+    makefile_lines.extend(
+        [
+            "\t@echo ''",
+            "\t@echo 'Use: make <job_name> to run a job'",
+            "",
+        ]
+    )
+
+    # Generate rules for each job
+    for job_name, scripts in jobs_info.items():
+        sanitized_name = re.sub(r"[^\w.-]", "-", job_name.lower())
+        sanitized_name = re.sub(r"-+", "-", sanitized_name).strip("-")
+
+        # Determine dependencies and targets
+        dependencies: list[str] = []
+        targets_after_main: list[str] = []
+
+        # Before script dependency
+        if "before_script" in scripts:
+            before_target = f"{sanitized_name}_before_script"
+            dependencies.append(before_target)
+
+        # After script runs after main job
+        if "after_script" in scripts:
+            after_target = f"{sanitized_name}_after_script"
+            targets_after_main.append(after_target)
+
+        # Main job rule
+        makefile_lines.append(f".PHONY: {sanitized_name}")
+        if dependencies:
+            makefile_lines.append(f"{sanitized_name}: {' '.join(dependencies)}")
+        else:
+            makefile_lines.append(f"{sanitized_name}:")
+
+        # Execute the main script
+        if "script" in scripts:
+            makefile_lines.append(f"\t@echo 'Running {job_name} main script...'")
+            makefile_lines.append(f"\t@./{scripts['script']}")
+        else:
+            makefile_lines.append(f"\t@echo 'No main script for {job_name}'")
+
+        # Execute after scripts if they exist
+        for after_target in targets_after_main:
+            makefile_lines.append(f"\t@$(MAKE) {after_target}")
+
+        makefile_lines.append("")
+
+        # Before script rule
+        if "before_script" in scripts:
+            before_target = f"{sanitized_name}_before_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {before_target}",
+                    f"{before_target}:",
+                    f"\t@echo 'Running {job_name} before script...'",
+                    f"\t@./{scripts['before_script']}",
+                    "",
+                ]
+            )
+
+        # After script rule
+        if "after_script" in scripts:
+            after_target = f"{sanitized_name}_after_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {after_target}",
+                    f"{after_target}:",
+                    f"\t@echo 'Running {job_name} after script...'",
+                    f"\t@./{scripts['after_script']}",
+                    "",
+                ]
+            )
+
+        # Pre-get-sources script rule (standalone)
+        if "pre_get_sources_script" in scripts:
+            pre_target = f"{sanitized_name}_pre_get_sources_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {pre_target}",
+                    f"{pre_target}:",
+                    f"\t@echo 'Running {job_name} pre-get-sources script...'",
+                    f"\t@./{scripts['pre_get_sources_script']}",
+                    "",
+                ]
+            )
+
+    # Add a rule to run all jobs
+    if job_names:
+        makefile_lines.extend(
+            [
+                ".PHONY: all",
+                f"all: {' '.join(sorted(job_names))}",
+                "",
+            ]
+        )
+
+    makefile_content = "\n".join(makefile_lines)
+    makefile_path = output_dir / "Makefile"
+
+    logger.info("Generating Makefile at: %s", rel(makefile_path))
+
+    if not dry_run:
+        makefile_path.write_text(makefile_content, encoding="utf-8")
 
 
 # --- shredders ---------------------------------------------------------------
@@ -216,9 +350,13 @@ def process_shred_job(
     yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
-) -> int:
-    """Process a single job definition to shred its script and variables blocks."""
+) -> tuple[int, dict[str, str]]:
+    """Process a single job definition to shred its script and variables blocks.
+
+    Returns (shredded_count, scripts_info) where scripts_info maps script_key to filename.
+    """
     shredded_count = 0
+    scripts_info: dict[str, str] = {}
 
     # Job-specific variables first
     job_vars_filename: str | None = None
@@ -247,7 +385,10 @@ def process_shred_job(
             if command:
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
                 shredded_count += 1
-    return shredded_count
+                # Store just the filename for Makefile generation
+                scripts_info[key] = command.lstrip("./")
+
+    return shredded_count, scripts_info
 
 
 # --- public entry points -----------------------------------------------------
@@ -289,6 +430,7 @@ def run_shred_gitlab_file(
 
     jobs_processed = 0
     total_files_created = 0
+    jobs_info: dict[str, dict[str, str]] = {}
 
     # Top-level variables -> global_variables.sh next to YAML
     global_vars_filename: str | None = None
@@ -303,7 +445,7 @@ def run_shred_gitlab_file(
         if isinstance(value, dict) and "script" in value:
             logger.debug("Processing job: %s", key)
             jobs_processed += 1
-            total_files_created += process_shred_job(
+            shredded_count, scripts_info = process_shred_job(
                 job_name=key,
                 job_data=value,
                 scripts_output_path=scripts_dir,
@@ -311,6 +453,9 @@ def run_shred_gitlab_file(
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
             )
+            total_files_created += shredded_count
+            if scripts_info:
+                jobs_info[key] = scripts_info
 
     if total_files_created > 0:
         logger.info("Shredded %s file(s) from %s job(s).", total_files_created, jobs_processed)
@@ -321,6 +466,12 @@ def run_shred_gitlab_file(
                 yaml.dump(data, f)
     else:
         logger.info("No script or variable blocks found to shred.")
+
+    # Generate Makefile if we have jobs
+    if jobs_info:
+        generate_makefile(jobs_info, output_dir, dry_run=dry_run)
+        if not dry_run:
+            total_files_created += 1  # Count the Makefile
 
     if not dry_run:
         output_yaml_path.parent.mkdir(exist_ok=True)

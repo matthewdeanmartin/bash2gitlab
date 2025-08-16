@@ -9,7 +9,7 @@ def test_finds_newer_version():
     reset_cache("requests")
     result = check_for_updates(package_name="requests", current_version="2.0.0")
     assert result is not None
-    assert "A new version of requests is available" in result
+    assert "A new stable version of requests is available" in result
     assert "you are using 2.0.0" in result
 
 
@@ -80,7 +80,7 @@ def test_prerelease_check_finds_newer():
     # The main test is that it doesn't crash and returns a string or None.
     assert isinstance(result, (str, type(None)))
     if result:
-        assert "A new version of pandas is available" in result
+        assert "A new stable version of pandas is available" in result
 
 
 @mock.patch("bash2gitlab.utils.update_checker.can_use_color", return_value=True)

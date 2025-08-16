@@ -62,6 +62,7 @@ class _Color:
 @dataclass(frozen=True)
 class VersionInfo:
     """Information about available versions."""
+
     latest_stable: str | None
     latest_dev: str | None
     current_yanked: bool
@@ -251,9 +252,7 @@ def get_version_info_from_pypi(
             if not releases:
                 info_ver = data.get("info", {}).get("version")
                 return VersionInfo(
-                    latest_stable=str(info_ver) if info_ver else None,
-                    latest_dev=None,
-                    current_yanked=False
+                    latest_stable=str(info_ver) if info_ver else None, latest_dev=None, current_yanked=False
                 )
 
             # Check if current version is yanked
@@ -284,11 +283,7 @@ def get_version_info_from_pypi(
             latest_stable = str(max(stable_versions)) if stable_versions else None
             latest_dev = str(max(dev_versions)) if dev_versions else None
 
-            return VersionInfo(
-                latest_stable=latest_stable,
-                latest_dev=latest_dev,
-                current_yanked=current_yanked
-            )
+            return VersionInfo(latest_stable=latest_stable, latest_dev=latest_dev, current_yanked=current_yanked)
 
         except error.HTTPError as e:
             if e.code == 404:
@@ -337,8 +332,7 @@ def format_update_message(
             )
         else:
             yank_msg = (
-                f"WARNING: Your current version {current_version_str} of {package_name} "
-                f"has been yanked from PyPI!"
+                f"WARNING: Your current version {current_version_str} of {package_name} " f"has been yanked from PyPI!"
             )
         messages.append(yank_msg)
 
@@ -414,9 +408,7 @@ def check_for_updates(
 
     try:
         version_info = get_version_info_from_pypi(
-            package_name,
-            current_version,
-            include_prereleases=include_prereleases
+            package_name, current_version, include_prereleases=include_prereleases
         )
 
         message = format_update_message(package_name, current_version, version_info)

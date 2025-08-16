@@ -5,6 +5,10 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Literal
 
+import matplotlib.pyplot as plt
+import networkx as nx
+from graphviz import Source
+from pyvis.network import Network
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
@@ -93,7 +97,7 @@ def parse_shell_script_dependencies(
                 sourced_script_name = match.group("path")
                 sourced_path = (script_path.parent / sourced_script_name).resolve()
 
-                if not sourced_path.is_relative_to(root_path):
+                if not is_relative_to(sourced_path, root_path):
                     logger.error(f"Refusing to trace source '{sourced_path}': escapes allowed root '{root_path}'.")
                     continue
 
@@ -132,7 +136,6 @@ def find_script_references_in_node(
 
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
-    from graphviz import Source  # type: ignore
 
     src = Source(dot_output)
     out_file = src.render(
@@ -146,7 +149,6 @@ def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
 
 def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
     # Pure-Python interactive HTML (vis.js)
-    from pyvis.network import Network  # type: ignore
 
     html_path = Path.cwd() / f"{filename_base}.html"
     net = Network(height="750px", width="100%", directed=True, cdn_resources="in_line")
@@ -178,9 +180,6 @@ def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_b
 
 
 def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
-    # Pure-Python static SVG via Matplotlib
-    import matplotlib.pyplot as plt  # type: ignore
-    import networkx as nx  # type: ignore
 
     out_path = Path.cwd() / f"{filename_base}.svg"
     G = nx.DiGraph()

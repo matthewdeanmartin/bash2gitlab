@@ -5,52 +5,38 @@ Textual TUI for bash2gitlab - Interactive terminal interface
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import logging.config
-import subprocess
+import subprocess  # nosec
 import sys
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.message import Message
-from textual.reactive import reactive
 from textual.screen import Screen
 from textual.widgets import (
     Button,
     Checkbox,
-    DirectoryTree,
     Footer,
     Header,
     Input,
     Label,
-    ListItem,
-    ListView,
-    Log,
     OptionList,
-    Pretty,
-    ProgressBar,
     RichLog,
     Static,
-    Switch,
     TabbedContent,
     TabPane,
-    TextArea,
 )
 
-# Import bash2gitlab modules
-try:
-    from bash2gitlab.config import config
-    from bash2gitlab.utils.logging_config import generate_config
-    from bash2gitlab import __about__
-except ImportError:
-    # Fallback for development/testing
-    config = None
-    __about__ = type('About', (), {'__version__': 'dev', '__title__': 'bash2gitlab'})()
+from bash2gitlab import __about__
+from bash2gitlab.config import config
+from bash2gitlab.utils.logging_config import generate_config
+
+# emoji support
+sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 
 class CommandForm(Static):
@@ -66,7 +52,6 @@ class CommandForm(Static):
 
     async def execute_command(self) -> None:
         """Override in subclasses to execute the command."""
-        pass
 
     def get_common_args(self) -> list[str]:
         """Get common arguments like --dry-run, --verbose, etc."""
@@ -102,7 +87,7 @@ class CompileForm(CommandForm):
                 yield Input(
                     value=str(config.input_dir) if config and config.input_dir else "",
                     placeholder="Path to uncompiled .gitlab-ci.yml directory",
-                    id="input-dir"
+                    id="input-dir",
                 )
 
             with Horizontal():
@@ -110,7 +95,7 @@ class CompileForm(CommandForm):
                 yield Input(
                     value=str(config.output_dir) if config and config.output_dir else "",
                     placeholder="Path for compiled GitLab CI files",
-                    id="output-dir"
+                    id="output-dir",
                 )
 
             with Horizontal():
@@ -118,7 +103,7 @@ class CompileForm(CommandForm):
                 yield Input(
                     value=str(config.parallelism) if config and config.parallelism else "4",
                     placeholder="Number of parallel processes",
-                    id="parallelism"
+                    id="parallelism",
                 )
 
             with Horizontal():
@@ -167,24 +152,15 @@ class ShredForm(CommandForm):
 
             with Horizontal():
                 yield Label("Input File:", classes="label")
-                yield Input(
-                    placeholder="Path to single .gitlab-ci.yml file",
-                    id="input-file"
-                )
+                yield Input(placeholder="Path to single .gitlab-ci.yml file", id="input-file")
 
             with Horizontal():
                 yield Label("Input Folder:", classes="label")
-                yield Input(
-                    placeholder="Folder to recursively shred",
-                    id="input-folder"
-                )
+                yield Input(placeholder="Folder to recursively shred", id="input-folder")
 
             with Horizontal():
                 yield Label("Output Directory:", classes="label")
-                yield Input(
-                    placeholder="Output directory for shredded files",
-                    id="output-dir"
-                )
+                yield Input(placeholder="Output directory for shredded files", id="output-dir")
 
             with Horizontal():
                 yield Checkbox("Dry run", id="dry-run")
@@ -230,53 +206,36 @@ class LintForm(CommandForm):
                 yield Input(
                     value=str(config.output_dir) if config and config.output_dir else "",
                     placeholder="Directory with compiled YAML files",
-                    id="output-dir"
+                    id="output-dir",
                 )
 
             with Horizontal():
                 yield Label("GitLab URL:", classes="label")
-                yield Input(
-                    placeholder="https://gitlab.com",
-                    id="gitlab-url"
-                )
+                yield Input(placeholder="https://gitlab.com", id="gitlab-url")
 
             with Horizontal():
                 yield Label("Token:", classes="label")
-                yield Input(
-                    placeholder="Private or CI job token",
-                    password=True,
-                    id="token"
-                )
+                yield Input(placeholder="Private or CI job token", password=True, id="token")
 
             with Horizontal():
                 yield Label("Project ID:", classes="label")
-                yield Input(
-                    placeholder="Optional project ID for project-scoped lint",
-                    id="project-id"
-                )
+                yield Input(placeholder="Optional project ID for project-scoped lint", id="project-id")
 
             with Horizontal():
                 yield Label("Git Ref:", classes="label")
-                yield Input(
-                    placeholder="Git ref (branch/tag/commit)",
-                    id="ref"
-                )
+                yield Input(placeholder="Git ref (branch/tag/commit)", id="ref")
 
             with Horizontal():
                 yield Label("Parallelism:", classes="label")
                 yield Input(
                     value=str(config.parallelism) if config and config.parallelism else "4",
                     placeholder="Max concurrent requests",
-                    id="parallelism"
+                    id="parallelism",
                 )
 
             with Horizontal():
                 yield Label("Timeout:", classes="label")
-                yield Input(
-                    value="20.0",
-                    placeholder="HTTP timeout in seconds",
-                    id="timeout"
-                )
+                yield Input(value="20.0", placeholder="HTTP timeout in seconds", id="timeout")
 
             with Horizontal():
                 yield Checkbox("Include merged YAML", id="include-merged")
@@ -334,7 +293,7 @@ class CleanForm(CommandForm):
                 yield Input(
                     value=str(config.output_dir) if config and config.output_dir else "",
                     placeholder="Directory to clean",
-                    id="output-dir"
+                    id="output-dir",
                 )
 
             with Horizontal():
@@ -368,11 +327,7 @@ class InitForm(CommandForm):
 
             with Horizontal():
                 yield Label("Directory:", classes="label")
-                yield Input(
-                    value=".",
-                    placeholder="Directory to initialize",
-                    id="directory"
-                )
+                yield Input(value=".", placeholder="Directory to initialize", id="directory")
 
             with Horizontal():
                 yield Checkbox("Dry run", id="dry-run")
@@ -404,31 +359,19 @@ class Copy2LocalForm(CommandForm):
 
             with Horizontal():
                 yield Label("Repository URL:", classes="label")
-                yield Input(
-                    placeholder="Git repository URL",
-                    id="repo-url"
-                )
+                yield Input(placeholder="Git repository URL", id="repo-url")
 
             with Horizontal():
                 yield Label("Branch:", classes="label")
-                yield Input(
-                    placeholder="Branch name",
-                    id="branch"
-                )
+                yield Input(placeholder="Branch name", id="branch")
 
             with Horizontal():
                 yield Label("Source Directory:", classes="label")
-                yield Input(
-                    placeholder="Directory in repo to copy",
-                    id="source-dir"
-                )
+                yield Input(placeholder="Directory in repo to copy", id="source-dir")
 
             with Horizontal():
                 yield Label("Destination:", classes="label")
-                yield Input(
-                    placeholder="Local destination directory",
-                    id="copy-dir"
-                )
+                yield Input(placeholder="Local destination directory", id="copy-dir")
 
             with Horizontal():
                 yield Checkbox("Dry run", id="dry-run")
@@ -469,11 +412,7 @@ class MapDeployForm(CommandForm):
 
             with Horizontal():
                 yield Label("PyProject Path:", classes="label")
-                yield Input(
-                    value="pyproject.toml",
-                    placeholder="Path to pyproject.toml",
-                    id="pyproject-path"
-                )
+                yield Input(value="pyproject.toml", placeholder="Path to pyproject.toml", id="pyproject-path")
 
             with Horizontal():
                 yield Checkbox("Force overwrite", id="force")
@@ -509,11 +448,7 @@ class CommitMapForm(CommandForm):
 
             with Horizontal():
                 yield Label("PyProject Path:", classes="label")
-                yield Input(
-                    value="pyproject.toml",
-                    placeholder="Path to pyproject.toml",
-                    id="pyproject-path"
-                )
+                yield Input(value="pyproject.toml", placeholder="Path to pyproject.toml", id="pyproject-path")
 
             with Horizontal():
                 yield Checkbox("Force overwrite", id="force")
@@ -549,11 +484,7 @@ class PrecommitForm(CommandForm):
 
             with Horizontal():
                 yield Label("Repository Root:", classes="label")
-                yield Input(
-                    value=".",
-                    placeholder="Git repository root",
-                    id="repo-root"
-                )
+                yield Input(value=".", placeholder="Git repository root", id="repo-root")
 
             with Horizontal():
                 yield Checkbox("Force", id="force")
@@ -631,7 +562,7 @@ class UtilityForm(CommandForm):
                     yield Input(
                         value=str(config.input_dir) if config and config.input_dir else "",
                         placeholder="Input directory for graph",
-                        id="graph-input-dir"
+                        id="graph-input-dir",
                     )
                 yield Button("📊 Generate Graph", variant="primary", id="graph-btn")
 
@@ -642,7 +573,7 @@ class UtilityForm(CommandForm):
                     yield Input(
                         value=str(config.output_dir) if config and config.output_dir else "",
                         placeholder="Output directory to check",
-                        id="drift-output-dir"
+                        id="drift-output-dir",
                     )
                 yield Button("🔍 Detect Drift", variant="warning", id="drift-btn")
 
@@ -736,7 +667,7 @@ class CommandScreen(Screen):
     def __init__(self, command_args: list[str], **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.command_args = command_args
-        self.process: Optional[subprocess.Popen] = None
+        self.process: subprocess.Popen | None = None
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -760,21 +691,23 @@ class CommandScreen(Screen):
         try:
             log.write(f"[bold green]Starting command:[/bold green] {' '.join(self.command_args)}")
 
-            self.process = subprocess.Popen(
+            self.process = subprocess.Popen(  # nosec
                 self.command_args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
-                bufsize=1
+                encoding="utf-8",
+                bufsize=1,
             )
 
             # Stream output
             while True:
-                output = self.process.stdout.readline()
-                if output == '' and self.process.poll() is not None:
-                    break
-                if output:
-                    log.write(output.rstrip())
+                if self.process.stdout:
+                    output = self.process.stdout.readline()
+                    if output == "" and self.process.poll() is not None:
+                        break
+                    if output:
+                        log.write(output.rstrip())
 
             return_code = self.process.poll()
 
@@ -920,7 +853,7 @@ class Bash2GitlabTUI(App):
             form = form.parent
 
         if form:
-            await form.execute_command()
+            await form.execute_command()  # type: ignore[attr-defined]
 
     @on(ExecuteCommand)
     async def on_execute_command(self, message: ExecuteCommand) -> None:
@@ -1015,7 +948,7 @@ Press Escape to close this help.
 
         self.push_screen(HelpScreen())
 
-    def action_quit(self) -> None:
+    async def action_quit(self) -> None:
         """Quit the application."""
         self.exit()
 

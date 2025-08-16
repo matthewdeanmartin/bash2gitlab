@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Basc textual TUI added to mirror the CLI interface
+- Generates makefile for shred command
 
 ## [0.8.13] - 2025-08-15
 
