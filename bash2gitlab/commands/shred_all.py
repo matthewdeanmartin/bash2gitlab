@@ -24,6 +24,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
+from bash2gitlab.config import config
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.yaml_factory import get_yaml
@@ -305,7 +306,13 @@ def shred_script_block(
     script_filepath = scripts_output_path / script_filename
 
     # Build header with conditional sourcing for local execution
-    header_parts: list[str] = [SHEBANG]
+    script_filename_path = Path(create_script_filename(job_name, script_key))
+    file_ext = script_filename_path.suffix.lstrip(".")
+
+    custom_shebangs = config.custom_shebangs or {"sh": "#!/bin/bash"}
+    shebang = custom_shebangs.get(file_ext, SHEBANG)  # SHEBANG is the '#!/bin/bash' default
+
+    header_parts: list[str] = [shebang]
     sourcing_block: list[str] = []
     if global_vars_filename:
         sourcing_block.append(f"  . ./{global_vars_filename}")

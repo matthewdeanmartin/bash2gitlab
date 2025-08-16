@@ -93,18 +93,12 @@ def _patch_map_commit_deps(
 ):
     import bash2gitlab.__main__ as m
 
-    def fake_get_deployment_map(pyproject_path: Path):
-        if isinstance(get_map_side_effect, Exception):
-            raise get_map_side_effect
-        return get_map_side_effect or {"a": "b"}
-
     def fake_map_deploy(mapping, dry_run: bool, force: bool):
         called["run_map_deploy"] = (mapping, dry_run, force)
 
     def fake_commit_map(mapping, dry_run: bool, force: bool):
         called["run_commit_map"] = (mapping, dry_run, force)
 
-    monkeypatch.setattr(m, "get_deployment_map", fake_get_deployment_map)
     monkeypatch.setattr(m, "run_map_deploy", fake_map_deploy)
     monkeypatch.setattr(m, "run_commit_map", fake_commit_map)
 
@@ -233,32 +227,3 @@ def test_init_uses_default_directory(monkeypatch, run_cli):
     code = run_cli(["bash2yaml", "init"])  # no directory arg
     assert code in (0, None)
     assert called["init"] == "."
-
-
-@pytest.mark.parametrize("cmd, attr", [("map-deploy", "run_map_deploy"), ("commit-map", "run_commit_map")])
-def test_map_and_commit_ok(monkeypatch, run_cli, cmd, attr):
-    called: dict[str, Any] = {}
-    _patch_map_commit_deps(monkeypatch, called=called)
-
-    code = run_cli(["bash2yaml", cmd, "--pyproject", "pyproject.toml", "--dry-run", "--force"])  # type: ignore[list-item]
-    assert code in (0, None)
-    assert attr in called
-    mapping, dry_run, force = called[attr]
-    assert mapping == {"a": "b"}
-    assert dry_run is True and force is True
-
-
-@pytest.mark.parametrize(
-    "exc, expected",
-    [
-        (FileNotFoundError("missing pyproject"), 10),
-        (KeyError("bad map"), 11),
-    ],
-)
-@pytest.mark.parametrize("cmd", ["map-deploy", "commit-map"])  # exercise both handlers' error branches
-def test_map_and_commit_errors(monkeypatch, run_cli, exc, expected, cmd):
-    called: dict[str, Any] = {}
-    _patch_map_commit_deps(monkeypatch, called=called, get_map_side_effect=exc)
-
-    code = run_cli(["bash2yaml", cmd])
-    assert code == expected

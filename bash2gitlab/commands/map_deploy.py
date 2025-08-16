@@ -7,34 +7,11 @@ import os
 import shutil
 from pathlib import Path
 
-import toml
-
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
-__all__ = ["run_map_deploy", "get_deployment_map"]
-
-
-def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
-    """Parses the pyproject.toml file to get the deployment map.
-
-    Args:
-        pyproject_path: The path to the pyproject.toml file.
-
-    Returns:
-        A dictionary mapping source directories to target directories.
-
-    Raises:
-        FileNotFoundError: If the pyproject.toml file is not found.
-        KeyError: If the [tool.bash2gitlab.map] section is missing.
-    """
-    if not pyproject_path.is_file():
-        raise FileNotFoundError(f"pyproject.toml not found at '{pyproject_path}'")
-
-    data = toml.load(pyproject_path)
-    try:
-        return data["tool"]["bash2gitlab"]["map"]
-    except KeyError as ke:
-        raise KeyError("'[tool.bash2gitlab.map]' section not found in pyproject.toml") from ke
+__all__ = [
+    "run_map_deploy",
+]
 
 
 def run_map_deploy(

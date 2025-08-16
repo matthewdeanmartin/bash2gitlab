@@ -24,6 +24,7 @@ nav:
   - "Usage":
       - "Usage": "usage.md"
       - "Configuration": "config.md"
+      - "Commands": "commands.md"
       - "Workflows": "workflows.md"
   - "Level up your YAML + Bash":
       - "Formatting YAML": "formatting.md"

@@ -19,6 +19,7 @@
 │   └── shred_all.py
 ├── config.py
 ├── hookspecs.py
+├── interactive.py
 ├── plugins.py
 ├── py.typed
 ├── tui.py
@@ -57,7 +58,7 @@ from bash2gitlab.utils.utils import short_path
 logger = logging.getLogger(__name__)
 
 # Regex to match 'source file.sh' or '. file.sh'
-# It ensures the line contains nothing else but the sourcing command.
+# It ensures the line contains nothing else but the sourcing command, except a comment.
 # - ^\s* - Start of the line with optional whitespace.
 # - (?:source|\.) - Non-capturing group for 'source' or '.'.
 # - \s+         - At least one whitespace character.
@@ -67,15 +68,38 @@ logger = logging.getLogger(__name__)
 # Handle optional comment.
 SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(?:#.*)?$")
 
+# Regex to match pragmas like '# Pragma: do-not-inline'
+# It is case-insensitive to 'Pragma' and captures the command.
+PRAGMA_REGEX = re.compile(
+    r"#\s*Pragma:\s*(?P<command>do-not-inline(?:-next-line)?|start-do-not-inline|end-do-not-inline|allow-outside-root)",
+    re.IGNORECASE,
+)
+
 
 class SourceSecurityError(RuntimeError):
     pass
 
 
-def secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
+class PragmaError(ValueError):
+    """Custom exception for pragma parsing errors."""
+
+
+def secure_join(
+    base_dir: Path,
+    user_path: str,
+    allowed_root: Path,
+    *,
+    bypass_security_check: bool = False,
+) -> Path:
     """
     Resolve 'user_path' (which may contain ../ and symlinks) against base_dir,
     then ensure the final real path is inside allowed_root.
+
+    Args:
+        base_dir: The directory of the script doing the sourcing.
+        user_path: The path string from the source command.
+        allowed_root: The root directory that sourced files cannot escape.
+        bypass_security_check: If True, skips the check against allowed_root.
     """
     # Normalize separators and strip quotes/whitespace
     user_path = user_path.strip().strip('"').strip("'").replace("\\", "/")
@@ -85,9 +109,15 @@ def secure_join(base_dir: Path, user_path: str, allowed_root: Path) -> Path:
 
     # Ensure the real path (after following symlinks) is within allowed_root
     allowed_root = allowed_root.resolve(strict=True)
-    if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS"):
+    if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS") and not bypass_security_check:
         if not is_relative_to(candidate, allowed_root):
             raise SourceSecurityError(f"Refusing to source '{candidate}': escapes allowed root '{allowed_root}'.")
+    elif bypass_security_check:
+        logger.warning(
+            "Security check explicitly bypassed for path '%s' due to 'allow-outside-root' pragma.",
+            candidate,
+        )
+
     return candidate
 
 
@@ -121,29 +151,32 @@ def inline_bash_source(
     _depth: int = 0,
 ) -> str:
     """
-    Reads a bash script and recursively inlines content from sourced files.
+    Reads a bash script and recursively inlines content from sourced files,
+    honoring pragmas to prevent inlining or bypass security.
 
     This function processes a bash script, identifies any 'source' or '.' commands,
     and replaces them with the content of the specified script. It handles
-    nested sourcing and prevents infinite loops from circular dependencies.
-
-    Safely inline bash sources by confining resolution to 'allowed_root' (default: CWD).
-    Blocks directory traversal and symlink escapes. Detects cycles and runaway depth.
+    nested sourcing, prevents infinite loops, and respects the following pragmas:
+    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+    - `# Pragma: end-do-not-inline`: Ends the block.
+    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
 
     Args:
         main_script_path: The absolute path to the main bash script to process.
-        processed_files: A set used internally to track already processed files
-                         to prevent circular sourcing. Should not be set manually.
-        allowed_root: Root to prevent parent traversal
-        max_depth: Depth
-        _depth: For recursion
-
+        processed_files: A set used internally to track already processed files.
+        allowed_root: Root to prevent parent traversal.
+        max_depth: Maximum recursion depth for sourcing.
+        _depth: Current recursion depth.
 
     Returns:
         A string containing the script content with all sourced files inlined.
 
     Raises:
         FileNotFoundError: If the main_script_path or any sourced script does not exist.
+        PragmaError: If start/end pragmas are mismatched.
+        RecursionError: If max_depth is exceeded.
     """
     if processed_files is None:
         processed_files = set()
@@ -176,18 +209,77 @@ def inline_bash_source(
     processed_files.add(main_script_path)
 
     final_content_lines: list[str] = []
+    in_do_not_inline_block = False
+    skip_next_line = False
+
     try:
         with main_script_path.open("r", encoding="utf-8") as f:
-            for line in f:
-                match = SOURCE_COMMAND_REGEX.match(line)
-                if match:
-                    # A source command was found, process the sourced file
-                    sourced_script_name = match.group("path")
+            for line_num, line in enumerate(f, 1):
+                source_match = SOURCE_COMMAND_REGEX.match(line)
+                pragma_match = PRAGMA_REGEX.search(line)
+                pragma_command = pragma_match.group("command").lower() if pragma_match else None
+
+                # --- State Management for Pragmas ---
+                if pragma_command == "start-do-not-inline":
+                    if in_do_not_inline_block:
+                        raise PragmaError(f"Cannot nest 'start-do-not-inline' at {main_script_path}:{line_num}")
+                    in_do_not_inline_block = True
+                    final_content_lines.append(line)
+                    continue
+
+                if pragma_command == "end-do-not-inline":
+                    if not in_do_not_inline_block:
+                        raise PragmaError(
+                            f"Found 'end-do-not-inline' without a 'start' at {main_script_path}:{line_num}"
+                        )
+                    in_do_not_inline_block = False
+                    final_content_lines.append(line)
+                    continue
+
+                if pragma_command == "do-not-inline-next-line":
+                    skip_next_line = True
+                    final_content_lines.append(line)
+                    continue
+
+                # --- Inlining Decision Logic ---
+                should_inline = source_match is not None
+                reason_to_skip = ""
+
+                if skip_next_line:
+                    reason_to_skip = "previous line was 'do-not-inline-next-line' pragma"
+                    should_inline = False
+                    skip_next_line = False  # Consume the flag
+                elif in_do_not_inline_block:
+                    reason_to_skip = "currently in 'do-not-inline' block"
+                    should_inline = False
+                elif pragma_command == "do-not-inline":
+                    reason_to_skip = "line contains 'do-not-inline' pragma"
+                    should_inline = False
+                    if not source_match:
+                        logger.warning(
+                            "Pragma 'do-not-inline' found on a non-sourcing line at %s:%d. This has no effect. Did you mean 'do-not-inline-next-line'?",
+                            main_script_path,
+                            line_num,
+                        )
+
+                if pragma_command == "allow-outside-root" and not source_match:
+                    logger.warning(
+                        "Pragma 'allow-outside-root' found on a non-sourcing line at %s:%d. This has no effect.",
+                        main_script_path,
+                        line_num,
+                    )
+
+                # --- Perform Action: Inline or Append ---
+                if should_inline and source_match:
+                    sourced_script_name = source_match.group("path")
+                    bypass_security = pragma_command == "allow-outside-root"
+
                     try:
                         sourced_script_path = secure_join(
                             base_dir=main_script_path.parent,
                             user_path=sourced_script_name,
                             allowed_root=allowed_root,
+                            bypass_security_check=bypass_security,
                         )
                     except (FileNotFoundError, SourceSecurityError) as e:
                         logger.error(
@@ -198,11 +290,7 @@ def inline_bash_source(
                         )
                         raise
 
-                    logger.info(
-                        "Inlining sourced file: %s -> %s",
-                        sourced_script_name,
-                        short_path(sourced_script_path),
-                    )
+                    logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
                     inlined = inline_bash_source(
                         sourced_script_path,
                         processed_files,
@@ -212,8 +300,19 @@ def inline_bash_source(
                     )
                     final_content_lines.append(inlined)
                 else:
-                    # This line is not a source command, so keep it as is
+                    if source_match and reason_to_skip:
+                        logger.info(
+                            "Skipping inline of '%s' at %s:%d because %s.",
+                            source_match.group("path"),
+                            main_script_path,
+                            line_num,
+                            reason_to_skip,
+                        )
                     final_content_lines.append(line)
+
+        if in_do_not_inline_block:
+            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {main_script_path}")
+
     except Exception:
         # Propagate after logging context
         logger.exception("Failed to read or process %s", main_script_path)
@@ -249,19 +348,16 @@ class Defaults:
 ```
 ## File: config.py
 ```python
-"""TOML based configuration. A way to communicate command arguments without using CLI switches."""
-
 from __future__ import annotations
 
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from bash2gitlab.utils.utils import short_path
 
-# Use tomllib if available (Python 3.11+), otherwise fall back to tomli
 if sys.version_info >= (3, 11):
     import tomllib
 else:
@@ -272,13 +368,18 @@ else:
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 
 class _Config:
     """
-    Handles loading and accessing configuration settings with a clear precedence:
-    1. Environment Variables (BASH2GITLAB_*)
-    2. Configuration File ('bash2gitlab.toml' or 'pyproject.toml')
-    3. Default values (handled by the consumer, e.g., argparse)
+    Manages configuration for bash2gitlab, loading from files and environment variables.
+
+    Configuration is loaded with the following priority:
+    1. Environment variables (e.g., BASH2GITLAB_LINT_GITLAB_URL)
+    2. Command-specific sections in the config file (e.g., [lint])
+    3. Top-level settings in the config file (e.g., output_dir)
+    4. Hardcoded defaults (implicitly, where applicable)
     """
 
     _ENV_VAR_PREFIX = "BASH2GITLAB_"
@@ -308,7 +409,7 @@ class _Config:
         return None
 
     def load_file_config(self) -> dict[str, Any]:
-        """Loads configuration from the first TOML file found or a test override."""
+        """Loads configuration from bash2gitlab.toml or pyproject.toml."""
         config_path = self.config_path_override or self.find_config_file()
         if not config_path:
             return {}
@@ -340,58 +441,79 @@ class _Config:
 
     def load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
-        file_config = {}
+        env_config = {}
         for key, value in os.environ.items():
             if key.startswith(self._ENV_VAR_PREFIX):
+                # Converts BASH2GITLAB_SECTION_KEY to section_key
                 config_key = key[len(self._ENV_VAR_PREFIX) :].lower()
-                file_config[config_key] = value
+                env_config[config_key] = value
                 logger.debug(f"Loaded from environment: {config_key}")
-        return file_config
+        return env_config
 
-    def get_str(self, key: str) -> str | None:
-        """Gets a string value, respecting precedence."""
-        value = self.env_config.get(key)
+    def _get_value(self, key: str, section: str | None = None) -> tuple[Any, str]:
+        """Internal helper to get a value and its source."""
+        # Check environment variables first
+        env_key = f"{section}_{key}" if section else key
+        value = self.env_config.get(env_key)
         if value is not None:
-            return value
+            return value, "env"
+
+        # Check config file (section-specific, then top-level)
+        if section:
+            config_section = self.file_config.get(section, {})
+            if isinstance(config_section, dict):
+                value = config_section.get(key)
+                if value is not None:
+                    return value, "file"
 
         value = self.file_config.get(key)
+        if value is not None:
+            return value, "file"
+
+        return None, "none"
+
+    def _coerce_type(self, value: Any, target_type: type[T], key: str) -> T | None:
+        """Coerces a value to the target type, logging warnings on failure."""
+        if value is None:
+            return None
+        try:
+            if target_type is bool and isinstance(value, str):
+                return value.lower() in ("true", "1", "t", "y", "yes")  # type: ignore[return-value]
+            return target_type(value)  # type: ignore[return-value,call-arg]
+        except (ValueError, TypeError):
+            logger.warning(f"Config value for '{key}' is not a valid {target_type.__name__}. Ignoring.")
+            return None
+
+    def get_str(self, key: str, section: str | None = None) -> str | None:
+        value, _ = self._get_value(key, section)
         return str(value) if value is not None else None
 
-    def get_bool(self, key: str) -> bool | None:
-        """Gets a boolean value, respecting precedence."""
-        value = self.env_config.get(key)
-        if value is not None:
-            return value.lower() in ("true", "1", "t", "y", "yes")
+    def get_bool(self, key: str, section: str | None = None) -> bool | None:
+        value, _ = self._get_value(key, section)
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            return value
+        return self._coerce_type(value, bool, key)
 
-        value = self.file_config.get(key)
-        if value is not None:
-            if not isinstance(value, bool):
-                logger.warning(f"Config value for '{key}' is not a boolean. Coercing to bool.")
-            return bool(value)
+    def get_int(self, key: str, section: str | None = None) -> int | None:
+        value, _ = self._get_value(key, section)
+        return self._coerce_type(value, int, key)
 
-        return None
+    def get_float(self, key: str, section: str | None = None) -> float | None:
+        value, _ = self._get_value(key, section)
+        return self._coerce_type(value, float, key)
 
-    def get_int(self, key: str) -> int | None:
-        """Gets an integer value, respecting precedence."""
-        value = self.env_config.get(key)
-        if value is not None:
-            try:
-                return int(value)
-            except ValueError:
-                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
-                return None
+    def get_dict(self, key: str, section: str | None = None) -> dict[str, str]:
+        value, _ = self._get_value(key, section)
+        if isinstance(value, dict):
+            copy_dict = {}
+            for key, the_value in value.items():
+                copy_dict[str(key)] = str(the_value)
+            return copy_dict
+        return {}
 
-        value = self.file_config.get(key)
-        if value is not None:
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                logger.warning(f"Config value for '{key}' is not an int. Ignoring.")
-                return None
-
-        return None
-
-    # --- Compile Command Properties ---
+    # --- General Properties ---
     @property
     def input_dir(self) -> str | None:
         return self.get_str("input_dir")
@@ -404,16 +526,6 @@ class _Config:
     def parallelism(self) -> int | None:
         return self.get_int("parallelism")
 
-    # --- Shred Command Properties ---
-    @property
-    def input_file(self) -> str | None:
-        return self.get_str("input_file")
-
-    @property
-    def output_file(self) -> str | None:
-        return self.get_str("output_file")
-
-    # --- Shared Properties ---
     @property
     def dry_run(self) -> bool | None:
         return self.get_bool("dry_run")
@@ -426,12 +538,105 @@ class _Config:
     def quiet(self) -> bool | None:
         return self.get_bool("quiet")
 
+    @property
+    def custom_header(self) -> str | None:
+        return self.get_str("custom_header")
 
-# Singleton instance for the rest of the application to use.
+    # --- Custom Shebangs ---
+    @property
+    def custom_shebangs(self) -> dict[str, str] | None:
+        return self.get_dict("shebangs")
+
+    # --- `compile` Command Properties ---
+    @property
+    def compile_input_dir(self) -> str | None:
+        return self.get_str("input_dir", section="compile") or self.input_dir
+
+    @property
+    def compile_output_dir(self) -> str | None:
+        return self.get_str("output_dir", section="compile") or self.output_dir
+
+    @property
+    def compile_parallelism(self) -> int | None:
+        return self.get_int("parallelism", section="compile") or self.parallelism
+
+    @property
+    def compile_watch(self) -> bool | None:
+        return self.get_bool("watch", section="compile")
+
+    # --- `shred` Command Properties ---
+    @property
+    def shred_input_file(self) -> str | None:
+        return self.get_str("input_file", section="shred")
+
+    @property
+    def shred_input_folder(self) -> str | None:
+        return self.get_str("input_folder", section="shred")
+
+    @property
+    def shred_output_dir(self) -> str | None:
+        return self.get_str("output_dir", section="shred") or self.output_dir
+
+    # --- `lint` Command Properties ---
+    @property
+    def lint_output_dir(self) -> str | None:
+        return self.get_str("output_dir", section="lint") or self.output_dir
+
+    @property
+    def lint_gitlab_url(self) -> str | None:
+        return self.get_str("gitlab_url", section="lint")
+
+    @property
+    def lint_project_id(self) -> int | None:
+        return self.get_int("project_id", section="lint")
+
+    @property
+    def lint_ref(self) -> str | None:
+        return self.get_str("ref", section="lint")
+
+    @property
+    def lint_include_merged_yaml(self) -> bool | None:
+        return self.get_bool("include_merged_yaml", section="lint")
+
+    @property
+    def lint_parallelism(self) -> int | None:
+        return self.get_int("parallelism", section="lint") or self.parallelism
+
+    @property
+    def lint_timeout(self) -> float | None:
+        return self.get_float("timeout", section="lint")
+
+    # --- `copy2local` Command Properties ---
+    @property
+    def copy2local_repo_url(self) -> str | None:
+        return self.get_str("repo_url", section="copy2local")
+
+    @property
+    def copy2local_branch(self) -> str | None:
+        return self.get_str("branch", section="copy2local")
+
+    @property
+    def copy2local_source_dir(self) -> str | None:
+        return self.get_str("source_dir", section="copy2local")
+
+    @property
+    def copy2local_copy_dir(self) -> str | None:
+        return self.get_str("copy_dir", section="copy2local")
+
+    # --- `map-deploy` / `commit-map` Properties ---
+    @property
+    def map_folders(self) -> dict[str, str]:
+        return self.get_dict("map", section="map")  # type: ignore[return=value]
+
+    @property
+    def map_force(self) -> bool | None:
+        return self.get_bool("force", section="map")
+
+
 config = _Config()
 
 
-def reset_for_testing(config_path_override: Path | None = None):
+def reset_for_testing(config_path_override: Path | None = None) -> _Config:
     """
     Resets the singleton config instance. For testing purposes only.
     Allows specifying a direct path to a config file.
@@ -439,6 +644,7 @@ def reset_for_testing(config_path_override: Path | None = None):
     # pylint: disable=global-statement
     global config
     config = _Config(config_path_override=config_path_override)
+    return config
 ```
 ## File: hookspecs.py
 ```python
@@ -496,6 +702,520 @@ def after_command(result: int, args: argparse.Namespace) -> None:
     Called after the command handler returns. Read-only by convention.
     Use for logging/metrics/teardown. No return.
     """
+```
+## File: interactive.py
+```python
+"""
+Rich-based interactive Q&A interface for bash2gitlab.
+
+This module provides an interactive command-line interface using Rich library
+for a more user-friendly experience with bash2gitlab commands.
+"""
+
+from __future__ import annotations
+
+import sys
+from typing import Any
+
+from rich import box
+from rich.align import Align
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Confirm, IntPrompt, Prompt
+from rich.table import Table
+from rich.text import Text
+
+from bash2gitlab import __about__
+from bash2gitlab.config import config
+
+
+class InteractiveInterface:
+    """Rich-based interactive interface for bash2gitlab."""
+
+    def __init__(self) -> None:
+        self.console = Console()
+        self.current_config: dict[str, Any] = {}
+
+    def show_welcome(self) -> None:
+        """Display welcome screen with application info."""
+        welcome_text = Text()
+        welcome_text.append("bash2gitlab", style="bold blue")
+        welcome_text.append(" Interactive Interface\n", style="bold")
+        welcome_text.append(f"Version: {__about__.__version__}\n", style="dim")
+        welcome_text.append(
+            "A tool for making development of centralized yaml gitlab templates more pleasant.", style="italic"
+        )
+
+        panel = Panel(Align.center(welcome_text), box=box.ROUNDED, style="blue", padding=(1, 2))
+
+        self.console.print()
+        self.console.print(panel)
+        self.console.print()
+
+    def show_main_menu(self) -> str:
+        """Display main menu and get user choice."""
+        menu_options = [
+            ("1", "compile", "Compile uncompiled directory into GitLab CI structure"),
+            ("2", "shred", "Extract inline scripts from GitLab CI YAML files"),
+            ("3", "clean", "Clean output folder (remove unmodified generated files)"),
+            ("4", "lint", "Validate compiled GitLab CI YAML against GitLab instance"),
+            ("5", "init", "Initialize new bash2gitlab project"),
+            ("6", "copy2local", "Copy folder(s) from repository to local"),
+            ("7", "map-deploy", "Deploy files based on pyproject.toml mapping"),
+            ("8", "commit-map", "Copy changed files back to source locations"),
+            ("9", "detect-drift", "Detect if generated files have been edited"),
+            ("10", "doctor", "Run health checks on project and environment"),
+            ("11", "graph", "Generate dependency graph of project files"),
+            ("12", "show-config", "Display current configuration"),
+            ("13", "install-precommit", "Install Git pre-commit hook"),
+            ("14", "uninstall-precommit", "Remove Git pre-commit hook"),
+            ("q", "quit", "Exit interactive interface"),
+        ]
+
+        table = Table(title="Available Commands", box=box.ROUNDED)
+        table.add_column("Option", style="cyan", no_wrap=True)
+        table.add_column("Command", style="magenta", no_wrap=True)
+        table.add_column("Description", style="white")
+
+        for option, command, description in menu_options:
+            table.add_row(option, command, description)
+
+        self.console.print(table)
+        self.console.print()
+
+        choice = Prompt.ask("Select a command", choices=[opt[0] for opt in menu_options], default="q")
+
+        return choice
+
+    def get_common_options(self) -> dict[str, Any]:
+        """Get common options that apply to most commands."""
+        options = {}
+
+        self.console.print("\n[bold]Common Options:[/bold]")
+
+        options["dry_run"] = Confirm.ask("Enable dry run mode?", default=False)
+        options["verbose"] = Confirm.ask("Enable verbose logging?", default=False)
+        options["quiet"] = Confirm.ask("Enable quiet mode?", default=False)
+
+        return options
+
+    def handle_compile_command(self) -> dict[str, Any]:
+        """Handle compile command configuration."""
+        self.console.print("\n[bold cyan]Compile Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Input directory
+        default_input = str(config.input_dir) if config.input_dir else "."
+        input_dir = Prompt.ask("Input directory", default=default_input)
+        params["input_dir"] = input_dir
+
+        # Output directory
+        default_output = str(config.output_dir) if config.output_dir else "./output"
+        output_dir = Prompt.ask("Output directory", default=default_output)
+        params["output_dir"] = output_dir
+
+        # Parallelism
+        default_parallelism = config.parallelism if config.parallelism else 4
+        parallelism = IntPrompt.ask("Number of parallel processes", default=default_parallelism)
+        params["parallelism"] = parallelism
+
+        # Watch mode
+        params["watch"] = Confirm.ask("Enable watch mode (auto-recompile on changes)?", default=False)
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_shred_command(self) -> dict[str, Any]:
+        """Handle shred command configuration."""
+        self.console.print("\n[bold cyan]Shred Command Configuration[/bold cyan]")
+
+        params = {}
+
+        # Input choice
+        input_choice = Prompt.ask("Input type", choices=["file", "folder"], default="file")
+
+        if input_choice == "file":
+            input_file = Prompt.ask("Input GitLab CI YAML file path")
+            params["input_file"] = input_file
+        else:
+            input_folder = Prompt.ask("Input folder path")
+            params["input_folder"] = input_folder
+
+        # Output directory
+        output_dir = Prompt.ask("Output directory", default="./shredded_output")
+        params["output_dir"] = output_dir
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_clean_command(self) -> dict[str, Any]:
+        """Handle clean command configuration."""
+        self.console.print("\n[bold cyan]Clean Command Configuration[/bold cyan]")
+
+        params = {}
+
+        # Output directory
+        default_output = str(config.output_dir) if config.output_dir else "./output"
+        output_dir = Prompt.ask("Output directory to clean", default=default_output)
+        params["output_dir"] = output_dir
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_lint_command(self) -> dict[str, Any]:
+        """Handle lint command configuration."""
+        self.console.print("\n[bold cyan]Lint Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Output directory
+        default_output = str(config.output_dir) if config.output_dir else "./output"
+        output_dir = Prompt.ask("Output directory containing YAML files", default=default_output)
+        params["output_dir"] = output_dir
+
+        # GitLab URL
+        gitlab_url = Prompt.ask("GitLab URL", default="https://gitlab.com")
+        params["gitlab_url"] = gitlab_url
+
+        # Token (optional)
+        token = Prompt.ask("GitLab token (optional, press Enter to skip)", default="")
+        if token:
+            params["token"] = token
+
+        # Project ID (optional)
+        project_id_str = Prompt.ask("Project ID for project-scoped lint (optional)", default="")
+        if project_id_str:
+            try:
+                params["project_id"] = int(project_id_str)
+            except ValueError:
+                self.console.print("[red]Invalid project ID, skipping[/red]")
+
+        # Git ref (optional)
+        ref = Prompt.ask("Git ref (optional)", default="")
+        if ref:
+            params["ref"] = ref
+
+        # Include merged YAML
+        params["include_merged_yaml"] = Confirm.ask("Include merged YAML?", default=False)
+
+        # Parallelism
+        default_parallelism = config.parallelism if config.parallelism else 4
+        parallelism = IntPrompt.ask("Number of parallel requests", default=default_parallelism)
+        params["parallelism"] = parallelism
+
+        # Timeout
+        timeout = Prompt.ask("HTTP timeout (seconds)", default="20.0")
+        try:
+            params["timeout"] = float(timeout)
+        except ValueError:
+            params["timeout"] = 20.0
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_init_command(self) -> dict[str, Any]:
+        """Handle init command configuration."""
+        self.console.print("\n[bold cyan]Init Command Configuration[/bold cyan]")
+
+        params = {}
+
+        # Directory
+        directory = Prompt.ask("Directory to initialize", default=".")
+        params["directory"] = directory
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_copy2local_command(self) -> dict[str, Any]:
+        """Handle copy2local command configuration."""
+        self.console.print("\n[bold cyan]Copy2Local Command Configuration[/bold cyan]")
+
+        params = {}
+
+        # Repository URL
+        repo_url = Prompt.ask("Repository URL")
+        params["repo_url"] = repo_url
+
+        # Branch
+        branch = Prompt.ask("Branch name", default="main")
+        params["branch"] = branch
+
+        # Source directory
+        source_dir = Prompt.ask("Source directory in repository")
+        params["source_dir"] = source_dir
+
+        # Copy directory
+        copy_dir = Prompt.ask("Local destination directory")
+        params["copy_dir"] = copy_dir
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_map_deploy_command(self) -> dict[str, Any]:
+        """Handle map-deploy command configuration."""
+        self.console.print("\n[bold cyan]Map-Deploy Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Pyproject.toml path
+        pyproject_path = Prompt.ask("Path to pyproject.toml", default="pyproject.toml")
+        params["pyproject_path"] = pyproject_path
+
+        # Force option
+        params["force"] = Confirm.ask("Force overwrite target files?", default=False)
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_commit_map_command(self) -> dict[str, Any]:
+        """Handle commit-map command configuration."""
+        self.console.print("\n[bold cyan]Commit-Map Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Pyproject.toml path
+        pyproject_path = Prompt.ask("Path to pyproject.toml", default="pyproject.toml")
+        params["pyproject_path"] = pyproject_path
+
+        # Force option
+        params["force"] = Confirm.ask("Force overwrite source files?", default=False)
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_detect_drift_command(self) -> dict[str, Any]:
+        """Handle detect-drift command configuration."""
+        self.console.print("\n[bold cyan]Detect-Drift Command Configuration[/bold cyan]")
+
+        params = {}
+
+        # Output path
+        default_output = str(config.output_dir) if config.output_dir else "./output"
+        out_path = Prompt.ask("Output path to check for drift", default=default_output)
+        params["out"] = out_path
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_doctor_command(self) -> dict[str, Any]:
+        """Handle doctor command configuration."""
+        self.console.print("\n[bold cyan]Doctor Command Configuration[/bold cyan]")
+        self.console.print("Running health checks...")
+
+        params = {}
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_graph_command(self) -> dict[str, Any]:
+        """Handle graph command configuration."""
+        self.console.print("\n[bold cyan]Graph Command Configuration[/bold cyan]")
+
+        params = {}
+
+        # Input directory
+        default_input = str(config.input_dir) if config.input_dir else "."
+        input_dir = Prompt.ask("Input directory", default=default_input)
+        params["input_dir"] = input_dir
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_show_config_command(self) -> dict[str, Any]:
+        """Handle show-config command configuration."""
+        self.console.print("\n[bold cyan]Show-Config Command[/bold cyan]")
+        self.console.print("Displaying current configuration...")
+
+        params = {}
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_precommit_command(self, install: bool = True) -> dict[str, Any]:
+        """Handle pre-commit install/uninstall command configuration."""
+        action = "Install" if install else "Uninstall"
+        self.console.print(f"\n[bold cyan]{action} Pre-commit Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Repository root
+        repo_root = Prompt.ask("Repository root", default=".")
+        params["repo_root"] = repo_root
+
+        # Force option
+        params["force"] = Confirm.ask(f"Force {action.lower()}?", default=False)
+
+        # Only verbose and quiet for precommit commands
+        params["verbose"] = Confirm.ask("Enable verbose logging?", default=False)
+        params["quiet"] = Confirm.ask("Enable quiet mode?", default=False)
+
+        return params
+
+    def display_command_summary(self, command: str, params: dict[str, Any]) -> bool:
+        """Display summary of command configuration before execution."""
+        self.console.print(f"\n[bold green]Command Summary: {command}[/bold green]")
+
+        table = Table(box=box.SIMPLE)
+        table.add_column("Parameter", style="cyan")
+        table.add_column("Value", style="white")
+
+        for key, value in params.items():
+            table.add_row(str(key), str(value))
+
+        self.console.print(table)
+
+        if not Confirm.ask("\nExecute this command?", default=True):
+            return False
+
+        return True
+
+    def execute_command(self, command: str, params: dict[str, Any]) -> None:
+        """Execute the configured command."""
+        self.console.print(f"\n[bold yellow]Executing: {command}[/bold yellow]")
+
+        # Import the main CLI module to reuse handlers
+        import argparse
+
+        from bash2gitlab.__main__ import (
+            clean_handler,
+            clone2local_handler,
+            commit_map_handler,
+            compile_handler,
+            doctor_handler,
+            drift_handler,
+            graph_handler,
+            init_handler,
+            install_precommit_handler,
+            lint_handler,
+            map_deploy_handler,
+            show_config_handler,
+            shred_handler,
+            uninstall_precommit_handler,
+        )
+
+        # Create a namespace object with the parameters
+        args = argparse.Namespace(**params)
+
+        # Map commands to their handlers
+        handlers = {
+            "compile": compile_handler,
+            "shred": shred_handler,
+            "clean": clean_handler,
+            "lint": lint_handler,
+            "init": init_handler,
+            "copy2local": clone2local_handler,
+            "map-deploy": map_deploy_handler,
+            "commit-map": commit_map_handler,
+            "detect-drift": drift_handler,
+            "doctor": doctor_handler,
+            "graph": graph_handler,
+            "show-config": show_config_handler,
+            "install-precommit": install_precommit_handler,
+            "uninstall-precommit": uninstall_precommit_handler,
+        }
+
+        handler = handlers.get(command)
+        if handler:
+            try:
+                exit_code = handler(args)
+                if exit_code == 0:
+                    self.console.print("\n[bold green]✅ Command completed successfully![/bold green]")
+                else:
+                    self.console.print(f"\n[bold red]❌ Command failed with exit code: {exit_code}[/bold red]")
+            except Exception as e:
+                self.console.print(f"\n[bold red]❌ Error executing command: {e}[/bold red]")
+        else:
+            self.console.print(f"\n[bold red]❌ Unknown command: {command}[/bold red]")
+
+    def run(self) -> None:
+        """Main interactive loop."""
+        self.show_welcome()
+
+        while True:
+            try:
+                choice = self.show_main_menu()
+
+                if choice == "q":
+                    self.console.print("\n[bold blue]Thank you for using bash2gitlab! 👋[/bold blue]")
+                    break
+
+                # Map choices to commands and handlers
+                command_map = {
+                    "1": ("compile", self.handle_compile_command),
+                    "2": ("shred", self.handle_shred_command),
+                    "3": ("clean", self.handle_clean_command),
+                    "4": ("lint", self.handle_lint_command),
+                    "5": ("init", self.handle_init_command),
+                    "6": ("copy2local", self.handle_copy2local_command),
+                    "7": ("map-deploy", self.handle_map_deploy_command),
+                    "8": ("commit-map", self.handle_commit_map_command),
+                    "9": ("detect-drift", self.handle_detect_drift_command),
+                    "10": ("doctor", self.handle_doctor_command),
+                    "11": ("graph", self.handle_graph_command),
+                    "12": ("show-config", self.handle_show_config_command),
+                    "13": ("install-precommit", lambda: self.handle_precommit_command(True)),
+                    "14": ("uninstall-precommit", lambda: self.handle_precommit_command(False)),
+                }
+
+                if choice in command_map:
+                    command, handler = command_map[choice]
+                    params = handler()
+
+                    if self.display_command_summary(command, params):
+                        self.execute_command(command, params)
+
+                    self.console.print("\n" + "=" * 60)
+
+                    if not Confirm.ask("Continue with another command?", default=True):
+                        break
+
+            except KeyboardInterrupt:
+                self.console.print("\n\n[bold yellow]Interrupted by user. Goodbye! 👋[/bold yellow]")
+                break
+            except EOFError:
+                self.console.print("\n\n[bold yellow]EOF received. Goodbye! 👋[/bold yellow]")
+                break
+
+
+def main() -> int:
+    """Main entry point for the interactive interface."""
+    try:
+        interface = InteractiveInterface()
+        interface.run()
+        return 0
+    except Exception as e:
+        console = Console()
+        console.print(f"[bold red]Fatal error: {e}[/bold red]")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 ```
 ## File: plugins.py
 ```python
@@ -1647,7 +2367,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.14"
+__version__ = "0.8.15"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -1698,7 +2418,6 @@ import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
-from bash2gitlab.commands import precommit
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
@@ -1708,7 +2427,8 @@ from bash2gitlab.commands.graph_all import generate_dependency_graph
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.map_commit import run_commit_map
-from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
+from bash2gitlab.commands.map_deploy import run_map_deploy
+from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
 from bash2gitlab.commands.show_config import run_show_config
 from bash2gitlab.commands.shred_all import run_shred_gitlab_file, run_shred_gitlab_tree
 from bash2gitlab.config import config
@@ -1912,9 +2632,8 @@ def shred_handler(args: argparse.Namespace) -> int:
 
 def commit_map_handler(args: argparse.Namespace) -> int:
     """Handler for the 'commit-map' command."""
-    pyproject_path = Path(args.pyproject_path)
     try:
-        mapping = get_deployment_map(pyproject_path)
+        mapping = config.map_folders
     except FileNotFoundError as e:
         logger.error(f"❌ {e}")
         return 10
@@ -1928,9 +2647,8 @@ def commit_map_handler(args: argparse.Namespace) -> int:
 
 def map_deploy_handler(args: argparse.Namespace) -> int:
     """Handler for the 'map-deploy' command."""
-    pyproject_path = Path(args.pyproject_path)
     try:
-        mapping = get_deployment_map(pyproject_path)
+        mapping = config.map_folders
     except FileNotFoundError as e:
         logger.error(f"❌ {e}")
         return 10
@@ -1959,10 +2677,10 @@ def install_precommit_handler(args: argparse.Namespace) -> int:
     """
     repo_root = Path(args.repo_root).resolve()
     try:
-        precommit.install(repo_root=repo_root, force=args.force)
+        install(repo_root=repo_root, force=args.force)
         logger.info("Pre-commit hook installed.")
         return 0
-    except precommit.PrecommitHookError as e:
+    except PrecommitHookError as e:
         logger.error("Failed to install pre-commit hook: %s", e)
         return 199
 
@@ -1980,10 +2698,10 @@ def uninstall_precommit_handler(args: argparse.Namespace) -> int:
     """
     repo_root = Path(args.repo_root).resolve()
     try:
-        precommit.uninstall(repo_root=repo_root, force=args.force)
+        uninstall(repo_root=repo_root, force=args.force)
         logger.info("Pre-commit hook removed.")
         return 0
-    except precommit.PrecommitHookError as e:
+    except PrecommitHookError as e:
         logger.error("Failed to uninstall pre-commit hook: %s", e)
         return 200
 
@@ -2049,13 +2767,13 @@ def main() -> int:
     compile_parser.add_argument(
         "--in",
         dest="input_dir",
-        required=not bool(config.input_dir),
+        required=not bool(config.compile_input_dir),
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
     compile_parser.add_argument(
         "--out",
         dest="output_dir",
-        required=not bool(config.output_dir),
+        required=not bool(config.compile_output_dir),
         help="Output directory for the compiled GitLab CI files.",
     )
     compile_parser.add_argument(
@@ -2081,7 +2799,7 @@ def main() -> int:
     clean_parser.add_argument(
         "--out",
         dest="output_dir",
-        required=not bool(config.output_dir),
+        required=not bool(config.compile_output_dir),
         help="Output directory for the compiled GitLab CI files.",
     )
     add_common_arguments(clean_parser)
@@ -2100,11 +2818,13 @@ def main() -> int:
     group = shred_parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--in-file",
+        default=config.shred_input_file,
         dest="input_file",
         help="Input GitLab CI YAML file to shred (e.g., .gitlab-ci.yml).",
     )
     group.add_argument(
         "--in-folder",
+        default=config.shred_input_folder,
         dest="input_folder",
         help="Folder to recursively shred (*.yml, *.yaml).",
     )
@@ -2112,7 +2832,8 @@ def main() -> int:
     shred_parser.add_argument(
         "--out",
         dest="output_dir",
-        required=True,
+        default=config.shred_output_dir,
+        required=not bool(config.shred_output_dir),
         help="Output directory (will be created). YAML and scripts are written here.",
     )
 
@@ -2133,32 +2854,36 @@ def main() -> int:
     detect_drift_parser.set_defaults(func=drift_handler)
 
     # --- copy2local Command ---
-    clone_parser = subparsers.add_parser(
+    copy2local_parser = subparsers.add_parser(
         "copy2local",
         help="Copy folder(s) from a repo to local, for testing bash in the dependent repo",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--repo-url",
+        default=config.copy2local_repo_url,
         required=True,
         help="Repository URL to copy.",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--branch",
+        default=config.copy2local_branch,
         required=True,
         help="Branch to copy.",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--copy-dir",
+        default=config.copy2local_copy_dir,
         required=True,
         help="Destination directory for the copy.",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--source-dir",
+        default=config.copy2local_source_dir,
         required=True,
         help="Directory to include in the copy.",
     )
-    add_common_arguments(clone_parser)
-    clone_parser.set_defaults(func=clone2local_handler)
+    add_common_arguments(copy2local_parser)
+    copy2local_parser.set_defaults(func=clone2local_handler)
 
     # Init Parser
     init_parser = subparsers.add_parser(
@@ -2233,6 +2958,7 @@ def main() -> int:
     )
     lint_parser.add_argument(
         "--gitlab-url",
+        default=config.lint_gitlab_url,
         dest="gitlab_url",
         required=True,
         help="Base GitLab URL (e.g., https://gitlab.com).",
@@ -2244,33 +2970,36 @@ def main() -> int:
     )
     lint_parser.add_argument(
         "--project-id",
+        default=config.lint_project_id,
         dest="project_id",
         type=int,
         help="Project ID for project-scoped lint (recommended for configs with includes).",
     )
     lint_parser.add_argument(
         "--ref",
+        default=config.lint_ref,
         dest="ref",
         help="Git ref to evaluate includes/variables against (project lint only).",
     )
     lint_parser.add_argument(
         "--include-merged-yaml",
+        default=config.lint_include_merged_yaml,
         dest="include_merged_yaml",
         action="store_true",
         help="Return merged YAML from project-scoped lint (slower).",
     )
     lint_parser.add_argument(
         "--parallelism",
+        default=config.lint_parallelism,
         dest="parallelism",
         type=int,
-        default=config.parallelism,
         help="Max concurrent lint requests (default: CPU count, capped to file count).",
     )
     lint_parser.add_argument(
         "--timeout",
         dest="timeout",
         type=float,
-        default=20.0,
+        default=config.lint_timeout or 20,
         help="HTTP timeout per request in seconds (default: 20).",
     )
     add_common_arguments(lint_parser)
@@ -2329,7 +3058,7 @@ def main() -> int:
     graph_parser.add_argument(
         "--in",
         dest="input_dir",
-        required=not bool(config.input_dir),
+        required=not bool(config.compile_input_dir),
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
     add_common_arguments(graph_parser)
@@ -2370,7 +3099,7 @@ def main() -> int:
             args_output_dir = args.output_dir
         else:
             args_output_dir = ""
-        args.input_file = args_input_file or config.input_file
+        args.input_file = args_input_file or config.shred_input_file
         args.input_folder = args_input_folder or config.input_dir
         args.output_dir = args_output_dir or config.output_dir
 
@@ -2901,6 +3630,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
+from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
@@ -2921,7 +3651,12 @@ def remove_excess(command: str) -> str:
     return command
 
 
-BANNER = f"""# DO NOT EDIT
+def get_banner() -> str:
+    if config.custom_header:
+        return config.custom_header + "\n"
+
+    # Original banner content as fallback
+    return f"""# DO NOT EDIT
 # This is a compiled file, compiled with bash2gitlab
 # Recompile instead of editing this file.
 #
@@ -3443,7 +4178,7 @@ def compile_single_file(
     logger.debug(f"Processing {label}: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
     inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
-    final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
+    final_content = (get_banner() + compiled_text) if inlined_for_file > 0 else raw_text
     written = write_compiled_file(output_file, final_content, dry_run)
     return inlined_for_file, int(written)
 
@@ -5146,34 +5881,11 @@ import os
 import shutil
 from pathlib import Path
 
-import toml
-
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
-__all__ = ["run_map_deploy", "get_deployment_map"]
-
-
-def get_deployment_map(pyproject_path: Path) -> dict[str, str]:
-    """Parses the pyproject.toml file to get the deployment map.
-
-    Args:
-        pyproject_path: The path to the pyproject.toml file.
-
-    Returns:
-        A dictionary mapping source directories to target directories.
-
-    Raises:
-        FileNotFoundError: If the pyproject.toml file is not found.
-        KeyError: If the [tool.bash2gitlab.map] section is missing.
-    """
-    if not pyproject_path.is_file():
-        raise FileNotFoundError(f"pyproject.toml not found at '{pyproject_path}'")
-
-    data = toml.load(pyproject_path)
-    try:
-        return data["tool"]["bash2gitlab"]["map"]
-    except KeyError as ke:
-        raise KeyError("'[tool.bash2gitlab.map]' section not found in pyproject.toml") from ke
+__all__ = [
+    "run_map_deploy",
+]
 
 
 def run_map_deploy(
@@ -5529,89 +6241,178 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Any
 
 from bash2gitlab.config import _Config, config
 from bash2gitlab.utils.terminal_colors import Colors
+from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["run_show_config"]
 
+# Defines the structure of the output.
+# Maps section titles to a list of tuples: (display_key, config_property_name)
+CONFIG_STRUCTURE = {
+    "General Settings": [
+        ("input_dir", "input_dir"),
+        ("output_dir", "output_dir"),
+        ("parallelism", "parallelism"),
+        ("dry_run", "dry_run"),
+        ("verbose", "verbose"),
+        ("quiet", "quiet"),
+        ("custom_header", "custom_header"),
+    ],
+    "Custom Shebangs (`[shebangs]`)": [("shebangs", "custom_shebangs")],
+    "Compile Command (`[compile]`)": [
+        ("input_dir", "compile_input_dir"),
+        ("output_dir", "compile_output_dir"),
+        ("parallelism", "compile_parallelism"),
+        ("watch", "compile_watch"),
+    ],
+    "Shred Command (`[shred]`)": [
+        ("input_file", "shred_input_file"),
+        ("input_folder", "shred_input_folder"),
+        ("output_dir", "shred_output_dir"),
+    ],
+    "Lint Command (`[lint]`)": [
+        ("output_dir", "lint_output_dir"),
+        ("gitlab_url", "lint_gitlab_url"),
+        ("token", "lint_token"),
+        ("project_id", "lint_project_id"),
+        ("ref", "lint_ref"),
+        ("include_merged_yaml", "lint_include_merged_yaml"),
+        ("parallelism", "lint_parallelism"),
+        ("timeout", "lint_timeout"),
+    ],
+    "Copy2Local Command (`[copy2local]`)": [
+        ("repo_url", "copy2local_repo_url"),
+        ("branch", "copy2local_branch"),
+        ("source_dir", "copy2local_source_dir"),
+        ("copy_dir", "copy2local_copy_dir"),
+    ],
+    "Map Commands (`[map]`)": [
+        ("pyproject_path", "map_pyproject_path"),
+        ("force", "map_force"),
+    ],
+}
 
-def get_value_and_source(key: str, config_instance: _Config) -> tuple[Any, str, str | None]:
+# Known sections used for parsing property names
+_SECTIONS = {"compile", "shred", "lint", "copy2local", "map"}
+
+
+def _parse_prop_name(prop_name: str) -> tuple[str, str | None]:
+    """Parses a config property name into its key and section."""
+    parts = prop_name.split("_", 1)
+    if parts[0] in _SECTIONS:
+        # e.g., "lint_gitlab_url" -> ("gitlab_url", "lint")
+        return (parts[1], parts[0])
+    if prop_name == "custom_shebangs":
+        # e.g. "custom_shebangs" -> ("shebangs", None) but it is a section-like table
+        return ("shebangs", None)
+    # e.g., "input_dir" -> ("input_dir", None)
+    return (prop_name, None)
+
+
+def get_value_and_source_details(prop_name: str, config_instance: _Config) -> tuple[Any, str, str | None]:
     """
-    Determines the value and source of a configuration key.
+    Determines the final value and the specific source of a configuration property.
 
     Returns:
         A tuple of (value, source_type, source_detail).
     """
-    env_var_name = config_instance._ENV_VAR_PREFIX + key.upper()
-    env_value = os.environ.get(env_var_name)
+    # 1. Get the final, resolved value from the config property.
+    #    This correctly handles fallbacks (e.g., `lint_output_dir` -> `output_dir`).
+    value = getattr(config_instance, prop_name, None)
 
-    if env_value is not None:
-        # Re-evaluate the value using the config's type-aware methods
-        value = getattr(config_instance, key)
+    # 2. Determine the original source of the value.
+    key, section = _parse_prop_name(prop_name)
+    key_for_file = "shebangs" if prop_name == "custom_shebangs" else key
+
+    # Check Environment Variable
+    env_key = f"{section}_{key}" if section else key
+    env_var_name = config_instance._ENV_VAR_PREFIX + env_key.upper()
+    if env_var_name in os.environ:
         return value, "Environment Variable", env_var_name
 
-    # Check file config
-    file_config_value = config_instance.file_config.get(key)
-    if file_config_value is not None:
-        value = getattr(config_instance, key)
-        config_path = config_instance.config_path_override or config_instance.find_config_file()
-        source_detail = str(config_path.relative_to(Path.cwd())) if config_path else "Unknown file"
-        return value, "Configuration File", source_detail
+    # Check Configuration File ([section])
+    if section:
+        config_section = config_instance.file_config.get(section, {})
+        if isinstance(config_section, dict) and key in config_section:
+            config_path = config_instance.config_path_override or config_instance.find_config_file()
+            detail = f"[{section}] in {short_path(config_path)}" if config_path else f"in section [{section}]"
+            return value, "Configuration File", detail
 
-    # If neither, it's a default from the argparse layer or None
-    value = getattr(config_instance, key)
+    # Check Configuration File (top-level)
+    if key_for_file in config_instance.file_config:
+        config_path = config_instance.config_path_override or config_instance.find_config_file()
+        detail = f"in {short_path(config_path)}" if config_path else "in config file"
+        return value, "Configuration File", detail
+
+    # Check if the value came from a fallback to a general property
+    if section and value is not None:
+        # Check if the fallback general property has a source
+        general_value, general_source, general_detail = get_value_and_source_details(key, config_instance)
+        if general_value == value and general_source != "Default":
+            return value, general_source, f"{general_detail} (fallback)"
+
     return value, "Default", None
 
 
 def run_show_config() -> int:
     """
-    Displays the resolved configuration values and their sources.
+    Displays the resolved configuration values, grouped by section, and their sources.
     """
     print(f"{Colors.BOLD}bash2gitlab Configuration:{Colors.ENDC}")
 
-    config_keys = [
-        "input_dir",
-        "output_dir",
-        "parallelism",
-        "input_file",
-        "output_file",
-        "dry_run",
-        "verbose",
-        "quiet",
-    ]
-
-    # Find the longest key for alignment
-    max_key_len = max(len(key) for key in config_keys)
-
-    for key in config_keys:
-        value, source_type, source_detail = get_value_and_source(key, config)
-
-        # Colorize the source type for better readability
-        if source_type == "Environment Variable":
-            source_color = Colors.OKCYAN
-        elif source_type == "Configuration File":
-            source_color = Colors.OKGREEN
-        else:
-            source_color = Colors.WARNING
-
-        # Format the output line
-        key_padded = key.ljust(max_key_len)
-        value_str = f"{Colors.BOLD}{value}{Colors.ENDC}" if value is not None else f"{Colors.FAIL}Not Set{Colors.ENDC}"
-        source_str = f"{source_color}({source_type}{Colors.ENDC}"
-        if source_detail:
-            source_str += f": {source_detail}"
-        source_str += ")"
-
-        print(f"  {key_padded} = {value_str} {source_str}")
-
     config_file_path = config.config_path_override or config.find_config_file()
-    if not config_file_path:
-        print(f"\n{Colors.WARNING}Note: No 'bash2gitlab.toml' or 'pyproject.toml' config file found.{Colors.ENDC}")
+    if config_file_path:
+        print(f"Loaded from: {Colors.OKCYAN}{short_path(config_file_path)}{Colors.ENDC}")
+    else:
+        print(f"{Colors.WARNING}Note: No 'bash2gitlab.toml' or 'pyproject.toml' config file found.{Colors.ENDC}")
+
+    max_key_len = max(len(k) for section in CONFIG_STRUCTURE.values() for k, _ in section)
+
+    for section_title, keys in CONFIG_STRUCTURE.items():
+        # Check if any value in the section is set to avoid printing empty sections
+        has_values = any(getattr(config, prop_name, None) is not None for _, prop_name in keys)
+        if not has_values:
+            continue
+
+        print(f"\n{Colors.BOLD}{section_title}{Colors.ENDC}")
+        for display_key, prop_name in keys:
+            value, source_type, source_detail = get_value_and_source_details(prop_name, config)
+
+            if source_type == "Environment Variable":
+                source_color = Colors.OKCYAN
+            elif source_type == "Configuration File":
+                source_color = Colors.OKGREEN
+            else:
+                source_color = Colors.WARNING
+
+            key_padded = display_key.ljust(max_key_len)
+
+            if isinstance(value, dict):
+                value_str = (
+                    f"\n{Colors.BOLD}"
+                    + "\n".join(f"{' ' * (max_key_len + 5)}- {k}: {v}" for k, v in value.items())
+                    + f"{Colors.ENDC}"
+                )
+            elif value is not None:
+                value_str = f"{Colors.BOLD}{value}{Colors.ENDC}"
+            else:
+                value_str = f"{Colors.FAIL}Not Set{Colors.ENDC}"
+
+            source_str = f"{source_color}({source_type}{Colors.ENDC}"
+            if source_detail:
+                source_str += f": {source_detail}"
+            source_str += ")"
+
+            # Don't show source for unset defaults
+            if source_type == "Default" and value is None:
+                source_str = ""
+
+            print(f"  {key_padded} = {value_str} {source_str}")
 
     return 0
 ```
@@ -5643,6 +6444,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
+from bash2gitlab.config import config
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.yaml_factory import get_yaml
@@ -5924,7 +6726,13 @@ def shred_script_block(
     script_filepath = scripts_output_path / script_filename
 
     # Build header with conditional sourcing for local execution
-    header_parts: list[str] = [SHEBANG]
+    script_filename_path = Path(create_script_filename(job_name, script_key))
+    file_ext = script_filename_path.suffix.lstrip(".")
+
+    custom_shebangs = config.custom_shebangs or {"sh": "#!/bin/bash"}
+    shebang = custom_shebangs.get(file_ext, SHEBANG)  # SHEBANG is the '#!/bin/bash' default
+
+    header_parts: list[str] = [shebang]
     sourcing_block: list[str] = []
     if global_vars_filename:
         sourcing_block.append(f"  . ./{global_vars_filename}")

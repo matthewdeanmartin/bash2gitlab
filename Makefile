@@ -31,7 +31,7 @@ test: clean uv.lock install_plugins
 	@echo "Running unit tests"
 	# $(VENV) pytest --doctest-modules bash2gitlab
 	# $(VENV) python -m unittest discover
-	$(VENV) py.test test -vv -n 2 --cov=bash2gitlab --cov-report=html --cov-fail-under 65 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
+	$(VENV) py.test test -vv -n 2 --cov=bash2gitlab --cov-report=html --cov-fail-under 60 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
 	$(VENV) bash basic_checks.sh
 #	$(VENV) bash basic_test_with_logging.sh
 

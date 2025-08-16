@@ -42,19 +42,19 @@ def test_get_value_and_source_from_env(monkeypatch: pytest.MonkeyPatch):
     cfg = ConfigClass()  # loads env_config
 
     # string
-    value, src, detail = show_mod.get_value_and_source("input_dir", cfg)
+    value, src, detail = show_mod.get_value_and_source_details("input_dir", cfg)
     assert value == "/env/input"
     assert src == "Environment Variable"
     assert detail.endswith("BASH2GITLAB_INPUT_DIR")
 
     # int coercion
-    value, src, detail = show_mod.get_value_and_source("parallelism", cfg)
+    value, src, detail = show_mod.get_value_and_source_details("parallelism", cfg)
     assert value == 8
     assert src == "Environment Variable"
     assert detail.endswith("BASH2GITLAB_PARALLELISM")
 
     # bool coercion
-    value, src, detail = show_mod.get_value_and_source("dry_run", cfg)
+    value, src, detail = show_mod.get_value_and_source_details("dry_run", cfg)
     assert value is True
     assert src == "Environment Variable"
     assert detail.endswith("BASH2GITLAB_DRY_RUN")
@@ -78,16 +78,16 @@ def test_get_value_and_source_from_file_pyproject(tmp_path: Path, monkeypatch: p
     cfg = ConfigClass(config_path_override=pyproject)  # loads file_config
     _set_module_config(monkeypatch, cfg)  # not strictly needed for get_value_and_source, but consistent
 
-    value, src, detail = show_mod.get_value_and_source("input_dir", cfg)
+    value, src, detail = show_mod.get_value_and_source_details("input_dir", cfg)
     assert value == "from-file/input"
     assert src == "Configuration File"
     # shown path should be relative to cwd
-    assert detail == "pyproject.toml"
+    assert detail == "in pyproject.toml"
 
     # check a few other keys
-    assert show_mod.get_value_and_source("output_dir", cfg)[0] == "from-file/out"
-    assert show_mod.get_value_and_source("parallelism", cfg)[0] == 3
-    assert show_mod.get_value_and_source("verbose", cfg)[0] is True
+    assert show_mod.get_value_and_source_details("output_dir", cfg)[0] == "from-file/out"
+    assert show_mod.get_value_and_source_details("parallelism", cfg)[0] == 3
+    assert show_mod.get_value_and_source_details("verbose", cfg)[0] is True
 
 
 # What?
@@ -137,7 +137,7 @@ def test_run_show_config_with_file_and_env(
     assert "input_dir" in out
     assert "from-file/input" in out
     assert "(Configuration File" in out
-    assert ": pyproject.toml" in out
+    assert "pyproject.toml" in out
 
     # output_dir should say "Environment Variable"
     assert "output_dir" in out

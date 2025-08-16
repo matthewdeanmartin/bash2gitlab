@@ -39,7 +39,6 @@ import argcomplete
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
-from bash2gitlab.commands import precommit
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
@@ -49,7 +48,8 @@ from bash2gitlab.commands.graph_all import generate_dependency_graph
 from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.map_commit import run_commit_map
-from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
+from bash2gitlab.commands.map_deploy import run_map_deploy
+from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
 from bash2gitlab.commands.show_config import run_show_config
 from bash2gitlab.commands.shred_all import run_shred_gitlab_file, run_shred_gitlab_tree
 from bash2gitlab.config import config
@@ -253,9 +253,8 @@ def shred_handler(args: argparse.Namespace) -> int:
 
 def commit_map_handler(args: argparse.Namespace) -> int:
     """Handler for the 'commit-map' command."""
-    pyproject_path = Path(args.pyproject_path)
     try:
-        mapping = get_deployment_map(pyproject_path)
+        mapping = config.map_folders
     except FileNotFoundError as e:
         logger.error(f"❌ {e}")
         return 10
@@ -269,9 +268,8 @@ def commit_map_handler(args: argparse.Namespace) -> int:
 
 def map_deploy_handler(args: argparse.Namespace) -> int:
     """Handler for the 'map-deploy' command."""
-    pyproject_path = Path(args.pyproject_path)
     try:
-        mapping = get_deployment_map(pyproject_path)
+        mapping = config.map_folders
     except FileNotFoundError as e:
         logger.error(f"❌ {e}")
         return 10
@@ -300,10 +298,10 @@ def install_precommit_handler(args: argparse.Namespace) -> int:
     """
     repo_root = Path(args.repo_root).resolve()
     try:
-        precommit.install(repo_root=repo_root, force=args.force)
+        install(repo_root=repo_root, force=args.force)
         logger.info("Pre-commit hook installed.")
         return 0
-    except precommit.PrecommitHookError as e:
+    except PrecommitHookError as e:
         logger.error("Failed to install pre-commit hook: %s", e)
         return 199
 
@@ -321,10 +319,10 @@ def uninstall_precommit_handler(args: argparse.Namespace) -> int:
     """
     repo_root = Path(args.repo_root).resolve()
     try:
-        precommit.uninstall(repo_root=repo_root, force=args.force)
+        uninstall(repo_root=repo_root, force=args.force)
         logger.info("Pre-commit hook removed.")
         return 0
-    except precommit.PrecommitHookError as e:
+    except PrecommitHookError as e:
         logger.error("Failed to uninstall pre-commit hook: %s", e)
         return 200
 
@@ -390,13 +388,13 @@ def main() -> int:
     compile_parser.add_argument(
         "--in",
         dest="input_dir",
-        required=not bool(config.input_dir),
+        required=not bool(config.compile_input_dir),
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
     compile_parser.add_argument(
         "--out",
         dest="output_dir",
-        required=not bool(config.output_dir),
+        required=not bool(config.compile_output_dir),
         help="Output directory for the compiled GitLab CI files.",
     )
     compile_parser.add_argument(
@@ -422,7 +420,7 @@ def main() -> int:
     clean_parser.add_argument(
         "--out",
         dest="output_dir",
-        required=not bool(config.output_dir),
+        required=not bool(config.compile_output_dir),
         help="Output directory for the compiled GitLab CI files.",
     )
     add_common_arguments(clean_parser)
@@ -441,11 +439,13 @@ def main() -> int:
     group = shred_parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--in-file",
+        default=config.shred_input_file,
         dest="input_file",
         help="Input GitLab CI YAML file to shred (e.g., .gitlab-ci.yml).",
     )
     group.add_argument(
         "--in-folder",
+        default=config.shred_input_folder,
         dest="input_folder",
         help="Folder to recursively shred (*.yml, *.yaml).",
     )
@@ -453,7 +453,8 @@ def main() -> int:
     shred_parser.add_argument(
         "--out",
         dest="output_dir",
-        required=True,
+        default=config.shred_output_dir,
+        required=not bool(config.shred_output_dir),
         help="Output directory (will be created). YAML and scripts are written here.",
     )
 
@@ -474,32 +475,36 @@ def main() -> int:
     detect_drift_parser.set_defaults(func=drift_handler)
 
     # --- copy2local Command ---
-    clone_parser = subparsers.add_parser(
+    copy2local_parser = subparsers.add_parser(
         "copy2local",
         help="Copy folder(s) from a repo to local, for testing bash in the dependent repo",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--repo-url",
+        default=config.copy2local_repo_url,
         required=True,
         help="Repository URL to copy.",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--branch",
+        default=config.copy2local_branch,
         required=True,
         help="Branch to copy.",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--copy-dir",
+        default=config.copy2local_copy_dir,
         required=True,
         help="Destination directory for the copy.",
     )
-    clone_parser.add_argument(
+    copy2local_parser.add_argument(
         "--source-dir",
+        default=config.copy2local_source_dir,
         required=True,
         help="Directory to include in the copy.",
     )
-    add_common_arguments(clone_parser)
-    clone_parser.set_defaults(func=clone2local_handler)
+    add_common_arguments(copy2local_parser)
+    copy2local_parser.set_defaults(func=clone2local_handler)
 
     # Init Parser
     init_parser = subparsers.add_parser(
@@ -574,6 +579,7 @@ def main() -> int:
     )
     lint_parser.add_argument(
         "--gitlab-url",
+        default=config.lint_gitlab_url,
         dest="gitlab_url",
         required=True,
         help="Base GitLab URL (e.g., https://gitlab.com).",
@@ -585,33 +591,36 @@ def main() -> int:
     )
     lint_parser.add_argument(
         "--project-id",
+        default=config.lint_project_id,
         dest="project_id",
         type=int,
         help="Project ID for project-scoped lint (recommended for configs with includes).",
     )
     lint_parser.add_argument(
         "--ref",
+        default=config.lint_ref,
         dest="ref",
         help="Git ref to evaluate includes/variables against (project lint only).",
     )
     lint_parser.add_argument(
         "--include-merged-yaml",
+        default=config.lint_include_merged_yaml,
         dest="include_merged_yaml",
         action="store_true",
         help="Return merged YAML from project-scoped lint (slower).",
     )
     lint_parser.add_argument(
         "--parallelism",
+        default=config.lint_parallelism,
         dest="parallelism",
         type=int,
-        default=config.parallelism,
         help="Max concurrent lint requests (default: CPU count, capped to file count).",
     )
     lint_parser.add_argument(
         "--timeout",
         dest="timeout",
         type=float,
-        default=20.0,
+        default=config.lint_timeout or 20,
         help="HTTP timeout per request in seconds (default: 20).",
     )
     add_common_arguments(lint_parser)
@@ -670,7 +679,7 @@ def main() -> int:
     graph_parser.add_argument(
         "--in",
         dest="input_dir",
-        required=not bool(config.input_dir),
+        required=not bool(config.compile_input_dir),
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
     add_common_arguments(graph_parser)
@@ -711,7 +720,7 @@ def main() -> int:
             args_output_dir = args.output_dir
         else:
             args_output_dir = ""
-        args.input_file = args_input_file or config.input_file
+        args.input_file = args_input_file or config.shred_input_file
         args.input_folder = args_input_folder or config.input_dir
         args.output_dir = args_output_dir or config.output_dir
 

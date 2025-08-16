@@ -1,5 +1,16 @@
 # Contributing
 
+## Ways to contribute
+
+- Open a ticket for a bug or feature.
+- Customize via configuration, see [example config](examples/sample_config/pyproject.toml)
+- Merge request. Open ticket, check if anyone is home, see below for house style and build.
+- Plugins. Basic support for pluggy.
+- Extend via public API. Public python API might not be super stable yet, consider pinning your version.
+- Extend via orchestration tool, e.g. Justfile, Makefile. Some of the most obvious improvements would be a built-in
+  formatter or linter, which I'm avoiding because there are so may complications with dependencies on tools that are not
+  even written in Python.
+
 ## Getting going
 
 Fork the repo.

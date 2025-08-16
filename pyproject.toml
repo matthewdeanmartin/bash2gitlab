@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.8.14"
+version = "0.8.15"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -152,6 +152,8 @@ b2gl = "bash2gitlab.__main__:main"
 bash2gitlab-tui = "bash2gitlab.tui:main"
 b2gl-tui = "bash2gitlab.tui:main"
 
+bash2gitlab-interactive = "bash2gitlab.interactive:main"
+b2gl-interactive = "bash2gitlab.interactive:main"
 
 [build-system]
 requires = ["hatchling"]

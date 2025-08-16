@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 import toml
 
-from bash2gitlab.commands.map_deploy import get_deployment_map, run_map_deploy
+from bash2gitlab.commands.map_deploy import run_map_deploy
+from bash2gitlab.config import reset_for_testing
 
 
 @pytest.fixture
@@ -43,21 +44,11 @@ def setup_test_environment(tmp_path: Path):
     return tmp_path, pyproject_path
 
 
-def test_get_deployment_map(setup_test_environment):
-    """Tests parsing of the pyproject.toml file."""
-    tmp_path, pyproject_path = setup_test_environment
-
-    deployment_map = get_deployment_map(pyproject_path)
-
-    assert len(deployment_map) == 2
-    assert str(tmp_path / "src" / "angular") in deployment_map
-    assert deployment_map[str(tmp_path / "src" / "angular")] == str(tmp_path / "dest" / "angular_app")
-
-
 def test_initial_deployment(setup_test_environment):
     """Tests the first run where no target files exist."""
     tmp_path, pyproject_path = setup_test_environment
-    deployment_map = get_deployment_map(pyproject_path)
+    config = reset_for_testing(pyproject_path)
+    deployment_map = config.map_folders
 
     run_map_deploy(deployment_map)
 
@@ -78,7 +69,8 @@ def test_skips_unsupported_extensions(setup_test_environment):
     """Files with unsupported extensions are ignored during deployment."""
     tmp_path, pyproject_path = setup_test_environment
     (tmp_path / "src" / "angular" / "ignore.txt").write_text("skip me")
-    deployment_map = get_deployment_map(pyproject_path)
+    config = reset_for_testing(pyproject_path)
+    deployment_map = config.map_folders
 
     run_map_deploy(deployment_map)
 
@@ -89,7 +81,8 @@ def test_skips_unsupported_extensions(setup_test_environment):
 def test_unchanged_redeployment(setup_test_environment):
     """Tests a second run where source files have not changed."""
     tmp_path, pyproject_path = setup_test_environment
-    deployment_map = get_deployment_map(pyproject_path)
+    config = reset_for_testing(pyproject_path)
+    deployment_map = config.map_folders
 
     run_map_deploy(deployment_map)  # First run
 
@@ -106,7 +99,8 @@ def test_unchanged_redeployment(setup_test_environment):
 def test_modified_destination_skip(setup_test_environment):
     """Tests that a modified destination file is skipped."""
     tmp_path, pyproject_path = setup_test_environment
-    deployment_map = get_deployment_map(pyproject_path)
+    config = reset_for_testing(pyproject_path)
+    deployment_map = config.map_folders
     run_map_deploy(deployment_map)
 
     target_file = tmp_path / "dest" / "angular_app" / "script1.sh"
@@ -125,7 +119,8 @@ def test_modified_destination_skip(setup_test_environment):
 def test_modified_destination_force(setup_test_environment):
     """Tests that --force overwrites a modified destination file."""
     tmp_path, pyproject_path = setup_test_environment
-    deployment_map = get_deployment_map(pyproject_path)
+    config = reset_for_testing(pyproject_path)
+    deployment_map = config.map_folders
     run_map_deploy(deployment_map)
 
     target_file = tmp_path / "dest" / "angular_app" / "script1.sh"
@@ -144,7 +139,8 @@ def test_modified_destination_force(setup_test_environment):
 def test_dry_run(setup_test_environment):
     """Tests that --dry-run prevents any file system changes."""
     tmp_path, pyproject_path = setup_test_environment
-    deployment_map = get_deployment_map(pyproject_path)
+    config = reset_for_testing(pyproject_path)
+    deployment_map = config.map_folders
 
     run_map_deploy(deployment_map, dry_run=True)
 

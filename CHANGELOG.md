@@ -12,23 +12,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.8.14] - 2025-08-15
+## [0.8.15] - 2025-08-16
 
 ### Added
+
+- Interactive mode via bash2gitlab-interactive
+
+### Changed
+
+- Inline supports Pragma commands to skip certain bash from being in-lined.
+    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+    - `# Pragma: end-do-not-inline`: Ends the block.
+    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+
+## [0.8.14] - 2025-08-16
+
+### Added
+
 - Basc textual TUI added to mirror the CLI interface
 - Generates makefile for shred command
 
 ## [0.8.13] - 2025-08-15
 
 ### Fixed
+
 - Shred command had wrong CLI argument validation
 
 ### Changed
+
 - `graph` command will attempt other graphing styles if graphviz not available.
 
 ## [0.8.12] - 2025-08-14
 
 ### Added
+
 - Graph command
 - Doctor command for diagnostics
 - Show config command to show how cascading config resolves
@@ -41,7 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Shred now logs with relative path.
 - Shred should now use path relative to yaml not cwd
 - Leading `.` got stripped from file names. Fixed
-
 
 ## [0.8.11] - 2025-08-14
 

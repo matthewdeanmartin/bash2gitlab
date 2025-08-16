@@ -12,17 +12,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.15] - 2025-08-16
+
+### Added
+
+- Interactive mode via bash2gitlab-interactive
+
+### Changed
+
+- Inline supports Pragma commands to skip certain bash from being in-lined.
+    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+    - `# Pragma: end-do-not-inline`: Ends the block.
+    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+
+## [0.8.14] - 2025-08-16
+
+### Added
+
+- Basc textual TUI added to mirror the CLI interface
+- Generates makefile for shred command
+
+## [0.8.13] - 2025-08-15
+
+### Fixed
+
+- Shred command had wrong CLI argument validation
+
+### Changed
+
+- `graph` command will attempt other graphing styles if graphviz not available.
+
+## [0.8.12] - 2025-08-14
+
+### Added
+
+- Graph command
+- Doctor command for diagnostics
+- Show config command to show how cascading config resolves
+
+### Fixed
+
+- Shred write to a folder now.
+- Shred will take --in-file or --in-folder
+- Shred records `!reference [.job, key]` as bash comment
+- Shred now logs with relative path.
+- Shred should now use path relative to yaml not cwd
+- Leading `.` got stripped from file names. Fixed
+
+## [0.8.11] - 2025-08-14
+
+### Added
+
+- Install/uninstall git precommit hooks to compile before commit (not integrated with the popular pre-commit tool).
+  Support for
+  integration with the `pre-commit` tool is on the way.
+- Pluggy support for plugins
+
+### Changed
+
+- Now support inlining a much larger list of script languages using variations on `intepreter -c "..."`
+
+## [0.8.10] - 2025-08-11
+
+### Fixed
+
+- Minimize all "script as yaml lists" because they are not compatible with line continuation characters. No one should
+  use any version of bash2gitlab before 0.8.10.
+
 ## [0.8.9] - 2025-08-11
 
 ### Fixed
-- Lost all new lines
+
+- Lost all new lines.
 
 ## [0.8.8] - 2025-08-11
 
 ### Added
+
 - Support for inlining other languages, python, etc. using `python -c`, etc.
 
 ### Fixed
+
 - Force new line at the end of any script.
 - Minimize bash written in `- code` lists because of risk of quoting problems.
 - Quote strings more aggressively
@@ -30,25 +102,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.7] - 2025-08-10
 
 ### Changed
+
 - File invocations followed by comment are now detected.
 - Concept of script folder and template folder gone. Input folder and output folder is enough.
 
 ### Removed
+
 - Global variable file feature is broken, will need to rethink
 
 ### Added
+
 - Clean command that only removes unmodified files from output folder
 - Checks for stray files in output folder before compiling
 - Lint command, but it is in "beta" testing
 
 ### Fixed
+
 - No longer rewrites files even when there are no changes
 
 ## [0.8.6] - 2025-08-09
 
 ### Changed
 
-- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files. 
+- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files.
 
 ### Added
 
@@ -90,7 +166,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed bug with copy2local
 
-
 ## [0.8.2] - 2025-08-05
 
 ### Added
@@ -100,7 +175,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - copy2local now copies the contents of src folder to destination folder, to reduce nesting.
-
 
 ## [0.8.1] - 2025-08-05
 

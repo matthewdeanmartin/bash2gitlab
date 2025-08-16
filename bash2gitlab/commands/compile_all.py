@@ -19,6 +19,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
+from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
@@ -39,7 +40,12 @@ def remove_excess(command: str) -> str:
     return command
 
 
-BANNER = f"""# DO NOT EDIT
+def get_banner() -> str:
+    if config.custom_header:
+        return config.custom_header + "\n"
+
+    # Original banner content as fallback
+    return f"""# DO NOT EDIT
 # This is a compiled file, compiled with bash2gitlab
 # Recompile instead of editing this file.
 #
@@ -561,7 +567,7 @@ def compile_single_file(
     logger.debug(f"Processing {label}: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
     inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
-    final_content = (BANNER + compiled_text) if inlined_for_file > 0 else raw_text
+    final_content = (get_banner() + compiled_text) if inlined_for_file > 0 else raw_text
     written = write_compiled_file(output_file, final_content, dry_run)
     return inlined_for_file, int(written)
 

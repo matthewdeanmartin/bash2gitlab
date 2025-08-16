@@ -1,20 +1,27 @@
 # TODO
 
-## Bugs
-- Still fails to merge multiple scripts
+## Compile
+- Support `# bash2gitlab: Do not inine` Pragma
+- Support `# bash2gitlab: start/stop ignore` Pragma
+- Config option - prefer yaml comment, prefer bash comment (Maybe not?)
 
-## Logging
-- Add "# inlined file ./file.sh" to `script:` list
-- Bad ratio of info/debug
-- Defaults to debug instead of info
-- Print whole path instead of relative path
+## UI 
+- non tui interactive UI
+
+## Shred/Decompile
+- min lines before extracting (1 is too small?)
+- support value/description syntax
+
+```
+variables:
+  TOX_EXE:
+    value: tox
+    description: "The name of the tox executable."
+```
 
 ## Config
 - custom shebang
 - custom "do not edit" banner
-
-## Compile
-- Include command to reproduce build copied to header
 
 ## Advanced Features
 - Validate/lint with API calls to Gitlab.

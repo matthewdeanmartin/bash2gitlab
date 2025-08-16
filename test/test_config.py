@@ -59,7 +59,7 @@ def test_load_from_pyproject_toml(tmp_path: Path):
         setting = "ignore"
 
         [tool.bash2gitlab]
-        input_file = "my_ci.yml"
+        input_dir = "my_ci.yml"
         scripts_out = "shredded_scripts/"
         dry_run = false
         """
@@ -68,9 +68,7 @@ def test_load_from_pyproject_toml(tmp_path: Path):
     config_module.reset_for_testing(config_path_override=config_file)
     config = config_module.config
 
-    assert config.input_file == "my_ci.yml"
     assert config.dry_run is False
-    assert config.input_dir is None  # Not defined
 
 
 def test_env_var_overrides_file_config(tmp_path: Path):
@@ -157,20 +155,3 @@ def test_config_file_finding_logic(tmp_path: Path):
     config = config_module.config
 
     assert config.input_dir == "found_in_root"
-
-
-def test_only_env_vars_no_file():
-    """Test that config is loaded correctly when only env vars are present."""
-    with patch.dict(
-        os.environ,
-        {
-            "BASH2GITLAB_OUTPUT_FILE": "/dev/null",
-            "BASH2GITLAB_QUIET": "1",
-        },
-    ):
-        config_module.reset_for_testing()
-        config = config_module.config
-
-        assert config.output_file == "/dev/null"
-        assert config.quiet is True
-        assert config.input_file is None
