@@ -5,6 +5,8 @@ Key improvements over prior version:
 - Robust networking with timeouts, retries, and explicit User-Agent
 - Safe, simple JSON cache with TTL to avoid frequent network calls
 - Correct prerelease handling using packaging.version
+- Yanked version detection with warnings
+- Development version detection and reporting
 - Optional colorized output that respects NO_COLOR/CI/TERM and TTY
 - Non-invasive logging: caller may pass a logger or rely on a safe default
 - Narrow exception surface with custom error types
@@ -52,17 +54,27 @@ class NetworkError(Exception):
 class _Color:
     YELLOW: str = "\033[93m"
     GREEN: str = "\033[92m"
+    RED: str = "\033[91m"
+    BLUE: str = "\033[94m"
     ENDC: str = "\033[0m"
+
+
+@dataclass(frozen=True)
+class VersionInfo:
+    """Information about available versions."""
+    latest_stable: str | None
+    latest_dev: str | None
+    current_yanked: bool
 
 
 def get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
     """Get a warning logging function.
 
     Args:
-        user_logger (logging.Logger | None): Logger instance or None.
+        user_logger: Logger instance or None.
 
     Returns:
-        Callable[[str], None]: Logger warning method or built-in print.
+        Logger warning method or built-in print.
     """
     if isinstance(user_logger, logging.Logger):
         return user_logger.warning
@@ -73,7 +85,7 @@ def can_use_color() -> bool:
     """Determine if color output is allowed.
 
     Returns:
-        bool: True if output can be colorized.
+        True if output can be colorized.
     """
     if os.environ.get("NO_COLOR"):
         return False
@@ -91,10 +103,10 @@ def cache_paths(package_name: str) -> tuple[Path, Path]:
     """Compute cache directory and file path for a package.
 
     Args:
-        package_name (str): Name of the package.
+        package_name: Name of the package.
 
     Returns:
-        tuple[Path, Path]: Cache directory and file path.
+        Cache directory and file path.
     """
     cache_dir = Path(tempfile.gettempdir()) / "python_update_checker"
     cache_file = cache_dir / f"{package_name}_cache.json"
@@ -105,11 +117,11 @@ def is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
     """Check if cache file is fresh.
 
     Args:
-        cache_file (Path): Path to cache file.
-        ttl_seconds (int): TTL in seconds.
+        cache_file: Path to cache file.
+        ttl_seconds: TTL in seconds.
 
     Returns:
-        bool: True if cache is within TTL.
+        True if cache is within TTL.
     """
     try:
         if cache_file.exists():
@@ -124,9 +136,9 @@ def save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
     """Save data to cache.
 
     Args:
-        cache_dir (Path): Cache directory.
-        cache_file (Path): Cache file path.
-        payload (dict): Data to store.
+        cache_dir: Cache directory.
+        cache_file: Cache file path.
+        payload: Data to store.
     """
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +152,7 @@ def reset_cache(package_name: str) -> None:
     """Remove cache entry for a given package.
 
     Args:
-        package_name (str): Package name to clear from cache.
+        package_name: Package name to clear from cache.
     """
     _, cache_file = cache_paths(package_name)
     try:
@@ -154,36 +166,75 @@ def fetch_pypi_json(url: str, timeout: float) -> dict:
     """Fetch JSON metadata from PyPI.
 
     Args:
-        url (str): URL to fetch.
-        timeout (float): Timeout in seconds.
+        url: URL to fetch.
+        timeout: Timeout in seconds.
 
     Returns:
-        dict: Parsed JSON data.
+        Parsed JSON data.
     """
     req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
     with request.urlopen(req, timeout=timeout) as resp:  # nosec
         return json.loads(resp.read().decode("utf-8"))
 
 
-def get_latest_version_from_pypi(
+def is_dev_version(version_str: str) -> bool:
+    """Check if a version string represents a development version.
+
+    Args:
+        version_str: Version string to check.
+
+    Returns:
+        True if this is a development version.
+    """
+    try:
+        v = _version.parse(version_str)
+        return v.is_devrelease
+    except _version.InvalidVersion:
+        return False
+
+
+def is_version_yanked(releases: dict, version_str: str) -> bool:
+    """Check if a specific version has been yanked.
+
+    Args:
+        releases: PyPI releases data.
+        version_str: Version string to check.
+
+    Returns:
+        True if the version is yanked.
+    """
+    version_releases = releases.get(version_str, [])
+    if not version_releases:
+        return False
+
+    # Check if any release file for this version is yanked
+    for release in version_releases:
+        if release.get("yanked", False):
+            return True
+    return False
+
+
+def get_version_info_from_pypi(
     package_name: str,
+    current_version: str,
     *,
     include_prereleases: bool,
     timeout: float = 5.0,
     retries: int = 2,
     backoff: float = 0.5,
-) -> str | None:
-    """Get latest version from PyPI.
+) -> VersionInfo:
+    """Get version information from PyPI.
 
     Args:
-        package_name (str): Package name.
-        include_prereleases (bool): Whether to include prereleases.
-        timeout (float): Request timeout.
-        retries (int): Number of retries.
-        backoff (float): Backoff factor between retries.
+        package_name: Package name.
+        current_version: Current version to check if yanked.
+        include_prereleases: Whether to include prereleases.
+        timeout: Request timeout.
+        retries: Number of retries.
+        backoff: Backoff factor between retries.
 
     Returns:
-        str | None: Latest version string, None if unavailable.
+        Version information including latest stable, dev, and yank status.
 
     Raises:
         PackageNotFoundError: If the package does not exist.
@@ -191,64 +242,148 @@ def get_latest_version_from_pypi(
     """
     url = f"https://pypi.org/pypi/{package_name}/json"
     last_err: Exception | None = None
+
     for attempt in range(retries + 1):
         try:
             data = fetch_pypi_json(url, timeout)
             releases = data.get("releases", {})
+
             if not releases:
                 info_ver = data.get("info", {}).get("version")
-                return str(info_ver) if info_ver else None
-            parsed: list[_version.Version] = []
+                return VersionInfo(
+                    latest_stable=str(info_ver) if info_ver else None,
+                    latest_dev=None,
+                    current_yanked=False
+                )
+
+            # Check if current version is yanked
+            current_yanked = is_version_yanked(releases, current_version)
+
+            # Parse all valid versions
+            stable_versions: list[_version.Version] = []
+            dev_versions: list[_version.Version] = []
+
             for v_str in releases.keys():
                 try:
                     v = _version.parse(v_str)
                 except _version.InvalidVersion:
                     continue
-                if v.is_prerelease and not include_prereleases:
+
+                # Skip yanked versions when looking for latest
+                if is_version_yanked(releases, v_str):
                     continue
-                parsed.append(v)
-            if not parsed:
-                return None
-            return str(max(parsed))
+
+                if v.is_devrelease:
+                    dev_versions.append(v)
+                elif v.is_prerelease:
+                    if include_prereleases:
+                        stable_versions.append(v)
+                else:
+                    stable_versions.append(v)
+
+            latest_stable = str(max(stable_versions)) if stable_versions else None
+            latest_dev = str(max(dev_versions)) if dev_versions else None
+
+            return VersionInfo(
+                latest_stable=latest_stable,
+                latest_dev=latest_dev,
+                current_yanked=current_yanked
+            )
+
         except error.HTTPError as e:
             if e.code == 404:
                 raise PackageNotFoundError from e
             last_err = e
         except (error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
             last_err = e
-        time.sleep(backoff * (attempt + 1))
+
+        if attempt < retries:
+            time.sleep(backoff * (attempt + 1))
+
     raise NetworkError(str(last_err))
 
 
 def format_update_message(
     package_name: str,
-    current: _version.Version,
-    latest: _version.Version,
+    current_version_str: str,
+    version_info: VersionInfo,
 ) -> str:
     """Format the update notification message.
 
     Args:
-        package_name (str): Package name.
-        current (_version.Version): Current version.
-        latest (_version.Version): Latest version.
+        package_name: Package name.
+        current_version_str: Current version string.
+        version_info: Version information from PyPI.
 
     Returns:
-        str: Formatted update message.
+        Formatted update message.
     """
     pypi_url = f"https://pypi.org/project/{package_name}/"
-    if can_use_color():
-        c = _Color()
-        return (
-            f"{c.YELLOW}A new version of {package_name} is available: {c.GREEN}{latest}{c.YELLOW} "
-            f"(you are using {current}).\n"
-            f"Please upgrade using your preferred package manager.\n"
-            f"More info: {pypi_url}{c.ENDC}"
-        )
-    return (
-        f"A new version of {package_name} is available: {latest} (you are using {current}).\n"
-        f"Please upgrade using your preferred package manager.\n"
-        f"More info: {pypi_url}"
-    )
+    messages: list[str] = []
+
+    try:
+        current = _version.parse(current_version_str)
+    except _version.InvalidVersion:
+        current = None
+
+    c = _Color() if can_use_color() else None
+
+    # Check if current version is yanked
+    if version_info.current_yanked:
+        if c:
+            yank_msg = (
+                f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} "
+                f"has been yanked from PyPI!{c.ENDC}"
+            )
+        else:
+            yank_msg = (
+                f"WARNING: Your current version {current_version_str} of {package_name} "
+                f"has been yanked from PyPI!"
+            )
+        messages.append(yank_msg)
+
+    # Check for stable updates
+    if version_info.latest_stable and current:
+        try:
+            latest_stable = _version.parse(version_info.latest_stable)
+            if latest_stable > current:
+                if c:
+                    stable_msg = (
+                        f"{c.YELLOW}A new stable version of {package_name} is available: "
+                        f"{c.GREEN}{latest_stable}{c.YELLOW} (you are using {current}).{c.ENDC}"
+                    )
+                else:
+                    stable_msg = (
+                        f"A new stable version of {package_name} is available: "
+                        f"{latest_stable} (you are using {current})."
+                    )
+                messages.append(stable_msg)
+        except _version.InvalidVersion:
+            pass
+
+    # Check for dev versions
+    if version_info.latest_dev:
+        try:
+            latest_dev = _version.parse(version_info.latest_dev)
+            if current is None or latest_dev > current:
+                if c:
+                    dev_msg = (
+                        f"{c.BLUE}Development version available: {c.GREEN}{latest_dev}{c.BLUE} "
+                        f"(use at your own risk).{c.ENDC}"
+                    )
+                else:
+                    dev_msg = f"Development version available: {latest_dev} (use at your own risk)."
+                messages.append(dev_msg)
+        except _version.InvalidVersion:
+            pass
+
+    if messages:
+        upgrade_msg = "Please upgrade using your preferred package manager."
+        info_msg = f"More info: {pypi_url}"
+        messages.extend([upgrade_msg, info_msg])
+        return "\n".join(messages)
+
+    return ""
 
 
 def check_for_updates(
@@ -262,40 +397,49 @@ def check_for_updates(
     """Check PyPI for a newer version of a package.
 
     Args:
-        package_name (str): The PyPI package name to check.
-        current_version (str): The currently installed version string.
-        logger (logging.Logger | None): Optional logger for warnings.
-        cache_ttl_seconds (int): Cache time-to-live in seconds.
-        include_prereleases (bool): Whether to consider prereleases newer.
+        package_name: The PyPI package name to check.
+        current_version: The currently installed version string.
+        logger: Optional logger for warnings.
+        cache_ttl_seconds: Cache time-to-live in seconds.
+        include_prereleases: Whether to consider prereleases newer.
 
     Returns:
-        str | None: Formatted update message if update available, else None.
+        Formatted update message if update available, else None.
     """
     warn = get_logger(logger)
     cache_dir, cache_file = cache_paths(package_name)
+
     if is_fresh(cache_file, cache_ttl_seconds):
         return None
+
     try:
-        latest_str = get_latest_version_from_pypi(package_name, include_prereleases=include_prereleases)
-        if not latest_str:
-            save_cache(cache_dir, cache_file, {"latest": None})
-            return None
-        current = _version.parse(current_version)
-        latest = _version.parse(latest_str)
-        if latest > current:
-            save_cache(cache_dir, cache_file, {"latest": latest_str})
-            return format_update_message(package_name, current, latest)
-        save_cache(cache_dir, cache_file, {"latest": latest_str})
-        return None
+        version_info = get_version_info_from_pypi(
+            package_name,
+            current_version,
+            include_prereleases=include_prereleases
+        )
+
+        message = format_update_message(package_name, current_version, version_info)
+
+        # Cache the results
+        cache_payload = {
+            "latest_stable": version_info.latest_stable,
+            "latest_dev": version_info.latest_dev,
+            "current_yanked": version_info.current_yanked,
+        }
+        save_cache(cache_dir, cache_file, cache_payload)
+
+        return message if message else None
+
     except PackageNotFoundError:
         warn(f"Package '{package_name}' not found on PyPI.")
-        save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"error": "not_found"})
         return None
     except NetworkError:
-        save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"error": "network"})
         return None
     except Exception:
-        save_cache(cache_dir, cache_file, {"latest": None})
+        save_cache(cache_dir, cache_file, {"error": "unknown"})
         return None
 
 
