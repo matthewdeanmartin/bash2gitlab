@@ -139,16 +139,16 @@ class CompileForm(CommandForm):
         self.post_message(ExecuteCommand(args))
 
 
-class ShredForm(CommandForm):
-    """Form for the shred command."""
+class DecompileForm(CommandForm):
+    """Form for the decompile command."""
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label("✂️ Shred Configuration", classes="form-title")
+            yield Label("✂️ Decompile Configuration", classes="form-title")
 
             with Horizontal():
                 yield Label("Mode:", classes="label")
-                yield OptionList("Single File", "Folder Tree", id="shred-mode")
+                yield OptionList("Single File", "Folder Tree", id="decompile-mode")
 
             with Horizontal():
                 yield Label("Input File:", classes="label")
@@ -156,25 +156,25 @@ class ShredForm(CommandForm):
 
             with Horizontal():
                 yield Label("Input Folder:", classes="label")
-                yield Input(placeholder="Folder to recursively shred", id="input-folder")
+                yield Input(placeholder="Folder to recursively decompile", id="input-folder")
 
             with Horizontal():
                 yield Label("Output Directory:", classes="label")
-                yield Input(placeholder="Output directory for shredded files", id="output-dir")
+                yield Input(placeholder="Output directory for decompiled files", id="output-dir")
 
             with Horizontal():
                 yield Checkbox("Dry run", id="dry-run")
                 yield Checkbox("Verbose", id="verbose")
                 yield Checkbox("Quiet", id="quiet")
 
-            yield Button("✂️ Shred", variant="warning", id="execute-btn")
+            yield Button("✂️ Decompile", variant="warning", id="execute-btn")
 
     async def execute_command(self) -> None:
-        """Execute the shred command."""
-        args = ["bash2gitlab", "shred"]
+        """Execute the decompile command."""
+        args = ["bash2gitlab", "decompile"]
 
         # Get input values
-        mode = self.query_one("#shred-mode", OptionList).highlighted
+        mode = self.query_one("#decompile-mode", OptionList).highlighted
         input_file = self.query_one("#input-file", Input).value.strip()
         input_folder = self.query_one("#input-folder", Input).value.strip()
         output_dir = self.query_one("#output-dir", Input).value.strip()
@@ -815,8 +815,8 @@ class Bash2GitlabTUI(App):
             with TabPane("Compile", id="compile"):
                 yield CompileForm("compile")
 
-            with TabPane("Shred", id="shred"):
-                yield ShredForm("shred")
+            with TabPane("Decompile", id="decompile"):
+                yield DecompileForm("decompile")
 
             with TabPane("Lint", id="lint"):
                 yield LintForm("lint")
@@ -882,11 +882,11 @@ Compile uncompiled GitLab CI directory structure into standard format.
 - **Parallelism**: Number of files to process simultaneously
 - **Watch**: Monitor source files for changes and auto-recompile
 
-### Shred
+### Decompile
 Extract inline scripts from GitLab CI YAML files into separate .sh files.
 - **Mode**: Choose between single file or folder tree processing
 - **Input File/Folder**: Source YAML file or directory
-- **Output Directory**: Where shredded files will be written
+- **Output Directory**: Where decompiled files will be written
 
 ### Lint
 Validate compiled GitLab CI YAML against a GitLab instance.

@@ -20,7 +20,7 @@ orchestrating template complexity.
 
 ```bash
 # 1) Extract shell commands from your pipeline to real scripts
-bash2gitlab shred --in . --out ./compiled --scripts ./scripts
+bash2gitlab decompile --in . --out ./compiled --scripts ./scripts
 
 # 2) Edit scripts locally (lint, test, run)
 vim scripts/my_job.sh
@@ -46,7 +46,7 @@ Results land in `./compiled` by default (customizable). Commit as needed.
 | Command      | What it does                                                                                   |
 |--------------|------------------------------------------------------------------------------------------------|
 | `compile`    | Reads YAML, **inlines Bash** from your repo (and sourced scripts) back into `script:` entries. |
-| `shred`      | Scans YAML and **extracts Bash** to standalone `*.sh` files, leaving cleaner YAML behind.      |
+| `decompile`      | Scans YAML and **extracts Bash** to standalone `*.sh` files, leaving cleaner YAML behind.      |
 | `copy2local` | Copies CI templates (e.g., from a centralized repo) into your repo for **local iteration**.    |
 | `init`       | Creates **starter structure** (folders, sample config) for a smoother first run.               |
 
@@ -94,12 +94,12 @@ repo/
 
 ---
 
-### `shred`
+### `decompile`
 
 Extract shell from YAML into real files so your IDE and shell tooling can work.
 
 ```bash
-bash2gitlab shred \
+bash2gitlab decompile \
   --in <INPUT_DIR> \
   --out <OUTPUT_DIR> \
   [--scripts <SCRIPTS_DIR>] \
@@ -232,7 +232,7 @@ out = "./compiled"
 
 ## Formatting, anchors & comments
 
-* **Comments:** not guaranteed to be preserved through shred/compile cycles.
+* **Comments:** not guaranteed to be preserved through decompile/compile cycles.
 * **Anchors & aliases:** supported for common cases; complex anchor patterns may be normalized.
 * **Long lines & quoting:** compiler may reflow to keep valid YAML.
 
@@ -272,10 +272,10 @@ build:
       make build
 ```
 
-### Example: shred then edit
+### Example: decompile then edit
 
 ```bash
-bash2gitlab shred --in . --out ./compiled --scripts ./scripts
+bash2gitlab decompile --in . --out ./compiled --scripts ./scripts
 # edit ./scripts/test.sh
 bash2gitlab compile --in . --out ./compiled --scripts ./scripts
 ```

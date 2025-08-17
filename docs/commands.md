@@ -66,50 +66,50 @@ watch = false
 
 -----
 
-## Command: `shred`
+## Command: `decompile`
 
 ### Description
 
-The `shred` command performs the reverse operation of `compile`. It takes one or more existing GitLab CI/CD YAML files that have inline scripts and extracts those scripts into separate `.sh` files. It also extracts `variables` blocks into corresponding `.sh` files containing `export` statements.
+The `decompile` command performs the reverse operation of `compile`. It takes one or more existing GitLab CI/CD YAML files that have inline scripts and extracts those scripts into separate `.sh` files. It also extracts `variables` blocks into corresponding `.sh` files containing `export` statements.
 
 The original YAML file is modified to replace the inline script blocks with commands that execute the newly created external script files (e.g., `script: ./my-job.sh`). This is extremely useful for migrating an existing, monolithic `.gitlab-ci.yml` file into a `bash2gitlab`-managed project structure.
 
 ### Workflow
 
-`shred` is primarily a one-time utility used at the beginning of a project's migration.
+`decompile` is primarily a one-time utility used at the beginning of a project's migration.
 
-1.  **`shred`**: Run `bash2gitlab shred` on an existing `.gitlab-ci.yml` or a directory of them. This creates a source tree of YAML templates and associated scripts.
+1.  **`decompile`**: Run `bash2gitlab decompile` on an existing `.gitlab-ci.yml` or a directory of them. This creates a source tree of YAML templates and associated scripts.
 2.  **Review**: Manually review the generated source files and organize them as needed.
-3.  **`compile`**: Configure your `bash2gitlab.toml` and run `bash2gitlab compile` to verify that the shredded source can be compiled back into a valid GitLab CI structure. The output should be functionally identical to the original file.
+3.  **`compile`**: Configure your `bash2gitlab.toml` and run `bash2gitlab compile` to verify that the decompileded source can be compiled back into a valid GitLab CI structure. The output should be functionally identical to the original file.
 
 ### Parameters
 
-  - `--in-file <path>`: **(Required, or `--in-folder`)** Specifies a single input GitLab CI YAML file to shred.
-  - `--in-folder <path>`: **(Required, or `--in-file`)** Specifies a folder to recursively find and shred all `*.yml` and `*.yaml` files.
+  - `--in-file <path>`: **(Required, or `--in-folder`)** Specifies a single input GitLab CI YAML file to decompile.
+  - `--in-folder <path>`: **(Required, or `--in-file`)** Specifies a folder to recursively find and decompile all `*.yml` and `*.yaml` files.
   - `--out <path>`: **(Required)** The output directory where the modified YAML and new script files will be written.
-  - `--dry-run`: Simulates the shredding process without writing any files.
+  - `--dry-run`: Simulates the decompileding process without writing any files.
   - `-v, --verbose`: Enables detailed DEBUG level logging.
   - `-q, --quiet`: Suppresses all output except for critical errors.
 
 ### CLI Usage and Examples
 
 ```bash
-# Shred a single file into the 'shredded_output' directory
-bash2gitlab shred --in-file .gitlab-ci.yml --out shredded_output
+# Decompile a single file into the 'decompileded_output' directory
+bash2gitlab decompile --in-file .gitlab-ci.yml --out decompileded_output
 
-# Shred all YAML files in the 'existing_ci' directory
-bash2gitlab shred --in-folder existing_ci --out new_project_src
+# Decompile all YAML files in the 'existing_ci' directory
+bash2gitlab decompile --in-folder existing_ci --out new_project_src
 
 # Perform a dry run
-bash2gitlab shred --in-file .gitlab-ci.yml --out shredded_output --dry-run
+bash2gitlab decompile --in-file .gitlab-ci.yml --out decompileded_output --dry-run
 ```
 
 ### Configuration (`bash2gitlab.toml`)
 
-Settings can be specified in a `[shred]` section.
+Settings can be specified in a `[decompile]` section.
 
 ```toml
-[shred]
+[decompile]
 input_file = ".gitlab-ci.yml"
 # or
 # input_folder = "ci"

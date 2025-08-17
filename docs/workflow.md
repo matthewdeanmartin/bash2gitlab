@@ -1,16 +1,16 @@
 # Workflow
 
-## Shredding
+## decompileding
 
-bash2gitlab shredding is not necessarily opinionated.
+bash2gitlab decompileding is not necessarily opinionated.
 
-- Shred your `.gitlab-ci.yml` or other template with `bash2gitlab shred`
+- Decompile your `.gitlab-ci.yml` or other template with `bash2gitlab decompile`
 - Open in your IDE for syntax highlighting
 - Lint with shellcheck
 - Find bugs and edit your original yaml to fix via copy-paste.
-- Delete the shredded bash
+- Delete the decompileded bash
 
-Round trip shred-compile is not guaranteed, yaml is too quirky.
+Round trip decompile-compile is not guaranteed, yaml is too quirky.
 
 ## Compiling
 
@@ -43,7 +43,7 @@ As soon as you inline all your bash, you lose almost all tooling for bash.
 
 ## Converting pre-existing yaml
 
-- Shred existing yaml templates to bash and yaml
+- Decompile existing yaml templates to bash and yaml
 - Update bash so it can run locally and on your build server
 - Validate bash with shellcheck, etc.
 

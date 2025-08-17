@@ -3,7 +3,7 @@ Take a gitlab template with inline yaml and split it up into yaml and shell
 commands. Useful for project initialization.
 
 Fixes:
- - Support shredding a *file* or an entire *folder* tree
+ - Support decompiling a *file* or an entire *folder* tree
  - Force --out to be a *directory* (scripts live next to output YAML)
  - Script refs are made *relative to the YAML file* (e.g., "./script.sh")
  - Any YAML ``!reference [...]`` items in scripts are emitted as *bash comments*
@@ -34,10 +34,10 @@ logger = logging.getLogger(__name__)
 SHEBANG = "#!/bin/bash"
 
 __all__ = [
-    "run_shred_gitlab_file",
-    "run_shred_gitlab_tree",
+    "run_decompile_gitlab_file",
+    "run_decompile_gitlab_tree",
     # Back-compat alias (old name processed a single file)
-    "run_shred_gitlab",
+    "run_decompile_gitlab",
 ]
 
 
@@ -238,10 +238,10 @@ def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dr
         makefile_path.write_text(makefile_content, encoding="utf-8")
 
 
-# --- shredders ---------------------------------------------------------------
+# --- decompilers ---------------------------------------------------------------
 
 
-def shred_variables_block(
+def decompile_variables_block(
     variables_data: dict,
     base_name: str,
     scripts_output_path: Path,
@@ -267,7 +267,7 @@ def shred_variables_block(
     script_filepath = scripts_output_path / script_filename
     full_script_content = "\n".join(variable_lines) + "\n"
 
-    logger.info("Shredding variables for '%s' to '%s'", base_name, rel(script_filepath))
+    logger.info("Decompileding variables for '%s' to '%s'", base_name, rel(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -277,7 +277,7 @@ def shred_variables_block(
     return script_filename
 
 
-def shred_script_block(
+def decompile_script_block(
     *,
     script_content: list[str | Any] | str,
     job_name: str,
@@ -327,7 +327,7 @@ def shred_script_block(
     script_header = "\n".join(header_parts)
     full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
 
-    logger.info("Shredding script from '%s:%s' to '%s'", job_name, script_key, rel(script_filepath))
+    logger.info("Decompileding script from '%s:%s' to '%s'", job_name, script_key, rel(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -349,7 +349,7 @@ def shred_script_block(
     return str(script_filepath), rel_str
 
 
-def process_shred_job(
+def process_decompile_job(
     *,
     job_name: str,
     job_data: dict,
@@ -358,11 +358,11 @@ def process_shred_job(
     dry_run: bool = False,
     global_vars_filename: str | None = None,
 ) -> tuple[int, dict[str, str]]:
-    """Process a single job definition to shred its script and variables blocks.
+    """Process a single job definition to decompile its script and variables blocks.
 
-    Returns (shredded_count, scripts_info) where scripts_info maps script_key to filename.
+    Returns (decompiled_count, scripts_info) where scripts_info maps script_key to filename.
     """
-    shredded_count = 0
+    decompiled_count = 0
     scripts_info: dict[str, str] = {}
 
     # Job-specific variables first
@@ -370,16 +370,16 @@ def process_shred_job(
     if isinstance(job_data.get("variables"), dict):
         sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
         sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
-        job_vars_filename = shred_variables_block(
+        job_vars_filename = decompile_variables_block(
             job_data["variables"], sanitized_job_name, scripts_output_path, dry_run=dry_run
         )
         if job_vars_filename:
-            shredded_count += 1
+            decompiled_count += 1
 
-    # Script-like keys to shred
+    # Script-like keys to decompile
     for key in ("script", "before_script", "after_script", "pre_get_sources_script"):
         if key in job_data and job_data[key]:
-            _, command = shred_script_block(
+            _, command = decompile_script_block(
                 script_content=job_data[key],
                 job_name=job_name,
                 script_key=key,
@@ -391,11 +391,11 @@ def process_shred_job(
             )
             if command:
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
-                shredded_count += 1
+                decompiled_count += 1
                 # Store just the filename for Makefile generation
                 scripts_info[key] = command.lstrip("./")
 
-    return shredded_count, scripts_info
+    return decompiled_count, scripts_info
 
 
 # --- public entry points -----------------------------------------------------
@@ -408,13 +408,13 @@ def iterate_yaml_files(root: Path) -> Iterable[Path]:
         yield path
 
 
-def run_shred_gitlab_file(
+def run_decompile_gitlab_file(
     *,
     input_yaml_path: Path,
     output_dir: Path,
     dry_run: bool = False,
 ) -> tuple[int, int, Path]:
-    """Shred a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
+    """Decompile a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
 
     Returns (jobs_processed, total_files_created, output_yaml_path).
     """
@@ -443,7 +443,7 @@ def run_shred_gitlab_file(
     global_vars_filename: str | None = None
     if isinstance(data.get("variables"), dict):
         logger.info("Processing global variables block.")
-        global_vars_filename = shred_variables_block(data["variables"], "global", scripts_dir, dry_run=dry_run)
+        global_vars_filename = decompile_variables_block(data["variables"], "global", scripts_dir, dry_run=dry_run)
         if global_vars_filename:
             total_files_created += 1
 
@@ -452,7 +452,7 @@ def run_shred_gitlab_file(
         if isinstance(value, dict) and "script" in value:
             logger.debug("Processing job: %s", key)
             jobs_processed += 1
-            shredded_count, scripts_info = process_shred_job(
+            decompiled_count, scripts_info = process_decompile_job(
                 job_name=key,
                 job_data=value,
                 scripts_output_path=scripts_dir,
@@ -460,19 +460,19 @@ def run_shred_gitlab_file(
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
             )
-            total_files_created += shredded_count
+            total_files_created += decompiled_count
             if scripts_info:
                 jobs_info[key] = scripts_info
 
     if total_files_created > 0:
-        logger.info("Shredded %s file(s) from %s job(s).", total_files_created, jobs_processed)
+        logger.info("Decompileded %s file(s) from %s job(s).", total_files_created, jobs_processed)
         if not dry_run:
             logger.info("Writing modified YAML to: %s", rel(output_yaml_path))
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             with output_yaml_path.open("w", encoding="utf-8") as f:
                 yaml.dump(data, f)
     else:
-        logger.info("No script or variable blocks found to shred.")
+        logger.info("No script or variable blocks found to decompile.")
 
     # Generate Makefile if we have jobs
     if jobs_info:
@@ -487,13 +487,13 @@ def run_shred_gitlab_file(
     return jobs_processed, total_files_created, output_yaml_path
 
 
-def run_shred_gitlab_tree(
+def run_decompile_gitlab_tree(
     *,
     input_root: Path,
     output_dir: Path,
     dry_run: bool = False,
 ) -> tuple[int, int, int]:
-    """Shred *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
+    """Decompile *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
 
     The relative directory structure under ``input_root`` is preserved in ``output_dir``.
 
@@ -509,7 +509,7 @@ def run_shred_gitlab_tree(
     for in_file in iterate_yaml_files(input_root):
         rel_dir = in_file.parent.relative_to(input_root)
         out_subdir = (output_dir / rel_dir).resolve()
-        jobs, created, _ = run_shred_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
+        jobs, created, _ = run_decompile_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
         yaml_files_processed += 1
         total_jobs += jobs
         total_created += created
@@ -518,4 +518,4 @@ def run_shred_gitlab_tree(
 
 
 # Back-compat alias (old API name) – keep single-file semantics
-run_shred_gitlab = run_shred_gitlab_file
+run_decompile_gitlab = run_decompile_gitlab_file

@@ -12,7 +12,7 @@ pyproject.toml example
 ```toml
 [tool.bash2gitlab]
 input_file = "my_ci.yml"
-scripts_out = "shredded_scripts/"
+scripts_out = "decompileded_scripts/"
 dry_run = false
 ```
 

@@ -8,7 +8,7 @@
 ## UI 
 - non tui interactive UI
 
-## Shred/Decompile
+## Decompile
 - min lines before extracting (1 is too small?)
 - support value/description syntax
 

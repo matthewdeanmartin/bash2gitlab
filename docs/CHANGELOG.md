@@ -32,13 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Basc textual TUI added to mirror the CLI interface
-- Generates makefile for shred command
+- Generates makefile for decompile command
 
 ## [0.8.13] - 2025-08-15
 
 ### Fixed
 
-- Shred command had wrong CLI argument validation
+- Decompile command had wrong CLI argument validation
 
 ### Changed
 
@@ -54,11 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Shred write to a folder now.
-- Shred will take --in-file or --in-folder
-- Shred records `!reference [.job, key]` as bash comment
-- Shred now logs with relative path.
-- Shred should now use path relative to yaml not cwd
+- Decompile write to a folder now.
+- Decompile will take --in-file or --in-folder
+- Decompile records `!reference [.job, key]` as bash comment
+- Decompile now logs with relative path.
+- Decompile should now use path relative to yaml not cwd
 - Leading `.` got stripped from file names. Fixed
 
 ## [0.8.11] - 2025-08-14
@@ -249,9 +249,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Watch mode (--watch) to recompile on file changes
-- Shred supports job-level variables
-- Shred automatically includes if-block to include job level and global variables.
-- Shred generates mock CI variables file
+- Decompile supports job-level variables
+- Decompile automatically includes if-block to include job level and global variables.
+- Decompile generates mock CI variables file
 - init command to generate config file
 
 ## [0.3.0] - 2025-07-27
@@ -268,7 +268,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- shred command to turn pre-existing bash-in-yaml pipeline templates into shell files and yaml
+- decompile command to turn pre-existing bash-in-yaml pipeline templates into shell files and yaml
 
 ## [0.1.0] - 2025-07-26
 

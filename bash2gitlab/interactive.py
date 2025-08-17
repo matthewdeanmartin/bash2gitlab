@@ -49,7 +49,7 @@ class InteractiveInterface:
         """Display main menu and get user choice."""
         menu_options = [
             ("1", "compile", "Compile uncompiled directory into GitLab CI structure"),
-            ("2", "shred", "Extract inline scripts from GitLab CI YAML files"),
+            ("2", "decompile", "Extract inline scripts from GitLab CI YAML files"),
             ("3", "clean", "Clean output folder (remove unmodified generated files)"),
             ("4", "lint", "Validate compiled GitLab CI YAML against GitLab instance"),
             ("5", "init", "Initialize new bash2gitlab project"),
@@ -121,9 +121,9 @@ class InteractiveInterface:
 
         return params
 
-    def handle_shred_command(self) -> dict[str, Any]:
-        """Handle shred command configuration."""
-        self.console.print("\n[bold cyan]Shred Command Configuration[/bold cyan]")
+    def handle_decompile_command(self) -> dict[str, Any]:
+        """Handle decompile command configuration."""
+        self.console.print("\n[bold cyan]Decompile Command Configuration[/bold cyan]")
 
         params = {}
 
@@ -138,7 +138,7 @@ class InteractiveInterface:
             params["input_folder"] = input_folder
 
         # Output directory
-        output_dir = Prompt.ask("Output directory", default="./shredded_output")
+        output_dir = Prompt.ask("Output directory", default="./decompiled_output")
         params["output_dir"] = output_dir
 
         # Common options
@@ -399,6 +399,7 @@ class InteractiveInterface:
             clone2local_handler,
             commit_map_handler,
             compile_handler,
+            decompile_handler,
             doctor_handler,
             drift_handler,
             graph_handler,
@@ -407,7 +408,6 @@ class InteractiveInterface:
             lint_handler,
             map_deploy_handler,
             show_config_handler,
-            shred_handler,
             uninstall_precommit_handler,
         )
 
@@ -417,7 +417,7 @@ class InteractiveInterface:
         # Map commands to their handlers
         handlers = {
             "compile": compile_handler,
-            "shred": shred_handler,
+            "decompile": decompile_handler,
             "clean": clean_handler,
             "lint": lint_handler,
             "init": init_handler,
@@ -460,7 +460,7 @@ class InteractiveInterface:
                 # Map choices to commands and handlers
                 command_map = {
                     "1": ("compile", self.handle_compile_command),
-                    "2": ("shred", self.handle_shred_command),
+                    "2": ("decompile", self.handle_decompile_command),
                     "3": ("clean", self.handle_clean_command),
                     "4": ("lint", self.handle_lint_command),
                     "5": ("init", self.handle_init_command),

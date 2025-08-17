@@ -1,4 +1,3 @@
-# Comprehensive bash2gitlab.toml Example
 # This file demonstrates all available configuration options for bash2gitlab.
 # You can place this in your project root, or configure it within pyproject.toml
 # under the [tool.bash2gitlab] section.

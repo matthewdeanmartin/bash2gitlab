@@ -1,4 +1,4 @@
-# File: tests/test_shred_all.py
+# File: tests/test_decompile_all.py
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-from bash2gitlab.commands.shred_all import run_shred_gitlab  # alias to run_shred_gitlab_file in new code
-from bash2gitlab.commands.shred_all import SHEBANG, create_script_filename
+from bash2gitlab.commands.decompile_all import run_decompile_gitlab  # alias to run_decompile_gitlab_file in new code
+from bash2gitlab.commands.decompile_all import SHEBANG, create_script_filename
 
 # A sample GitLab CI configuration with various script definitions for comprehensive testing.
 SAMPLE_GITLAB_CI_CONTENT = """
@@ -60,7 +60,7 @@ job_no_script:
 # A hidden job, which should still be processed.
 .hidden_job:
   script:
-    - echo "This should be shredded"
+    - echo "This should be decompileded"
 """
 
 
@@ -81,8 +81,8 @@ def test_create_script_filename(job_name, script_key, expected_filename):
     assert create_script_filename(job_name, script_key) == expected_filename
 
 
-class TestShredGitlabCI:
-    """Test suite for the shred command with the updated API and semantics."""
+class TestdecompileGitlabCI:
+    """Test suite for the decompile command with the updated API and semantics."""
 
     @pytest.fixture
     def setup_test_env(self, tmp_path: Path) -> tuple[Path, Path]:
@@ -97,11 +97,11 @@ class TestShredGitlabCI:
 
         return input_yaml, output_dir
 
-    def test_shred_gitlab_ci_happy_path(self, setup_test_env: tuple[Path, Path]):
-        """Tests the standard shredding process from end to end (single file)."""
+    def test_decompile_gitlab_ci_happy_path(self, setup_test_env: tuple[Path, Path]):
+        """Tests the standard decompileding process from end to end (single file)."""
         input_yaml, output_dir = setup_test_env
 
-        jobs_processed, files_created, out_yaml = run_shred_gitlab(
+        jobs_processed, files_created, out_yaml = run_decompile_gitlab(
             input_yaml_path=input_yaml,
             output_dir=output_dir,
             dry_run=False,
@@ -150,11 +150,11 @@ class TestShredGitlabCI:
         assert script3.exists()
         assert 'echo "Cleaning up..."' in script3.read_text(encoding="utf-8")
 
-    def test_shred_gitlab_ci_dry_run(self, setup_test_env: tuple[Path, Path]):
+    def test_decompile_gitlab_ci_dry_run(self, setup_test_env: tuple[Path, Path]):
         """Ensures that no files are written to disk during a dry run."""
         input_yaml, output_dir = setup_test_env
 
-        jobs_processed, files_created, out_yaml = run_shred_gitlab(
+        jobs_processed, files_created, out_yaml = run_decompile_gitlab(
             input_yaml_path=input_yaml,
             output_dir=output_dir,
             dry_run=True,
@@ -168,7 +168,7 @@ class TestShredGitlabCI:
         assert not out_yaml.exists(), "Output YAML should not be created on dry run"
         assert not (output_dir / "job_simple_script.sh").exists(), "No script files on dry run"
 
-    def test_shred_gitlab_ci_no_scripts_to_shred(self, tmp_path: Path):
+    def test_decompile_gitlab_ci_no_scripts_to_decompile(self, tmp_path: Path):
         """Tests behavior when the input YAML contains no scripts to extract."""
         no_script_content = """job_a:
   image: node
@@ -179,7 +179,7 @@ job_b:
         input_yaml.write_text(no_script_content, encoding="utf-8")
         output_dir = tmp_path / "out"
 
-        jobs_processed, files_created, out_yaml = run_shred_gitlab(
+        jobs_processed, files_created, out_yaml = run_decompile_gitlab(
             input_yaml_path=input_yaml,
             output_dir=output_dir,
         )
@@ -187,13 +187,13 @@ job_b:
         assert jobs_processed == 0
         assert files_created == 0
         assert not out_yaml.exists(), "Output YAML should not be created if no changes are made"
-        # mock CI variables helper is created even when nothing was shredded (non-dry-run)
+        # mock CI variables helper is created even when nothing was decompileded (non-dry-run)
         assert (output_dir / "mock_ci_variables.sh").exists()
 
-    def test_shred_file_not_found(self, tmp_path: Path):
+    def test_decompile_file_not_found(self, tmp_path: Path):
         """Ensures a FileNotFoundError is raised for a non-existent input file."""
         with pytest.raises(FileNotFoundError, match="Input YAML file not found"):
-            run_shred_gitlab(
+            run_decompile_gitlab(
                 input_yaml_path=tmp_path / "nonexistent.yml",
                 output_dir=tmp_path / "out",
             )

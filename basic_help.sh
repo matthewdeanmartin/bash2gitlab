@@ -1,6 +1,6 @@
 bash2gitlab compile --help
 bash2gitlab clean --help
-bash2gitlab shred --help
+bash2gitlab decompile --help
 bash2gitlab detect-drift --help
 bash2gitlab copy2local --help
 bash2gitlab init --help

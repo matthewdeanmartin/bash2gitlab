@@ -48,8 +48,8 @@ See [extended examples here](https://github.com/matthewdeanmartin/bash2gitlab/tr
 ```bash
 # compiling
 bash2gitlab compile --in src --out out
-# shredding
-bash2gitlab shred --in original/.gitlab-ci.yml --out src
+# decompileding
+bash2gitlab decompile --in original/.gitlab-ci.yml --out src
 ```
 
 ## Name

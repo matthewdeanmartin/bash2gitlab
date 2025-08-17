@@ -4,7 +4,7 @@
 
 - bash2gitlab.compile_all
 - bash2gitlab.logging_config
-- bash2gitlab.shred_all
+- bash2gitlab.decompile_all
 
 ## Functions
 
@@ -23,8 +23,8 @@ Returns:
     - The total number of jobs processed.
 ```
 
-`shred_gitlab_ci(input_yaml_path: Path, output_yaml_path: Path, scripts_output_path: Path, dry_run: bool = False) ‑> tuple[int, int]`
-: Loads a GitLab CI YAML file, shreds all script blocks into separate .sh files,
+`decompile_gitlab_ci(input_yaml_path: Path, output_yaml_path: Path, scripts_output_path: Path, dry_run: bool = False) ‑> tuple[int, int]`
+: Loads a GitLab CI YAML file, decompiles all script blocks into separate .sh files,
 and saves the modified YAML.
 
 ```

@@ -7,6 +7,7 @@
 │   ├── clone2local.py
 │   ├── compile_all.py
 │   ├── compile_not_bash.py
+│   ├── decompile_all.py
 │   ├── detect_drift.py
 │   ├── doctor.py
 │   ├── graph_all.py
@@ -15,8 +16,7 @@
 │   ├── map_commit.py
 │   ├── map_deploy.py
 │   ├── precommit.py
-│   ├── show_config.py
-│   └── shred_all.py
+│   └── show_config.py
 ├── config.py
 ├── gui.py
 ├── hookspecs.py
@@ -565,18 +565,18 @@ class _Config:
     def compile_watch(self) -> bool | None:
         return self.get_bool("watch", section="compile")
 
-    # --- `shred` Command Properties ---
+    # --- `decompile` Command Properties ---
     @property
-    def shred_input_file(self) -> str | None:
-        return self.get_str("input_file", section="shred")
+    def decompile_input_file(self) -> str | None:
+        return self.get_str("input_file", section="decompile")
 
     @property
-    def shred_input_folder(self) -> str | None:
-        return self.get_str("input_folder", section="shred")
+    def decompile_input_folder(self) -> str | None:
+        return self.get_str("input_folder", section="decompile")
 
     @property
-    def shred_output_dir(self) -> str | None:
-        return self.get_str("output_dir", section="shred") or self.output_dir
+    def decompile_output_dir(self) -> str | None:
+        return self.get_str("output_dir", section="decompile") or self.output_dir
 
     # --- `lint` Command Properties ---
     @property
@@ -731,8 +731,8 @@ class CommandRunner:
                     if not line:
                         break
                     self.output_widget.after(
-                        0, lambda insert_line=line: self.output_widget.insert(tk.END, insert_line)
-                    )  # type: ignore
+                        0, lambda insert_line=line: self.output_widget.insert(tk.END, insert_line)  # type: ignore
+                    )
                     self.output_widget.after(0, lambda: self.output_widget.see(tk.END))  # type: ignore
 
             # Wait for completion
@@ -787,7 +787,7 @@ class Bash2GitlabGUI:
 
         # Create tabs for different command categories
         self.create_compile_tab(notebook)
-        self.create_shred_tab(notebook)
+        self.create_decompile_tab(notebook)
         self.create_utilities_tab(notebook)
         self.create_lint_tab(notebook)
         self.create_git_tab(notebook)
@@ -870,79 +870,85 @@ class Bash2GitlabGUI:
 
         ttk.Button(clean_options, text="Clean", command=self.run_clean).pack(side=tk.LEFT, padx=20)
 
-    def create_shred_tab(self, parent: ttk.Notebook) -> None:
-        """Create the shred commands tab."""
+    def create_decompile_tab(self, parent: ttk.Notebook) -> None:
+        """Create the decompile commands tab."""
         frame = ttk.Frame(parent)
-        parent.add(frame, text="Shred")
+        parent.add(frame, text="Decompile")
 
-        shred_frame = ttk.LabelFrame(frame, text="Shred GitLab CI YAML", padding=10)
-        shred_frame.pack(fill=tk.X, padx=5, pady=5)
+        decompile_frame = ttk.LabelFrame(frame, text="Decompile GitLab CI YAML", padding=10)
+        decompile_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # Input type selection
-        self.vars["shred_input_type"] = tk.StringVar(value="file")
+        self.vars["decompile_input_type"] = tk.StringVar(value="file")
 
-        input_type_frame = ttk.Frame(shred_frame)
+        input_type_frame = ttk.Frame(decompile_frame)
         input_type_frame.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=5)
 
         ttk.Radiobutton(
             input_type_frame,
             text="Single File",
-            variable=self.vars["shred_input_type"],
+            variable=self.vars["decompile_input_type"],
             value="file",
-            command=self.update_shred_inputs,
+            command=self.update_decompile_inputs,
         ).pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(
             input_type_frame,
             text="Folder",
-            variable=self.vars["shred_input_type"],
+            variable=self.vars["decompile_input_type"],
             value="folder",
-            command=self.update_shred_inputs,
+            command=self.update_decompile_inputs,
         ).pack(side=tk.LEFT, padx=5)
 
         # Input file
-        ttk.Label(shred_frame, text="Input File:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.vars["shred_input_file"] = tk.StringVar()
-        self.shred_file_entry = ttk.Entry(shred_frame, textvariable=self.vars["shred_input_file"], width=50)
-        self.shred_file_entry.grid(row=1, column=1, padx=5, pady=2)
-        self.shred_file_btn = ttk.Button(
-            shred_frame, text="Browse", command=lambda: self.browse_file(self.vars["shred_input_file"])
+        ttk.Label(decompile_frame, text="Input File:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.vars["decompile_input_file"] = tk.StringVar()
+        self.decompile_file_entry = ttk.Entry(decompile_frame, textvariable=self.vars["decompile_input_file"], width=50)
+        self.decompile_file_entry.grid(row=1, column=1, padx=5, pady=2)
+        self.decompile_file_btn = ttk.Button(
+            decompile_frame, text="Browse", command=lambda: self.browse_file(self.vars["decompile_input_file"])
         )
-        self.shred_file_btn.grid(row=1, column=2, padx=5)
+        self.decompile_file_btn.grid(row=1, column=2, padx=5)
 
         # Input folder
-        ttk.Label(shred_frame, text="Input Folder:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.vars["shred_input_folder"] = tk.StringVar()
-        self.shred_folder_entry = ttk.Entry(
-            shred_frame, textvariable=self.vars["shred_input_folder"], width=50, state=tk.DISABLED
+        ttk.Label(decompile_frame, text="Input Folder:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.vars["decompile_input_folder"] = tk.StringVar()
+        self.decompile_folder_entry = ttk.Entry(
+            decompile_frame, textvariable=self.vars["decompile_input_folder"], width=50, state=tk.DISABLED
         )
-        self.shred_folder_entry.grid(row=2, column=1, padx=5, pady=2)
-        self.shred_folder_btn = ttk.Button(
-            shred_frame,
+        self.decompile_folder_entry.grid(row=2, column=1, padx=5, pady=2)
+        self.decompile_folder_btn = ttk.Button(
+            decompile_frame,
             text="Browse",
             state=tk.DISABLED,
-            command=lambda: self.browse_directory(self.vars["shred_input_folder"]),
+            command=lambda: self.browse_directory(self.vars["decompile_input_folder"]),
         )
-        self.shred_folder_btn.grid(row=2, column=2, padx=5)
+        self.decompile_folder_btn.grid(row=2, column=2, padx=5)
 
         # Output directory
-        ttk.Label(shred_frame, text="Output Directory:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.vars["shred_output"] = tk.StringVar()
-        ttk.Entry(shred_frame, textvariable=self.vars["shred_output"], width=50).grid(row=3, column=1, padx=5, pady=2)
-        ttk.Button(shred_frame, text="Browse", command=lambda: self.browse_directory(self.vars["shred_output"])).grid(
-            row=3, column=2, padx=5
+        ttk.Label(decompile_frame, text="Output Directory:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.vars["decompile_output"] = tk.StringVar()
+        ttk.Entry(decompile_frame, textvariable=self.vars["decompile_output"], width=50).grid(
+            row=3, column=1, padx=5, pady=2
         )
+        ttk.Button(
+            decompile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["decompile_output"])
+        ).grid(row=3, column=2, padx=5)
 
         # Options
-        shred_options = ttk.Frame(shred_frame)
-        shred_options.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=10)
+        decompile_options = ttk.Frame(decompile_frame)
+        decompile_options.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=10)
 
-        self.vars["shred_dry_run"] = tk.BooleanVar()
-        ttk.Checkbutton(shred_options, text="Dry Run", variable=self.vars["shred_dry_run"]).pack(side=tk.LEFT, padx=5)
+        self.vars["decompile_dry_run"] = tk.BooleanVar()
+        ttk.Checkbutton(decompile_options, text="Dry Run", variable=self.vars["decompile_dry_run"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
-        self.vars["shred_verbose"] = tk.BooleanVar()
-        ttk.Checkbutton(shred_options, text="Verbose", variable=self.vars["shred_verbose"]).pack(side=tk.LEFT, padx=5)
+        self.vars["decompile_verbose"] = tk.BooleanVar()
+        ttk.Checkbutton(decompile_options, text="Verbose", variable=self.vars["decompile_verbose"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
-        ttk.Button(shred_options, text="Shred", command=self.run_shred).pack(side=tk.LEFT, padx=20)
+        ttk.Button(decompile_options, text="Decompile", command=self.run_decompile).pack(side=tk.LEFT, padx=20)
 
     def create_utilities_tab(self, parent: ttk.Notebook) -> None:
         """Create the utilities tab."""
@@ -1160,20 +1166,20 @@ class Bash2GitlabGUI:
         # Initialize command runner
         self.command_runner = CommandRunner(self.output_text)
 
-    def update_shred_inputs(self) -> None:
-        """Update shred input fields based on selection."""
-        input_type = self.vars["shred_input_type"].get()
+    def update_decompile_inputs(self) -> None:
+        """Update decompile input fields based on selection."""
+        input_type = self.vars["decompile_input_type"].get()
 
         if input_type == "file":
-            self.shred_file_entry.config(state=tk.NORMAL)
-            self.shred_file_btn.config(state=tk.NORMAL)
-            self.shred_folder_entry.config(state=tk.DISABLED)
-            self.shred_folder_btn.config(state=tk.DISABLED)
+            self.decompile_file_entry.config(state=tk.NORMAL)
+            self.decompile_file_btn.config(state=tk.NORMAL)
+            self.decompile_folder_entry.config(state=tk.DISABLED)
+            self.decompile_folder_btn.config(state=tk.DISABLED)
         else:
-            self.shred_file_entry.config(state=tk.DISABLED)
-            self.shred_file_btn.config(state=tk.DISABLED)
-            self.shred_folder_entry.config(state=tk.NORMAL)
-            self.shred_folder_btn.config(state=tk.NORMAL)
+            self.decompile_file_entry.config(state=tk.DISABLED)
+            self.decompile_file_btn.config(state=tk.DISABLED)
+            self.decompile_folder_entry.config(state=tk.NORMAL)
+            self.decompile_folder_btn.config(state=tk.NORMAL)
 
     def browse_directory(self, var: tk.StringVar | tk.Variable) -> None:
         """Browse for a directory and set the variable."""
@@ -1260,26 +1266,26 @@ class Bash2GitlabGUI:
         cmd = self.build_command("clean", options)
         self.command_runner.run_command(cmd)
 
-    def run_shred(self) -> None:
-        """Run the shred command."""
+    def run_decompile(self) -> None:
+        """Run the decompile command."""
         if not self.command_runner:
             return
 
-        input_type = self.vars["shred_input_type"].get()
+        input_type = self.vars["decompile_input_type"].get()
 
         options = {
-            "out": self.vars["shred_output"].get(),
-            "dry_run": self.vars["shred_dry_run"].get(),
-            "verbose": self.vars["shred_verbose"].get(),
+            "out": self.vars["decompile_output"].get(),
+            "dry_run": self.vars["decompile_dry_run"].get(),
+            "verbose": self.vars["decompile_verbose"].get(),
         }
 
         if input_type == "file":
-            options["in_file"] = self.vars["shred_input_file"].get()
+            options["in_file"] = self.vars["decompile_input_file"].get()
             if not options["in_file"]:
                 messagebox.showerror("Error", "Input file is required!")
                 return
         else:
-            options["in_folder"] = self.vars["shred_input_folder"].get()
+            options["in_folder"] = self.vars["decompile_input_folder"].get()
             if not options["in_folder"]:
                 messagebox.showerror("Error", "Input folder is required!")
                 return
@@ -1288,7 +1294,7 @@ class Bash2GitlabGUI:
             messagebox.showerror("Error", "Output directory is required!")
             return
 
-        cmd = self.build_command("shred", options)
+        cmd = self.build_command("decompile", options)
         self.command_runner.run_command(cmd)
 
     def run_init(self) -> None:
@@ -1571,7 +1577,7 @@ class InteractiveInterface:
         """Display main menu and get user choice."""
         menu_options = [
             ("1", "compile", "Compile uncompiled directory into GitLab CI structure"),
-            ("2", "shred", "Extract inline scripts from GitLab CI YAML files"),
+            ("2", "decompile", "Extract inline scripts from GitLab CI YAML files"),
             ("3", "clean", "Clean output folder (remove unmodified generated files)"),
             ("4", "lint", "Validate compiled GitLab CI YAML against GitLab instance"),
             ("5", "init", "Initialize new bash2gitlab project"),
@@ -1643,9 +1649,9 @@ class InteractiveInterface:
 
         return params
 
-    def handle_shred_command(self) -> dict[str, Any]:
-        """Handle shred command configuration."""
-        self.console.print("\n[bold cyan]Shred Command Configuration[/bold cyan]")
+    def handle_decompile_command(self) -> dict[str, Any]:
+        """Handle decompile command configuration."""
+        self.console.print("\n[bold cyan]Decompile Command Configuration[/bold cyan]")
 
         params = {}
 
@@ -1660,7 +1666,7 @@ class InteractiveInterface:
             params["input_folder"] = input_folder
 
         # Output directory
-        output_dir = Prompt.ask("Output directory", default="./shredded_output")
+        output_dir = Prompt.ask("Output directory", default="./decompiled_output")
         params["output_dir"] = output_dir
 
         # Common options
@@ -1921,6 +1927,7 @@ class InteractiveInterface:
             clone2local_handler,
             commit_map_handler,
             compile_handler,
+            decompile_handler,
             doctor_handler,
             drift_handler,
             graph_handler,
@@ -1929,7 +1936,6 @@ class InteractiveInterface:
             lint_handler,
             map_deploy_handler,
             show_config_handler,
-            shred_handler,
             uninstall_precommit_handler,
         )
 
@@ -1939,7 +1945,7 @@ class InteractiveInterface:
         # Map commands to their handlers
         handlers = {
             "compile": compile_handler,
-            "shred": shred_handler,
+            "decompile": decompile_handler,
             "clean": clean_handler,
             "lint": lint_handler,
             "init": init_handler,
@@ -1982,7 +1988,7 @@ class InteractiveInterface:
                 # Map choices to commands and handlers
                 command_map = {
                     "1": ("compile", self.handle_compile_command),
-                    "2": ("shred", self.handle_shred_command),
+                    "2": ("decompile", self.handle_decompile_command),
                     "3": ("clean", self.handle_clean_command),
                     "4": ("lint", self.handle_lint_command),
                     "5": ("init", self.handle_init_command),
@@ -2214,16 +2220,16 @@ class CompileForm(CommandForm):
         self.post_message(ExecuteCommand(args))
 
 
-class ShredForm(CommandForm):
-    """Form for the shred command."""
+class DecompileForm(CommandForm):
+    """Form for the decompile command."""
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Label("✂️ Shred Configuration", classes="form-title")
+            yield Label("✂️ Decompile Configuration", classes="form-title")
 
             with Horizontal():
                 yield Label("Mode:", classes="label")
-                yield OptionList("Single File", "Folder Tree", id="shred-mode")
+                yield OptionList("Single File", "Folder Tree", id="decompile-mode")
 
             with Horizontal():
                 yield Label("Input File:", classes="label")
@@ -2231,25 +2237,25 @@ class ShredForm(CommandForm):
 
             with Horizontal():
                 yield Label("Input Folder:", classes="label")
-                yield Input(placeholder="Folder to recursively shred", id="input-folder")
+                yield Input(placeholder="Folder to recursively decompile", id="input-folder")
 
             with Horizontal():
                 yield Label("Output Directory:", classes="label")
-                yield Input(placeholder="Output directory for shredded files", id="output-dir")
+                yield Input(placeholder="Output directory for decompiled files", id="output-dir")
 
             with Horizontal():
                 yield Checkbox("Dry run", id="dry-run")
                 yield Checkbox("Verbose", id="verbose")
                 yield Checkbox("Quiet", id="quiet")
 
-            yield Button("✂️ Shred", variant="warning", id="execute-btn")
+            yield Button("✂️ Decompile", variant="warning", id="execute-btn")
 
     async def execute_command(self) -> None:
-        """Execute the shred command."""
-        args = ["bash2gitlab", "shred"]
+        """Execute the decompile command."""
+        args = ["bash2gitlab", "decompile"]
 
         # Get input values
-        mode = self.query_one("#shred-mode", OptionList).highlighted
+        mode = self.query_one("#decompile-mode", OptionList).highlighted
         input_file = self.query_one("#input-file", Input).value.strip()
         input_folder = self.query_one("#input-folder", Input).value.strip()
         output_dir = self.query_one("#output-dir", Input).value.strip()
@@ -2890,8 +2896,8 @@ class Bash2GitlabTUI(App):
             with TabPane("Compile", id="compile"):
                 yield CompileForm("compile")
 
-            with TabPane("Shred", id="shred"):
-                yield ShredForm("shred")
+            with TabPane("Decompile", id="decompile"):
+                yield DecompileForm("decompile")
 
             with TabPane("Lint", id="lint"):
                 yield LintForm("lint")
@@ -2957,11 +2963,11 @@ Compile uncompiled GitLab CI directory structure into standard format.
 - **Parallelism**: Number of files to process simultaneously
 - **Watch**: Monitor source files for changes and auto-recompile
 
-### Shred
+### Decompile
 Extract inline scripts from GitLab CI YAML files into separate .sh files.
 - **Mode**: Choose between single file or folder tree processing
 - **Input File/Folder**: Source YAML file or directory
-- **Output Directory**: Where shredded files will be written
+- **Output Directory**: Where decompiled files will be written
 
 ### Lint
 Validate compiled GitLab CI YAML against a GitLab instance.
@@ -3196,15 +3202,15 @@ __status__ = "4 - Beta"
 Handles CLI interactions for bash2gitlab
 
 usage: bash2gitlab [-h] [--version]
-                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
+                   {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
                    ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
+  {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
     compile               Compile an uncompiled directory into a standard GitLab CI structure.
-    shred                 Shred a GitLab CI file, extracting inline scripts into separate .sh files.
+    decompile                 Decompile a GitLab CI file, extracting inline scripts into separate .sh files.
     detect-drift          Detect if generated files have been edited and display what the edits are.
     copy2local            Copy folder(s) from a repo to local, for testing bash in the dependent repo
     init                  Initialize a new bash2gitlab project and config file.
@@ -3236,6 +3242,7 @@ from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
+from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.doctor import run_doctor
 from bash2gitlab.commands.graph_all import generate_dependency_graph
@@ -3245,7 +3252,6 @@ from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import run_map_deploy
 from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
 from bash2gitlab.commands.show_config import run_show_config
-from bash2gitlab.commands.shred_all import run_shred_gitlab_file, run_shred_gitlab_tree
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
@@ -3398,9 +3404,9 @@ def drift_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-def shred_handler(args: argparse.Namespace) -> int:
-    """Handler for the 'shred' command (file *or* folder)."""
-    logger.info("Starting bash2gitlab shredder...")
+def decompile_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'decompile' command (file *or* folder)."""
+    logger.info("Starting bash2gitlab decompiler...")
 
     out_dir = Path(args.output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)  # force folder semantics
@@ -3409,7 +3415,7 @@ def shred_handler(args: argparse.Namespace) -> int:
 
     try:
         if args.input_file:
-            jobs, scripts, out_yaml = run_shred_gitlab_file(
+            jobs, scripts, out_yaml = run_decompile_gitlab_file(
                 input_yaml_path=Path(args.input_file).resolve(),
                 output_dir=out_dir,
                 dry_run=dry_run,
@@ -3420,7 +3426,7 @@ def shred_handler(args: argparse.Namespace) -> int:
                 logger.info("✅ Processed %s jobs and created %s script(s).", jobs, scripts)
                 logger.info("Modified YAML written to: %s", out_yaml)
         else:
-            yml_count, jobs, scripts = run_shred_gitlab_tree(
+            yml_count, jobs, scripts = run_decompile_gitlab_tree(
                 input_root=Path(args.input_folder).resolve(),
                 output_dir=out_dir,
                 dry_run=dry_run,
@@ -3620,41 +3626,41 @@ def main() -> int:
     add_common_arguments(clean_parser)
     clean_parser.set_defaults(func=clean_handler)
 
-    # --- Shred Command ---
-    shred_parser = subparsers.add_parser(
-        "shred",
-        help="Shred GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
+    # --- Decompile Command ---
+    decompile_parser = subparsers.add_parser(
+        "decompile",
+        help="Decompile GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
         description=(
             "Use either --in-file (single YAML) or --in-folder (process tree).\n"
             "--out must be a directory; output YAML and scripts are written side-by-side."
         ),
     )
 
-    group = shred_parser.add_mutually_exclusive_group(required=True)
+    group = decompile_parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--in-file",
-        default=config.shred_input_file,
+        default=config.decompile_input_file,
         dest="input_file",
-        help="Input GitLab CI YAML file to shred (e.g., .gitlab-ci.yml).",
+        help="Input GitLab CI YAML file to decompile (e.g., .gitlab-ci.yml).",
     )
     group.add_argument(
         "--in-folder",
-        default=config.shred_input_folder,
+        default=config.decompile_input_folder,
         dest="input_folder",
-        help="Folder to recursively shred (*.yml, *.yaml).",
+        help="Folder to recursively decompile (*.yml, *.yaml).",
     )
 
-    shred_parser.add_argument(
+    decompile_parser.add_argument(
         "--out",
         dest="output_dir",
-        default=config.shred_output_dir,
-        required=not bool(config.shred_output_dir),
+        default=config.decompile_output_dir,
+        required=not bool(config.decompile_output_dir),
         help="Output directory (will be created). YAML and scripts are written here.",
     )
 
-    add_common_arguments(shred_parser)
+    add_common_arguments(decompile_parser)
 
-    shred_parser.set_defaults(func=shred_handler)
+    decompile_parser.set_defaults(func=decompile_handler)
 
     # detect drift command
     detect_drift_parser = subparsers.add_parser(
@@ -3901,7 +3907,7 @@ def main() -> int:
             compile_parser.error("argument --in is required")
         if not args.output_dir:
             compile_parser.error("argument --out is required")
-    elif args.command == "shred":
+    elif args.command == "decompile":
         if hasattr(args, "input_file"):
             args_input_file = args.input_file
         else:
@@ -3914,15 +3920,15 @@ def main() -> int:
             args_output_dir = args.output_dir
         else:
             args_output_dir = ""
-        args.input_file = args_input_file or config.shred_input_file
+        args.input_file = args_input_file or config.decompile_input_file
         args.input_folder = args_input_folder or config.input_dir
         args.output_dir = args_output_dir or config.output_dir
 
         # Validate required arguments after merging
         if not args.input_file and not args.input_folder:
-            shred_parser.error("argument --input-folder or --input-file is required")
+            decompile_parser.error("argument --input-folder or --input-file is required")
         if not args.output_dir:
-            shred_parser.error("argument --out is required")
+            decompile_parser.error("argument --out is required")
     elif args.command == "clean":
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
@@ -5344,6 +5350,530 @@ def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str]
     end_marker = "# <<< END inline"
     logger.debug("Inlining interpreter command '%s' (%d chars).", shown, len(code))
     return [begin_marker, inlined_cmd, end_marker]
+```
+## File: commands\decompile_all.py
+```python
+"""
+Take a gitlab template with inline yaml and split it up into yaml and shell
+commands. Useful for project initialization.
+
+Fixes:
+ - Support decompiling a *file* or an entire *folder* tree
+ - Force --out to be a *directory* (scripts live next to output YAML)
+ - Script refs are made *relative to the YAML file* (e.g., "./script.sh")
+ - Any YAML ``!reference [...]`` items in scripts are emitted as *bash comments*
+ - Logging prints *paths relative to CWD* to reduce noise
+ - Generate Makefile with proper dependency patterns for before_/after_ scripts
+"""
+
+from __future__ import annotations
+
+import io
+import logging
+import re
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import TaggedScalar
+from ruamel.yaml.scalarstring import FoldedScalarString
+
+from bash2gitlab.config import config
+from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.yaml_factory import get_yaml
+
+logger = logging.getLogger(__name__)
+
+SHEBANG = "#!/bin/bash"
+
+__all__ = [
+    "run_decompile_gitlab_file",
+    "run_decompile_gitlab_tree",
+    # Back-compat alias (old name processed a single file)
+    "run_decompile_gitlab",
+]
+
+
+# --- helpers -----------------------------------------------------------------
+
+
+def rel(p: Path) -> str:
+    """Return the path relative to CWD when possible for quieter logs."""
+    try:
+        return str(p.resolve().relative_to(Path.cwd()))
+    except Exception:
+        return str(p)
+
+
+def dump_inline_no_doc_markers(yaml: YAML, node: Any) -> str:
+    buf = io.StringIO()
+    prev_start, prev_end = yaml.explicit_start, yaml.explicit_end
+    try:
+        yaml.explicit_start = False
+        yaml.explicit_end = False
+        yaml.dump(node, buf)
+    finally:
+        yaml.explicit_start, yaml.explicit_end = prev_start, prev_end
+    return buf.getvalue().rstrip("\n")
+
+
+def create_script_filename(job_name: str, script_key: str) -> str:
+    """Create a standardized, safe filename for a script.
+
+    For the main 'script' key, just use the job name. For others, append the key.
+    """
+    sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
+    sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
+    return f"{sanitized_job_name}.sh" if script_key == "script" else f"{sanitized_job_name}_{script_key}.sh"
+
+
+def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> list[str]:
+    """Convert YAML items from a script block into bash lines.
+
+    - Strings are kept as-is.
+    - Other YAML nodes are dumped to text with no doc markers.
+    - ``!reference [...]`` turns into a bash comment line so the intent isn't lost.
+    - Empty/whitespace lines are dropped.
+    """
+    raw_lines: list[str] = []
+
+    if isinstance(script_content, str):
+        raw_lines.extend(script_content.splitlines())
+    else:
+        for item in script_content:  # ruamel CommentedSeq-like or list
+            if isinstance(item, str):
+                raw_lines.append(item)
+            elif isinstance(item, TaggedScalar) and str(item.tag).endswith("reference"):
+                dumped = dump_inline_no_doc_markers(yaml, item)
+                raw_lines.append(f"# {dumped}")
+            elif item is not None:
+                dumped = dump_inline_no_doc_markers(yaml, item)
+                # If the dump still contains an explicit !reference tag, comment it out
+                if dumped.lstrip().startswith("!reference"):
+                    raw_lines.append(f"# {dumped}")
+                else:
+                    raw_lines.append(dumped)
+
+    # Filter empties
+    return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+
+
+def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dry_run: bool = False) -> None:
+    """Generate a Makefile with proper dependency patterns for GitLab CI jobs.
+
+    Args:
+        jobs_info: Dict mapping job names to their script info
+        output_dir: Directory where Makefile should be created
+        dry_run: Whether to actually write the file
+    """
+    makefile_lines: list[str] = [
+        "# Auto-generated Makefile for GitLab CI jobs",
+        "# Use 'make <job_name>' to run a job with proper before/after script handling",
+        "",
+        ".PHONY: help",
+        "",
+    ]
+
+    # Collect all job names for help target
+    job_names = list(jobs_info.keys())
+
+    # Help target
+    makefile_lines.extend(
+        [
+            "help:",
+            "\t@echo 'Available jobs:'",
+        ]
+    )
+    for job_name in sorted(job_names):
+        makefile_lines.append(f"\t@echo '  {job_name}'")
+    makefile_lines.extend(
+        [
+            "\t@echo ''",
+            "\t@echo 'Use: make <job_name> to run a job'",
+            "",
+        ]
+    )
+
+    # Generate rules for each job
+    for job_name, scripts in jobs_info.items():
+        sanitized_name = re.sub(r"[^\w.-]", "-", job_name.lower())
+        sanitized_name = re.sub(r"-+", "-", sanitized_name).strip("-")
+
+        # Determine dependencies and targets
+        dependencies: list[str] = []
+        targets_after_main: list[str] = []
+
+        # Before script dependency
+        if "before_script" in scripts:
+            before_target = f"{sanitized_name}_before_script"
+            dependencies.append(before_target)
+
+        # After script runs after main job
+        if "after_script" in scripts:
+            after_target = f"{sanitized_name}_after_script"
+            targets_after_main.append(after_target)
+
+        # Main job rule
+        makefile_lines.append(f".PHONY: {sanitized_name}")
+        if dependencies:
+            makefile_lines.append(f"{sanitized_name}: {' '.join(dependencies)}")
+        else:
+            makefile_lines.append(f"{sanitized_name}:")
+
+        # Execute the main script
+        if "script" in scripts:
+            makefile_lines.append(f"\t@echo 'Running {job_name} main script...'")
+            makefile_lines.append(f"\t@./{scripts['script']}")
+        else:
+            makefile_lines.append(f"\t@echo 'No main script for {job_name}'")
+
+        # Execute after scripts if they exist
+        for after_target in targets_after_main:
+            makefile_lines.append(f"\t@$(MAKE) {after_target}")
+
+        makefile_lines.append("")
+
+        # Before script rule
+        if "before_script" in scripts:
+            before_target = f"{sanitized_name}_before_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {before_target}",
+                    f"{before_target}:",
+                    f"\t@echo 'Running {job_name} before script...'",
+                    f"\t@./{scripts['before_script']}",
+                    "",
+                ]
+            )
+
+        # After script rule
+        if "after_script" in scripts:
+            after_target = f"{sanitized_name}_after_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {after_target}",
+                    f"{after_target}:",
+                    f"\t@echo 'Running {job_name} after script...'",
+                    f"\t@./{scripts['after_script']}",
+                    "",
+                ]
+            )
+
+        # Pre-get-sources script rule (standalone)
+        if "pre_get_sources_script" in scripts:
+            pre_target = f"{sanitized_name}_pre_get_sources_script"
+            makefile_lines.extend(
+                [
+                    f".PHONY: {pre_target}",
+                    f"{pre_target}:",
+                    f"\t@echo 'Running {job_name} pre-get-sources script...'",
+                    f"\t@./{scripts['pre_get_sources_script']}",
+                    "",
+                ]
+            )
+
+    # Add a rule to run all jobs
+    if job_names:
+        makefile_lines.extend(
+            [
+                ".PHONY: all",
+                f"all: {' '.join(sorted(job_names))}",
+                "",
+            ]
+        )
+
+    makefile_content = "\n".join(makefile_lines)
+    makefile_path = output_dir / "Makefile"
+
+    logger.info("Generating Makefile at: %s", rel(makefile_path))
+
+    if not dry_run:
+        makefile_path.write_text(makefile_content, encoding="utf-8")
+
+
+# --- decompilers ---------------------------------------------------------------
+
+
+def decompile_variables_block(
+    variables_data: dict,
+    base_name: str,
+    scripts_output_path: Path,
+    *,
+    dry_run: bool = False,
+) -> str | None:
+    """Extract variables dict into a ``.sh`` file of ``export`` statements.
+
+    Returns the filename (not full path) of the created variables script, or ``None``.
+    """
+    if not variables_data or not isinstance(variables_data, dict):
+        return None
+
+    variable_lines: list[str] = []
+    for key, value in variables_data.items():
+        value_str = str(value).replace('"', '\\"')
+        variable_lines.append(f'export {key}="{value_str}"')
+
+    if not variable_lines:
+        return None
+
+    script_filename = f"{base_name}_variables.sh"
+    script_filepath = scripts_output_path / script_filename
+    full_script_content = "\n".join(variable_lines) + "\n"
+
+    logger.info("Decompileding variables for '%s' to '%s'", base_name, rel(script_filepath))
+
+    if not dry_run:
+        script_filepath.parent.mkdir(parents=True, exist_ok=True)
+        script_filepath.write_text(full_script_content, encoding="utf-8")
+        script_filepath.chmod(0o755)
+
+    return script_filename
+
+
+def decompile_script_block(
+    *,
+    script_content: list[str | Any] | str,
+    job_name: str,
+    script_key: str,
+    scripts_output_path: Path,
+    yaml_dir: Path,
+    dry_run: bool = False,
+    global_vars_filename: str | None = None,
+    job_vars_filename: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Extract a script block into a ``.sh`` file and return (script_path, bash_command).
+
+    The generated bash command will reference the script *relative to the YAML file*.
+    """
+    if not script_content:
+        return None, None
+
+    yaml = get_yaml()
+
+    script_lines = bashify_script_items(script_content, yaml)
+    if not script_lines:
+        logger.debug("Skipping empty script block in job '%s' for key '%s'.", job_name, script_key)
+        return None, None
+
+    script_filename = create_script_filename(job_name, script_key)
+    script_filepath = scripts_output_path / script_filename
+
+    # Build header with conditional sourcing for local execution
+    script_filename_path = Path(create_script_filename(job_name, script_key))
+    file_ext = script_filename_path.suffix.lstrip(".")
+
+    custom_shebangs = config.custom_shebangs or {"sh": "#!/bin/bash"}
+    shebang = custom_shebangs.get(file_ext, SHEBANG)  # SHEBANG is the '#!/bin/bash' default
+
+    header_parts: list[str] = [shebang]
+    sourcing_block: list[str] = []
+    if global_vars_filename:
+        sourcing_block.append(f"  . ./{global_vars_filename}")
+    if job_vars_filename:
+        sourcing_block.append(f"  . ./{job_vars_filename}")
+
+    if sourcing_block:
+        header_parts.append('\nif [[ "${CI:-}" == "" ]]; then')
+        header_parts.extend(sourcing_block)
+        header_parts.append("fi")
+
+    script_header = "\n".join(header_parts)
+    full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
+
+    logger.info("Decompileding script from '%s:%s' to '%s'", job_name, script_key, rel(script_filepath))
+
+    if not dry_run:
+        script_filepath.parent.mkdir(parents=True, exist_ok=True)
+        script_filepath.write_text(full_script_content, encoding="utf-8")
+        script_filepath.chmod(0o755)
+
+    # Compute bash command relative to YAML
+    base = yaml_dir.resolve()
+    target = script_filepath.resolve()
+    relative_path = target.relative_to(base) if is_relative_to(target, base) else Path(script_filename)
+
+    # Normalize to posix for YAML
+    rel_str = str(relative_path).replace("\\", "/")
+    if not rel_str.startswith(".") and "/" not in rel_str:
+        rel_str = f"./{rel_str}"
+    elif not rel_str.startswith("."):
+        rel_str = "./" + rel_str
+
+    return str(script_filepath), rel_str
+
+
+def process_decompile_job(
+    *,
+    job_name: str,
+    job_data: dict,
+    scripts_output_path: Path,
+    yaml_dir: Path,
+    dry_run: bool = False,
+    global_vars_filename: str | None = None,
+) -> tuple[int, dict[str, str]]:
+    """Process a single job definition to decompile its script and variables blocks.
+
+    Returns (decompiled_count, scripts_info) where scripts_info maps script_key to filename.
+    """
+    decompiled_count = 0
+    scripts_info: dict[str, str] = {}
+
+    # Job-specific variables first
+    job_vars_filename: str | None = None
+    if isinstance(job_data.get("variables"), dict):
+        sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
+        sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
+        job_vars_filename = decompile_variables_block(
+            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run=dry_run
+        )
+        if job_vars_filename:
+            decompiled_count += 1
+
+    # Script-like keys to decompile
+    for key in ("script", "before_script", "after_script", "pre_get_sources_script"):
+        if key in job_data and job_data[key]:
+            _, command = decompile_script_block(
+                script_content=job_data[key],
+                job_name=job_name,
+                script_key=key,
+                scripts_output_path=scripts_output_path,
+                yaml_dir=yaml_dir,
+                dry_run=dry_run,
+                global_vars_filename=global_vars_filename,
+                job_vars_filename=job_vars_filename,
+            )
+            if command:
+                job_data[key] = FoldedScalarString(command.replace("\\", "/"))
+                decompiled_count += 1
+                # Store just the filename for Makefile generation
+                scripts_info[key] = command.lstrip("./")
+
+    return decompiled_count, scripts_info
+
+
+# --- public entry points -----------------------------------------------------
+
+
+def iterate_yaml_files(root: Path) -> Iterable[Path]:
+    for path in root.rglob("*.yml"):
+        yield path
+    for path in root.rglob("*.yaml"):
+        yield path
+
+
+def run_decompile_gitlab_file(
+    *,
+    input_yaml_path: Path,
+    output_dir: Path,
+    dry_run: bool = False,
+) -> tuple[int, int, Path]:
+    """Decompile a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
+
+    Returns (jobs_processed, total_files_created, output_yaml_path).
+    """
+    if not input_yaml_path.is_file():
+        raise FileNotFoundError(f"Input YAML file not found: {input_yaml_path}")
+
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)  # force directory
+
+    yaml = get_yaml()
+    yaml.indent(mapping=2, sequence=4, offset=2)
+
+    logger.info("Loading GitLab CI configuration from: %s", rel(input_yaml_path))
+    data = yaml.load(input_yaml_path)
+
+    # Layout: write YAML and scripts side-by-side under output_dir[/subdirs]
+    output_yaml_path = output_dir / input_yaml_path.name
+    scripts_dir = output_yaml_path.parent
+    yaml_dir = output_yaml_path.parent
+
+    jobs_processed = 0
+    total_files_created = 0
+    jobs_info: dict[str, dict[str, str]] = {}
+
+    # Top-level variables -> global_variables.sh next to YAML
+    global_vars_filename: str | None = None
+    if isinstance(data.get("variables"), dict):
+        logger.info("Processing global variables block.")
+        global_vars_filename = decompile_variables_block(data["variables"], "global", scripts_dir, dry_run=dry_run)
+        if global_vars_filename:
+            total_files_created += 1
+
+    # Jobs
+    for key, value in data.items():
+        if isinstance(value, dict) and "script" in value:
+            logger.debug("Processing job: %s", key)
+            jobs_processed += 1
+            decompiled_count, scripts_info = process_decompile_job(
+                job_name=key,
+                job_data=value,
+                scripts_output_path=scripts_dir,
+                yaml_dir=yaml_dir,
+                dry_run=dry_run,
+                global_vars_filename=global_vars_filename,
+            )
+            total_files_created += decompiled_count
+            if scripts_info:
+                jobs_info[key] = scripts_info
+
+    if total_files_created > 0:
+        logger.info("Decompileded %s file(s) from %s job(s).", total_files_created, jobs_processed)
+        if not dry_run:
+            logger.info("Writing modified YAML to: %s", rel(output_yaml_path))
+            output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_yaml_path.open("w", encoding="utf-8") as f:
+                yaml.dump(data, f)
+    else:
+        logger.info("No script or variable blocks found to decompile.")
+
+    # Generate Makefile if we have jobs
+    if jobs_info:
+        generate_makefile(jobs_info, output_dir, dry_run=dry_run)
+        if not dry_run:
+            total_files_created += 1  # Count the Makefile
+
+    if not dry_run:
+        output_yaml_path.parent.mkdir(exist_ok=True)
+        generate_mock_ci_variables_script(str(output_yaml_path.parent / "mock_ci_variables.sh"))
+
+    return jobs_processed, total_files_created, output_yaml_path
+
+
+def run_decompile_gitlab_tree(
+    *,
+    input_root: Path,
+    output_dir: Path,
+    dry_run: bool = False,
+) -> tuple[int, int, int]:
+    """Decompile *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
+
+    The relative directory structure under ``input_root`` is preserved in ``output_dir``.
+
+    Returns (yaml_files_processed, total_jobs_processed, total_files_created).
+    """
+    if not input_root.is_dir():
+        raise FileNotFoundError(f"Input folder not found: {input_root}")
+
+    yaml_files_processed = 0
+    total_jobs = 0
+    total_created = 0
+
+    for in_file in iterate_yaml_files(input_root):
+        rel_dir = in_file.parent.relative_to(input_root)
+        out_subdir = (output_dir / rel_dir).resolve()
+        jobs, created, _ = run_decompile_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
+        yaml_files_processed += 1
+        total_jobs += jobs
+        total_created += created
+
+    return yaml_files_processed, total_jobs, total_created
+
+
+# Back-compat alias (old API name) – keep single-file semantics
+run_decompile_gitlab = run_decompile_gitlab_file
 ```
 ## File: commands\detect_drift.py
 ```python
@@ -7085,10 +7615,10 @@ CONFIG_STRUCTURE = {
         ("parallelism", "compile_parallelism"),
         ("watch", "compile_watch"),
     ],
-    "Shred Command (`[shred]`)": [
-        ("input_file", "shred_input_file"),
-        ("input_folder", "shred_input_folder"),
-        ("output_dir", "shred_output_dir"),
+    "Decompile Command (`[decompile]`)": [
+        ("input_file", "decompile_input_file"),
+        ("input_folder", "decompile_input_folder"),
+        ("output_dir", "decompile_output_dir"),
     ],
     "Lint Command (`[lint]`)": [
         ("output_dir", "lint_output_dir"),
@@ -7113,7 +7643,7 @@ CONFIG_STRUCTURE = {
 }
 
 # Known sections used for parsing property names
-_SECTIONS = {"compile", "shred", "lint", "copy2local", "map"}
+_SECTIONS = {"compile", "decompile", "lint", "copy2local", "map"}
 
 
 def _parse_prop_name(prop_name: str) -> tuple[str, str | None]:
@@ -7230,530 +7760,6 @@ def run_show_config() -> int:
             print(f"  {key_padded} = {value_str} {source_str}")
 
     return 0
-```
-## File: commands\shred_all.py
-```python
-"""
-Take a gitlab template with inline yaml and split it up into yaml and shell
-commands. Useful for project initialization.
-
-Fixes:
- - Support shredding a *file* or an entire *folder* tree
- - Force --out to be a *directory* (scripts live next to output YAML)
- - Script refs are made *relative to the YAML file* (e.g., "./script.sh")
- - Any YAML ``!reference [...]`` items in scripts are emitted as *bash comments*
- - Logging prints *paths relative to CWD* to reduce noise
- - Generate Makefile with proper dependency patterns for before_/after_ scripts
-"""
-
-from __future__ import annotations
-
-import io
-import logging
-import re
-from collections.abc import Iterable
-from pathlib import Path
-from typing import Any
-
-from ruamel.yaml import YAML
-from ruamel.yaml.comments import TaggedScalar
-from ruamel.yaml.scalarstring import FoldedScalarString
-
-from bash2gitlab.config import config
-from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
-from bash2gitlab.utils.pathlib_polyfills import is_relative_to
-from bash2gitlab.utils.yaml_factory import get_yaml
-
-logger = logging.getLogger(__name__)
-
-SHEBANG = "#!/bin/bash"
-
-__all__ = [
-    "run_shred_gitlab_file",
-    "run_shred_gitlab_tree",
-    # Back-compat alias (old name processed a single file)
-    "run_shred_gitlab",
-]
-
-
-# --- helpers -----------------------------------------------------------------
-
-
-def rel(p: Path) -> str:
-    """Return the path relative to CWD when possible for quieter logs."""
-    try:
-        return str(p.resolve().relative_to(Path.cwd()))
-    except Exception:
-        return str(p)
-
-
-def dump_inline_no_doc_markers(yaml: YAML, node: Any) -> str:
-    buf = io.StringIO()
-    prev_start, prev_end = yaml.explicit_start, yaml.explicit_end
-    try:
-        yaml.explicit_start = False
-        yaml.explicit_end = False
-        yaml.dump(node, buf)
-    finally:
-        yaml.explicit_start, yaml.explicit_end = prev_start, prev_end
-    return buf.getvalue().rstrip("\n")
-
-
-def create_script_filename(job_name: str, script_key: str) -> str:
-    """Create a standardized, safe filename for a script.
-
-    For the main 'script' key, just use the job name. For others, append the key.
-    """
-    sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
-    sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
-    return f"{sanitized_job_name}.sh" if script_key == "script" else f"{sanitized_job_name}_{script_key}.sh"
-
-
-def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> list[str]:
-    """Convert YAML items from a script block into bash lines.
-
-    - Strings are kept as-is.
-    - Other YAML nodes are dumped to text with no doc markers.
-    - ``!reference [...]`` turns into a bash comment line so the intent isn't lost.
-    - Empty/whitespace lines are dropped.
-    """
-    raw_lines: list[str] = []
-
-    if isinstance(script_content, str):
-        raw_lines.extend(script_content.splitlines())
-    else:
-        for item in script_content:  # ruamel CommentedSeq-like or list
-            if isinstance(item, str):
-                raw_lines.append(item)
-            elif isinstance(item, TaggedScalar) and str(item.tag).endswith("reference"):
-                dumped = dump_inline_no_doc_markers(yaml, item)
-                raw_lines.append(f"# {dumped}")
-            elif item is not None:
-                dumped = dump_inline_no_doc_markers(yaml, item)
-                # If the dump still contains an explicit !reference tag, comment it out
-                if dumped.lstrip().startswith("!reference"):
-                    raw_lines.append(f"# {dumped}")
-                else:
-                    raw_lines.append(dumped)
-
-    # Filter empties
-    return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
-
-
-def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dry_run: bool = False) -> None:
-    """Generate a Makefile with proper dependency patterns for GitLab CI jobs.
-
-    Args:
-        jobs_info: Dict mapping job names to their script info
-        output_dir: Directory where Makefile should be created
-        dry_run: Whether to actually write the file
-    """
-    makefile_lines: list[str] = [
-        "# Auto-generated Makefile for GitLab CI jobs",
-        "# Use 'make <job_name>' to run a job with proper before/after script handling",
-        "",
-        ".PHONY: help",
-        "",
-    ]
-
-    # Collect all job names for help target
-    job_names = list(jobs_info.keys())
-
-    # Help target
-    makefile_lines.extend(
-        [
-            "help:",
-            "\t@echo 'Available jobs:'",
-        ]
-    )
-    for job_name in sorted(job_names):
-        makefile_lines.append(f"\t@echo '  {job_name}'")
-    makefile_lines.extend(
-        [
-            "\t@echo ''",
-            "\t@echo 'Use: make <job_name> to run a job'",
-            "",
-        ]
-    )
-
-    # Generate rules for each job
-    for job_name, scripts in jobs_info.items():
-        sanitized_name = re.sub(r"[^\w.-]", "-", job_name.lower())
-        sanitized_name = re.sub(r"-+", "-", sanitized_name).strip("-")
-
-        # Determine dependencies and targets
-        dependencies: list[str] = []
-        targets_after_main: list[str] = []
-
-        # Before script dependency
-        if "before_script" in scripts:
-            before_target = f"{sanitized_name}_before_script"
-            dependencies.append(before_target)
-
-        # After script runs after main job
-        if "after_script" in scripts:
-            after_target = f"{sanitized_name}_after_script"
-            targets_after_main.append(after_target)
-
-        # Main job rule
-        makefile_lines.append(f".PHONY: {sanitized_name}")
-        if dependencies:
-            makefile_lines.append(f"{sanitized_name}: {' '.join(dependencies)}")
-        else:
-            makefile_lines.append(f"{sanitized_name}:")
-
-        # Execute the main script
-        if "script" in scripts:
-            makefile_lines.append(f"\t@echo 'Running {job_name} main script...'")
-            makefile_lines.append(f"\t@./{scripts['script']}")
-        else:
-            makefile_lines.append(f"\t@echo 'No main script for {job_name}'")
-
-        # Execute after scripts if they exist
-        for after_target in targets_after_main:
-            makefile_lines.append(f"\t@$(MAKE) {after_target}")
-
-        makefile_lines.append("")
-
-        # Before script rule
-        if "before_script" in scripts:
-            before_target = f"{sanitized_name}_before_script"
-            makefile_lines.extend(
-                [
-                    f".PHONY: {before_target}",
-                    f"{before_target}:",
-                    f"\t@echo 'Running {job_name} before script...'",
-                    f"\t@./{scripts['before_script']}",
-                    "",
-                ]
-            )
-
-        # After script rule
-        if "after_script" in scripts:
-            after_target = f"{sanitized_name}_after_script"
-            makefile_lines.extend(
-                [
-                    f".PHONY: {after_target}",
-                    f"{after_target}:",
-                    f"\t@echo 'Running {job_name} after script...'",
-                    f"\t@./{scripts['after_script']}",
-                    "",
-                ]
-            )
-
-        # Pre-get-sources script rule (standalone)
-        if "pre_get_sources_script" in scripts:
-            pre_target = f"{sanitized_name}_pre_get_sources_script"
-            makefile_lines.extend(
-                [
-                    f".PHONY: {pre_target}",
-                    f"{pre_target}:",
-                    f"\t@echo 'Running {job_name} pre-get-sources script...'",
-                    f"\t@./{scripts['pre_get_sources_script']}",
-                    "",
-                ]
-            )
-
-    # Add a rule to run all jobs
-    if job_names:
-        makefile_lines.extend(
-            [
-                ".PHONY: all",
-                f"all: {' '.join(sorted(job_names))}",
-                "",
-            ]
-        )
-
-    makefile_content = "\n".join(makefile_lines)
-    makefile_path = output_dir / "Makefile"
-
-    logger.info("Generating Makefile at: %s", rel(makefile_path))
-
-    if not dry_run:
-        makefile_path.write_text(makefile_content, encoding="utf-8")
-
-
-# --- shredders ---------------------------------------------------------------
-
-
-def shred_variables_block(
-    variables_data: dict,
-    base_name: str,
-    scripts_output_path: Path,
-    *,
-    dry_run: bool = False,
-) -> str | None:
-    """Extract variables dict into a ``.sh`` file of ``export`` statements.
-
-    Returns the filename (not full path) of the created variables script, or ``None``.
-    """
-    if not variables_data or not isinstance(variables_data, dict):
-        return None
-
-    variable_lines: list[str] = []
-    for key, value in variables_data.items():
-        value_str = str(value).replace('"', '\\"')
-        variable_lines.append(f'export {key}="{value_str}"')
-
-    if not variable_lines:
-        return None
-
-    script_filename = f"{base_name}_variables.sh"
-    script_filepath = scripts_output_path / script_filename
-    full_script_content = "\n".join(variable_lines) + "\n"
-
-    logger.info("Shredding variables for '%s' to '%s'", base_name, rel(script_filepath))
-
-    if not dry_run:
-        script_filepath.parent.mkdir(parents=True, exist_ok=True)
-        script_filepath.write_text(full_script_content, encoding="utf-8")
-        script_filepath.chmod(0o755)
-
-    return script_filename
-
-
-def shred_script_block(
-    *,
-    script_content: list[str | Any] | str,
-    job_name: str,
-    script_key: str,
-    scripts_output_path: Path,
-    yaml_dir: Path,
-    dry_run: bool = False,
-    global_vars_filename: str | None = None,
-    job_vars_filename: str | None = None,
-) -> tuple[str | None, str | None]:
-    """Extract a script block into a ``.sh`` file and return (script_path, bash_command).
-
-    The generated bash command will reference the script *relative to the YAML file*.
-    """
-    if not script_content:
-        return None, None
-
-    yaml = get_yaml()
-
-    script_lines = bashify_script_items(script_content, yaml)
-    if not script_lines:
-        logger.debug("Skipping empty script block in job '%s' for key '%s'.", job_name, script_key)
-        return None, None
-
-    script_filename = create_script_filename(job_name, script_key)
-    script_filepath = scripts_output_path / script_filename
-
-    # Build header with conditional sourcing for local execution
-    script_filename_path = Path(create_script_filename(job_name, script_key))
-    file_ext = script_filename_path.suffix.lstrip(".")
-
-    custom_shebangs = config.custom_shebangs or {"sh": "#!/bin/bash"}
-    shebang = custom_shebangs.get(file_ext, SHEBANG)  # SHEBANG is the '#!/bin/bash' default
-
-    header_parts: list[str] = [shebang]
-    sourcing_block: list[str] = []
-    if global_vars_filename:
-        sourcing_block.append(f"  . ./{global_vars_filename}")
-    if job_vars_filename:
-        sourcing_block.append(f"  . ./{job_vars_filename}")
-
-    if sourcing_block:
-        header_parts.append('\nif [[ "${CI:-}" == "" ]]; then')
-        header_parts.extend(sourcing_block)
-        header_parts.append("fi")
-
-    script_header = "\n".join(header_parts)
-    full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
-
-    logger.info("Shredding script from '%s:%s' to '%s'", job_name, script_key, rel(script_filepath))
-
-    if not dry_run:
-        script_filepath.parent.mkdir(parents=True, exist_ok=True)
-        script_filepath.write_text(full_script_content, encoding="utf-8")
-        script_filepath.chmod(0o755)
-
-    # Compute bash command relative to YAML
-    base = yaml_dir.resolve()
-    target = script_filepath.resolve()
-    relative_path = target.relative_to(base) if is_relative_to(target, base) else Path(script_filename)
-
-    # Normalize to posix for YAML
-    rel_str = str(relative_path).replace("\\", "/")
-    if not rel_str.startswith(".") and "/" not in rel_str:
-        rel_str = f"./{rel_str}"
-    elif not rel_str.startswith("."):
-        rel_str = "./" + rel_str
-
-    return str(script_filepath), rel_str
-
-
-def process_shred_job(
-    *,
-    job_name: str,
-    job_data: dict,
-    scripts_output_path: Path,
-    yaml_dir: Path,
-    dry_run: bool = False,
-    global_vars_filename: str | None = None,
-) -> tuple[int, dict[str, str]]:
-    """Process a single job definition to shred its script and variables blocks.
-
-    Returns (shredded_count, scripts_info) where scripts_info maps script_key to filename.
-    """
-    shredded_count = 0
-    scripts_info: dict[str, str] = {}
-
-    # Job-specific variables first
-    job_vars_filename: str | None = None
-    if isinstance(job_data.get("variables"), dict):
-        sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
-        sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
-        job_vars_filename = shred_variables_block(
-            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run=dry_run
-        )
-        if job_vars_filename:
-            shredded_count += 1
-
-    # Script-like keys to shred
-    for key in ("script", "before_script", "after_script", "pre_get_sources_script"):
-        if key in job_data and job_data[key]:
-            _, command = shred_script_block(
-                script_content=job_data[key],
-                job_name=job_name,
-                script_key=key,
-                scripts_output_path=scripts_output_path,
-                yaml_dir=yaml_dir,
-                dry_run=dry_run,
-                global_vars_filename=global_vars_filename,
-                job_vars_filename=job_vars_filename,
-            )
-            if command:
-                job_data[key] = FoldedScalarString(command.replace("\\", "/"))
-                shredded_count += 1
-                # Store just the filename for Makefile generation
-                scripts_info[key] = command.lstrip("./")
-
-    return shredded_count, scripts_info
-
-
-# --- public entry points -----------------------------------------------------
-
-
-def iterate_yaml_files(root: Path) -> Iterable[Path]:
-    for path in root.rglob("*.yml"):
-        yield path
-    for path in root.rglob("*.yaml"):
-        yield path
-
-
-def run_shred_gitlab_file(
-    *,
-    input_yaml_path: Path,
-    output_dir: Path,
-    dry_run: bool = False,
-) -> tuple[int, int, Path]:
-    """Shred a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
-
-    Returns (jobs_processed, total_files_created, output_yaml_path).
-    """
-    if not input_yaml_path.is_file():
-        raise FileNotFoundError(f"Input YAML file not found: {input_yaml_path}")
-
-    output_dir = output_dir.resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)  # force directory
-
-    yaml = get_yaml()
-    yaml.indent(mapping=2, sequence=4, offset=2)
-
-    logger.info("Loading GitLab CI configuration from: %s", rel(input_yaml_path))
-    data = yaml.load(input_yaml_path)
-
-    # Layout: write YAML and scripts side-by-side under output_dir[/subdirs]
-    output_yaml_path = output_dir / input_yaml_path.name
-    scripts_dir = output_yaml_path.parent
-    yaml_dir = output_yaml_path.parent
-
-    jobs_processed = 0
-    total_files_created = 0
-    jobs_info: dict[str, dict[str, str]] = {}
-
-    # Top-level variables -> global_variables.sh next to YAML
-    global_vars_filename: str | None = None
-    if isinstance(data.get("variables"), dict):
-        logger.info("Processing global variables block.")
-        global_vars_filename = shred_variables_block(data["variables"], "global", scripts_dir, dry_run=dry_run)
-        if global_vars_filename:
-            total_files_created += 1
-
-    # Jobs
-    for key, value in data.items():
-        if isinstance(value, dict) and "script" in value:
-            logger.debug("Processing job: %s", key)
-            jobs_processed += 1
-            shredded_count, scripts_info = process_shred_job(
-                job_name=key,
-                job_data=value,
-                scripts_output_path=scripts_dir,
-                yaml_dir=yaml_dir,
-                dry_run=dry_run,
-                global_vars_filename=global_vars_filename,
-            )
-            total_files_created += shredded_count
-            if scripts_info:
-                jobs_info[key] = scripts_info
-
-    if total_files_created > 0:
-        logger.info("Shredded %s file(s) from %s job(s).", total_files_created, jobs_processed)
-        if not dry_run:
-            logger.info("Writing modified YAML to: %s", rel(output_yaml_path))
-            output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_yaml_path.open("w", encoding="utf-8") as f:
-                yaml.dump(data, f)
-    else:
-        logger.info("No script or variable blocks found to shred.")
-
-    # Generate Makefile if we have jobs
-    if jobs_info:
-        generate_makefile(jobs_info, output_dir, dry_run=dry_run)
-        if not dry_run:
-            total_files_created += 1  # Count the Makefile
-
-    if not dry_run:
-        output_yaml_path.parent.mkdir(exist_ok=True)
-        generate_mock_ci_variables_script(str(output_yaml_path.parent / "mock_ci_variables.sh"))
-
-    return jobs_processed, total_files_created, output_yaml_path
-
-
-def run_shred_gitlab_tree(
-    *,
-    input_root: Path,
-    output_dir: Path,
-    dry_run: bool = False,
-) -> tuple[int, int, int]:
-    """Shred *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
-
-    The relative directory structure under ``input_root`` is preserved in ``output_dir``.
-
-    Returns (yaml_files_processed, total_jobs_processed, total_files_created).
-    """
-    if not input_root.is_dir():
-        raise FileNotFoundError(f"Input folder not found: {input_root}")
-
-    yaml_files_processed = 0
-    total_jobs = 0
-    total_created = 0
-
-    for in_file in iterate_yaml_files(input_root):
-        rel_dir = in_file.parent.relative_to(input_root)
-        out_subdir = (output_dir / rel_dir).resolve()
-        jobs, created, _ = run_shred_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
-        yaml_files_processed += 1
-        total_jobs += jobs
-        total_created += created
-
-    return yaml_files_processed, total_jobs, total_created
-
-
-# Back-compat alias (old API name) – keep single-file semantics
-run_shred_gitlab = run_shred_gitlab_file
 ```
 ## File: utils\cli_suggestions.py
 ```python

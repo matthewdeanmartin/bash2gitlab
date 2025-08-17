@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Shred renamed to decompile.
+- Config updates to support storing almost all command options in config file 
 - Inline supports Pragma commands to skip certain bash from being in-lined.
     - `# Pragma: do-not-inline`: Prevents inlining on the current line.
     - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.

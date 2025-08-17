@@ -2,15 +2,15 @@
 Handles CLI interactions for bash2gitlab
 
 usage: bash2gitlab [-h] [--version]
-                   {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
+                   {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
                    ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,shred,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
+  {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
     compile               Compile an uncompiled directory into a standard GitLab CI structure.
-    shred                 Shred a GitLab CI file, extracting inline scripts into separate .sh files.
+    decompile                 Decompile a GitLab CI file, extracting inline scripts into separate .sh files.
     detect-drift          Detect if generated files have been edited and display what the edits are.
     copy2local            Copy folder(s) from a repo to local, for testing bash in the dependent repo
     init                  Initialize a new bash2gitlab project and config file.
@@ -42,6 +42,7 @@ from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
+from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.doctor import run_doctor
 from bash2gitlab.commands.graph_all import generate_dependency_graph
@@ -51,7 +52,6 @@ from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import run_map_deploy
 from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
 from bash2gitlab.commands.show_config import run_show_config
-from bash2gitlab.commands.shred_all import run_shred_gitlab_file, run_shred_gitlab_tree
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
@@ -204,9 +204,9 @@ def drift_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-def shred_handler(args: argparse.Namespace) -> int:
-    """Handler for the 'shred' command (file *or* folder)."""
-    logger.info("Starting bash2gitlab shredder...")
+def decompile_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'decompile' command (file *or* folder)."""
+    logger.info("Starting bash2gitlab decompiler...")
 
     out_dir = Path(args.output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)  # force folder semantics
@@ -215,7 +215,7 @@ def shred_handler(args: argparse.Namespace) -> int:
 
     try:
         if args.input_file:
-            jobs, scripts, out_yaml = run_shred_gitlab_file(
+            jobs, scripts, out_yaml = run_decompile_gitlab_file(
                 input_yaml_path=Path(args.input_file).resolve(),
                 output_dir=out_dir,
                 dry_run=dry_run,
@@ -226,7 +226,7 @@ def shred_handler(args: argparse.Namespace) -> int:
                 logger.info("✅ Processed %s jobs and created %s script(s).", jobs, scripts)
                 logger.info("Modified YAML written to: %s", out_yaml)
         else:
-            yml_count, jobs, scripts = run_shred_gitlab_tree(
+            yml_count, jobs, scripts = run_decompile_gitlab_tree(
                 input_root=Path(args.input_folder).resolve(),
                 output_dir=out_dir,
                 dry_run=dry_run,
@@ -426,41 +426,41 @@ def main() -> int:
     add_common_arguments(clean_parser)
     clean_parser.set_defaults(func=clean_handler)
 
-    # --- Shred Command ---
-    shred_parser = subparsers.add_parser(
-        "shred",
-        help="Shred GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
+    # --- Decompile Command ---
+    decompile_parser = subparsers.add_parser(
+        "decompile",
+        help="Decompile GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
         description=(
             "Use either --in-file (single YAML) or --in-folder (process tree).\n"
             "--out must be a directory; output YAML and scripts are written side-by-side."
         ),
     )
 
-    group = shred_parser.add_mutually_exclusive_group(required=True)
+    group = decompile_parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
         "--in-file",
-        default=config.shred_input_file,
+        default=config.decompile_input_file,
         dest="input_file",
-        help="Input GitLab CI YAML file to shred (e.g., .gitlab-ci.yml).",
+        help="Input GitLab CI YAML file to decompile (e.g., .gitlab-ci.yml).",
     )
     group.add_argument(
         "--in-folder",
-        default=config.shred_input_folder,
+        default=config.decompile_input_folder,
         dest="input_folder",
-        help="Folder to recursively shred (*.yml, *.yaml).",
+        help="Folder to recursively decompile (*.yml, *.yaml).",
     )
 
-    shred_parser.add_argument(
+    decompile_parser.add_argument(
         "--out",
         dest="output_dir",
-        default=config.shred_output_dir,
-        required=not bool(config.shred_output_dir),
+        default=config.decompile_output_dir,
+        required=not bool(config.decompile_output_dir),
         help="Output directory (will be created). YAML and scripts are written here.",
     )
 
-    add_common_arguments(shred_parser)
+    add_common_arguments(decompile_parser)
 
-    shred_parser.set_defaults(func=shred_handler)
+    decompile_parser.set_defaults(func=decompile_handler)
 
     # detect drift command
     detect_drift_parser = subparsers.add_parser(
@@ -707,7 +707,7 @@ def main() -> int:
             compile_parser.error("argument --in is required")
         if not args.output_dir:
             compile_parser.error("argument --out is required")
-    elif args.command == "shred":
+    elif args.command == "decompile":
         if hasattr(args, "input_file"):
             args_input_file = args.input_file
         else:
@@ -720,15 +720,15 @@ def main() -> int:
             args_output_dir = args.output_dir
         else:
             args_output_dir = ""
-        args.input_file = args_input_file or config.shred_input_file
+        args.input_file = args_input_file or config.decompile_input_file
         args.input_folder = args_input_folder or config.input_dir
         args.output_dir = args_output_dir or config.output_dir
 
         # Validate required arguments after merging
         if not args.input_file and not args.input_folder:
-            shred_parser.error("argument --input-folder or --input-file is required")
+            decompile_parser.error("argument --input-folder or --input-file is required")
         if not args.output_dir:
-            shred_parser.error("argument --out is required")
+            decompile_parser.error("argument --out is required")
     elif args.command == "clean":
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:

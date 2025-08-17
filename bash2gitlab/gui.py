@@ -80,8 +80,8 @@ class CommandRunner:
                     if not line:
                         break
                     self.output_widget.after(
-                        0, lambda insert_line=line: self.output_widget.insert(tk.END, insert_line)
-                    )  # type: ignore
+                        0, lambda insert_line=line: self.output_widget.insert(tk.END, insert_line)  # type: ignore
+                    )
                     self.output_widget.after(0, lambda: self.output_widget.see(tk.END))  # type: ignore
 
             # Wait for completion
@@ -136,7 +136,7 @@ class Bash2GitlabGUI:
 
         # Create tabs for different command categories
         self.create_compile_tab(notebook)
-        self.create_shred_tab(notebook)
+        self.create_decompile_tab(notebook)
         self.create_utilities_tab(notebook)
         self.create_lint_tab(notebook)
         self.create_git_tab(notebook)
@@ -219,79 +219,85 @@ class Bash2GitlabGUI:
 
         ttk.Button(clean_options, text="Clean", command=self.run_clean).pack(side=tk.LEFT, padx=20)
 
-    def create_shred_tab(self, parent: ttk.Notebook) -> None:
-        """Create the shred commands tab."""
+    def create_decompile_tab(self, parent: ttk.Notebook) -> None:
+        """Create the decompile commands tab."""
         frame = ttk.Frame(parent)
-        parent.add(frame, text="Shred")
+        parent.add(frame, text="Decompile")
 
-        shred_frame = ttk.LabelFrame(frame, text="Shred GitLab CI YAML", padding=10)
-        shred_frame.pack(fill=tk.X, padx=5, pady=5)
+        decompile_frame = ttk.LabelFrame(frame, text="Decompile GitLab CI YAML", padding=10)
+        decompile_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # Input type selection
-        self.vars["shred_input_type"] = tk.StringVar(value="file")
+        self.vars["decompile_input_type"] = tk.StringVar(value="file")
 
-        input_type_frame = ttk.Frame(shred_frame)
+        input_type_frame = ttk.Frame(decompile_frame)
         input_type_frame.grid(row=0, column=0, columnspan=3, sticky=tk.W, pady=5)
 
         ttk.Radiobutton(
             input_type_frame,
             text="Single File",
-            variable=self.vars["shred_input_type"],
+            variable=self.vars["decompile_input_type"],
             value="file",
-            command=self.update_shred_inputs,
+            command=self.update_decompile_inputs,
         ).pack(side=tk.LEFT, padx=5)
         ttk.Radiobutton(
             input_type_frame,
             text="Folder",
-            variable=self.vars["shred_input_type"],
+            variable=self.vars["decompile_input_type"],
             value="folder",
-            command=self.update_shred_inputs,
+            command=self.update_decompile_inputs,
         ).pack(side=tk.LEFT, padx=5)
 
         # Input file
-        ttk.Label(shred_frame, text="Input File:").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.vars["shred_input_file"] = tk.StringVar()
-        self.shred_file_entry = ttk.Entry(shred_frame, textvariable=self.vars["shred_input_file"], width=50)
-        self.shred_file_entry.grid(row=1, column=1, padx=5, pady=2)
-        self.shred_file_btn = ttk.Button(
-            shred_frame, text="Browse", command=lambda: self.browse_file(self.vars["shred_input_file"])
+        ttk.Label(decompile_frame, text="Input File:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.vars["decompile_input_file"] = tk.StringVar()
+        self.decompile_file_entry = ttk.Entry(decompile_frame, textvariable=self.vars["decompile_input_file"], width=50)
+        self.decompile_file_entry.grid(row=1, column=1, padx=5, pady=2)
+        self.decompile_file_btn = ttk.Button(
+            decompile_frame, text="Browse", command=lambda: self.browse_file(self.vars["decompile_input_file"])
         )
-        self.shred_file_btn.grid(row=1, column=2, padx=5)
+        self.decompile_file_btn.grid(row=1, column=2, padx=5)
 
         # Input folder
-        ttk.Label(shred_frame, text="Input Folder:").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.vars["shred_input_folder"] = tk.StringVar()
-        self.shred_folder_entry = ttk.Entry(
-            shred_frame, textvariable=self.vars["shred_input_folder"], width=50, state=tk.DISABLED
+        ttk.Label(decompile_frame, text="Input Folder:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.vars["decompile_input_folder"] = tk.StringVar()
+        self.decompile_folder_entry = ttk.Entry(
+            decompile_frame, textvariable=self.vars["decompile_input_folder"], width=50, state=tk.DISABLED
         )
-        self.shred_folder_entry.grid(row=2, column=1, padx=5, pady=2)
-        self.shred_folder_btn = ttk.Button(
-            shred_frame,
+        self.decompile_folder_entry.grid(row=2, column=1, padx=5, pady=2)
+        self.decompile_folder_btn = ttk.Button(
+            decompile_frame,
             text="Browse",
             state=tk.DISABLED,
-            command=lambda: self.browse_directory(self.vars["shred_input_folder"]),
+            command=lambda: self.browse_directory(self.vars["decompile_input_folder"]),
         )
-        self.shred_folder_btn.grid(row=2, column=2, padx=5)
+        self.decompile_folder_btn.grid(row=2, column=2, padx=5)
 
         # Output directory
-        ttk.Label(shred_frame, text="Output Directory:").grid(row=3, column=0, sticky=tk.W, pady=2)
-        self.vars["shred_output"] = tk.StringVar()
-        ttk.Entry(shred_frame, textvariable=self.vars["shred_output"], width=50).grid(row=3, column=1, padx=5, pady=2)
-        ttk.Button(shred_frame, text="Browse", command=lambda: self.browse_directory(self.vars["shred_output"])).grid(
-            row=3, column=2, padx=5
+        ttk.Label(decompile_frame, text="Output Directory:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.vars["decompile_output"] = tk.StringVar()
+        ttk.Entry(decompile_frame, textvariable=self.vars["decompile_output"], width=50).grid(
+            row=3, column=1, padx=5, pady=2
         )
+        ttk.Button(
+            decompile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["decompile_output"])
+        ).grid(row=3, column=2, padx=5)
 
         # Options
-        shred_options = ttk.Frame(shred_frame)
-        shred_options.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=10)
+        decompile_options = ttk.Frame(decompile_frame)
+        decompile_options.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=10)
 
-        self.vars["shred_dry_run"] = tk.BooleanVar()
-        ttk.Checkbutton(shred_options, text="Dry Run", variable=self.vars["shred_dry_run"]).pack(side=tk.LEFT, padx=5)
+        self.vars["decompile_dry_run"] = tk.BooleanVar()
+        ttk.Checkbutton(decompile_options, text="Dry Run", variable=self.vars["decompile_dry_run"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
-        self.vars["shred_verbose"] = tk.BooleanVar()
-        ttk.Checkbutton(shred_options, text="Verbose", variable=self.vars["shred_verbose"]).pack(side=tk.LEFT, padx=5)
+        self.vars["decompile_verbose"] = tk.BooleanVar()
+        ttk.Checkbutton(decompile_options, text="Verbose", variable=self.vars["decompile_verbose"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
-        ttk.Button(shred_options, text="Shred", command=self.run_shred).pack(side=tk.LEFT, padx=20)
+        ttk.Button(decompile_options, text="Decompile", command=self.run_decompile).pack(side=tk.LEFT, padx=20)
 
     def create_utilities_tab(self, parent: ttk.Notebook) -> None:
         """Create the utilities tab."""
@@ -509,20 +515,20 @@ class Bash2GitlabGUI:
         # Initialize command runner
         self.command_runner = CommandRunner(self.output_text)
 
-    def update_shred_inputs(self) -> None:
-        """Update shred input fields based on selection."""
-        input_type = self.vars["shred_input_type"].get()
+    def update_decompile_inputs(self) -> None:
+        """Update decompile input fields based on selection."""
+        input_type = self.vars["decompile_input_type"].get()
 
         if input_type == "file":
-            self.shred_file_entry.config(state=tk.NORMAL)
-            self.shred_file_btn.config(state=tk.NORMAL)
-            self.shred_folder_entry.config(state=tk.DISABLED)
-            self.shred_folder_btn.config(state=tk.DISABLED)
+            self.decompile_file_entry.config(state=tk.NORMAL)
+            self.decompile_file_btn.config(state=tk.NORMAL)
+            self.decompile_folder_entry.config(state=tk.DISABLED)
+            self.decompile_folder_btn.config(state=tk.DISABLED)
         else:
-            self.shred_file_entry.config(state=tk.DISABLED)
-            self.shred_file_btn.config(state=tk.DISABLED)
-            self.shred_folder_entry.config(state=tk.NORMAL)
-            self.shred_folder_btn.config(state=tk.NORMAL)
+            self.decompile_file_entry.config(state=tk.DISABLED)
+            self.decompile_file_btn.config(state=tk.DISABLED)
+            self.decompile_folder_entry.config(state=tk.NORMAL)
+            self.decompile_folder_btn.config(state=tk.NORMAL)
 
     def browse_directory(self, var: tk.StringVar | tk.Variable) -> None:
         """Browse for a directory and set the variable."""
@@ -609,26 +615,26 @@ class Bash2GitlabGUI:
         cmd = self.build_command("clean", options)
         self.command_runner.run_command(cmd)
 
-    def run_shred(self) -> None:
-        """Run the shred command."""
+    def run_decompile(self) -> None:
+        """Run the decompile command."""
         if not self.command_runner:
             return
 
-        input_type = self.vars["shred_input_type"].get()
+        input_type = self.vars["decompile_input_type"].get()
 
         options = {
-            "out": self.vars["shred_output"].get(),
-            "dry_run": self.vars["shred_dry_run"].get(),
-            "verbose": self.vars["shred_verbose"].get(),
+            "out": self.vars["decompile_output"].get(),
+            "dry_run": self.vars["decompile_dry_run"].get(),
+            "verbose": self.vars["decompile_verbose"].get(),
         }
 
         if input_type == "file":
-            options["in_file"] = self.vars["shred_input_file"].get()
+            options["in_file"] = self.vars["decompile_input_file"].get()
             if not options["in_file"]:
                 messagebox.showerror("Error", "Input file is required!")
                 return
         else:
-            options["in_folder"] = self.vars["shred_input_folder"].get()
+            options["in_folder"] = self.vars["decompile_input_folder"].get()
             if not options["in_folder"]:
                 messagebox.showerror("Error", "Input folder is required!")
                 return
@@ -637,7 +643,7 @@ class Bash2GitlabGUI:
             messagebox.showerror("Error", "Output directory is required!")
             return
 
-        cmd = self.build_command("shred", options)
+        cmd = self.build_command("decompile", options)
         self.command_runner.run_command(cmd)
 
     def run_init(self) -> None:

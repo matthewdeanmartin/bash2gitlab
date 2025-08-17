@@ -31,10 +31,10 @@ CONFIG_STRUCTURE = {
         ("parallelism", "compile_parallelism"),
         ("watch", "compile_watch"),
     ],
-    "Shred Command (`[shred]`)": [
-        ("input_file", "shred_input_file"),
-        ("input_folder", "shred_input_folder"),
-        ("output_dir", "shred_output_dir"),
+    "Decompile Command (`[decompile]`)": [
+        ("input_file", "decompile_input_file"),
+        ("input_folder", "decompile_input_folder"),
+        ("output_dir", "decompile_output_dir"),
     ],
     "Lint Command (`[lint]`)": [
         ("output_dir", "lint_output_dir"),
@@ -59,7 +59,7 @@ CONFIG_STRUCTURE = {
 }
 
 # Known sections used for parsing property names
-_SECTIONS = {"compile", "shred", "lint", "copy2local", "map"}
+_SECTIONS = {"compile", "decompile", "lint", "copy2local", "map"}
 
 
 def _parse_prop_name(prop_name: str) -> tuple[str, str | None]:

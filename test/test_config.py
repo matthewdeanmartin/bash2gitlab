@@ -60,7 +60,7 @@ def test_load_from_pyproject_toml(tmp_path: Path):
 
         [tool.bash2gitlab]
         input_dir = "my_ci.yml"
-        scripts_out = "shredded_scripts/"
+        scripts_out = "decompileded_scripts/"
         dry_run = false
         """
     )

@@ -214,18 +214,18 @@ class _Config:
     def compile_watch(self) -> bool | None:
         return self.get_bool("watch", section="compile")
 
-    # --- `shred` Command Properties ---
+    # --- `decompile` Command Properties ---
     @property
-    def shred_input_file(self) -> str | None:
-        return self.get_str("input_file", section="shred")
+    def decompile_input_file(self) -> str | None:
+        return self.get_str("input_file", section="decompile")
 
     @property
-    def shred_input_folder(self) -> str | None:
-        return self.get_str("input_folder", section="shred")
+    def decompile_input_folder(self) -> str | None:
+        return self.get_str("input_folder", section="decompile")
 
     @property
-    def shred_output_dir(self) -> str | None:
-        return self.get_str("output_dir", section="shred") or self.output_dir
+    def decompile_output_dir(self) -> str | None:
+        return self.get_str("output_dir", section="decompile") or self.output_dir
 
     # --- `lint` Command Properties ---
     @property
