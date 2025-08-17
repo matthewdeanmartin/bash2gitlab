@@ -149,8 +149,12 @@ members = ["./",
 # These are all aliases.
 bash2gitlab = "bash2gitlab.__main__:main"
 b2gl = "bash2gitlab.__main__:main"
+
 bash2gitlab-tui = "bash2gitlab.tui:main"
 b2gl-tui = "bash2gitlab.tui:main"
+
+bash2gitlab-gui = "bash2gitlab.gui:main"
+b2gl-gui = "bash2gitlab.gui:main"
 
 bash2gitlab-interactive = "bash2gitlab.interactive:main"
 b2gl-interactive = "bash2gitlab.interactive:main"

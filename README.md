@@ -116,19 +116,42 @@ bash2gitlab compile --in my-project/ --out compiled/
 
 `bash2gitlab` provides a few core commands to manage your workflow.
 
+Run with 
+- bash2gitlab for CLI
+- bash2gitlab-interactive for CLI question and answer
+- bash2gitlab-tui for Terminal UI
+- bash2gitlab-gui for GUI
+
+### Core Compile/Decompile
+
+| Command               | Description                                                                    |
+|:----------------------|:-------------------------------------------------------------------------------|
+| `compile`             | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.            |
+| `shred`               | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files.     |
+
+### Debugging from remote repo
+
+| Command               | Description                                                                    |
+|:----------------------|:-------------------------------------------------------------------------------|
+| `copy2local`          | Copies compiled files from a central repo to a local project for testing.      |
+| `map-deploy`          | Copies compiled files from a central repo to a many local project for testing. |
+| `commit-map`          | Copies intential changes in local projects back to the central repo.           |
+
+### Setup
+
 | Command               | Description                                                                    |
 |:----------------------|:-------------------------------------------------------------------------------|
 | `init`                | Initializes a new `bash2gitlab` project and config file.                       |
-| `compile`             | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.            |
-| `shred`               | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files.     |
-| `copy2local`          | Copies compiled files from a central repo to a local project for testing.      |
-| `detect-drift`        | Report what unexpected changes were made to the generated files.               |
-| `map-deploy`          | Copies compiled files from a central repo to a many local project for testing. |
-| `commit-map`          | Copies intential changes in local projects back to the central repo.           |
 | `clean`               | Carefully delete output in target folder.                                      |
 | `install-precommit`   | Add git hook to compile before commit                                          |
 | `uninstall-precommit` | Remove precommit hook                                                          |
+
+
+### Diagnostics
+| Command               | Description                                                                    |
+|:----------------------|:-------------------------------------------------------------------------------|
 | `lint`                | Call gitlab APIs to lint you yaml                                              |
+| `detect-drift`        | Report what unexpected changes were made to the generated files.               |
 | `show-config`         | Display config after cascade                                                   |
 | `doctor`              | Look for environment problems                                                  |
 | `graph`               | Generate graph inline relationships                                            |
