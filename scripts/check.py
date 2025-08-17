@@ -22,7 +22,6 @@ import sys
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 from urllib.request import urlopen
 
 # ------------------------------- Models -------------------------------------
@@ -38,8 +37,8 @@ class Install:
 @dataclass(frozen=True)
 class CycleInfo:
     cycle: str            # "3.11"
-    latest: Optional[str] # "3.11.9" (may be None/"" if unknown)
-    eol: Optional[date]   # EOL date if known
+    latest: str | None # "3.11.9" (may be None/"" if unknown)
+    eol: date | None   # EOL date if known
 
 
 # --------------------------- Version Utilities -------------------------------
@@ -47,7 +46,7 @@ class CycleInfo:
 _VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 
-def parse_version(v: str) -> Tuple[int, int, int]:
+def parse_version(v: str) -> tuple[int, int, int]:
     m = _VERSION_RE.match(v.strip())
     if not m:
         # Try to chop off any trailing tags (e.g., 3.13.0rc2 -> 3.13.0)
@@ -70,13 +69,13 @@ def version_cycle(v: str) -> str:
 
 # --------------------------- Discovery (Windows) -----------------------------
 
-def _discover_with_py_launcher() -> List[Path]:
+def _discover_with_py_launcher() -> list[Path]:
     """Use `py -0p` to list interpreter paths."""
     try:
         out = subprocess.check_output(["py", "-0p"], text=True, stderr=subprocess.STDOUT)
     except (OSError, subprocess.CalledProcessError):
         return []
-    paths: List[Path] = []
+    paths: list[Path] = []
     for line in out.splitlines():
         line = line.strip()
         # Example lines:
@@ -89,7 +88,7 @@ def _discover_with_py_launcher() -> List[Path]:
     return paths
 
 
-def _discover_from_registry() -> List[Path]:
+def _discover_from_registry() -> list[Path]:
     """Look in PythonCore InstallPath keys (both HKLM/HKCU, 32/64)."""
     import winreg  # type: ignore
 
@@ -98,7 +97,7 @@ def _discover_from_registry() -> List[Path]:
         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Python\PythonCore"),
         (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\Python\PythonCore"),
     ]
-    exe_paths: List[Path] = []
+    exe_paths: list[Path] = []
 
     for root, base in roots:
         try:
@@ -144,7 +143,7 @@ def _discover_from_registry() -> List[Path]:
     return cleaned
 
 
-def discover_python_executables() -> List[Path]:
+def discover_python_executables() -> list[Path]:
     paths = _discover_with_py_launcher()
     # Add registry finds
     for p in _discover_from_registry():
@@ -164,7 +163,7 @@ def discover_python_executables() -> List[Path]:
     return unique
 
 
-def get_python_version(exe: Path) -> Optional[str]:
+def get_python_version(exe: Path) -> str | None:
     try:
         out = subprocess.check_output(
             [str(exe), "-c", "import sys;print(sys.version.split()[0])"],
@@ -180,7 +179,7 @@ def get_python_version(exe: Path) -> Optional[str]:
 
 # ----------------------------- Remote metadata -------------------------------
 
-def fetch_python_cycles() -> Dict[str, CycleInfo]:
+def fetch_python_cycles() -> dict[str, CycleInfo]:
     """
     Pull Python cycle info from endoflife.date.
     Fallback: if the API is unreachable, return empty dict (script still reports local installs).
@@ -192,12 +191,12 @@ def fetch_python_cycles() -> Dict[str, CycleInfo]:
     except Exception:
         return {}
 
-    cycles: Dict[str, CycleInfo] = {}
+    cycles: dict[str, CycleInfo] = {}
     for row in data:
         cycle = str(row.get("cycle", "")).strip()
         latest = (row.get("latest") or "").strip() or None
         eol_raw = (row.get("eol") or "").strip()
-        eol_dt: Optional[date] = None
+        eol_dt: date | None = None
         if eol_raw and eol_raw.lower() not in {"false", "true"}:
             try:
                 y, m, d = map(int, eol_raw.split("-"))
@@ -209,7 +208,7 @@ def fetch_python_cycles() -> Dict[str, CycleInfo]:
     return cycles
 
 
-def newest_maintained_cycle(cycles: Dict[str, CycleInfo]) -> Optional[str]:
+def newest_maintained_cycle(cycles: dict[str, CycleInfo]) -> str | None:
     today = date.today()
     maintained = []
     for c in cycles.values():
@@ -219,7 +218,7 @@ def newest_maintained_cycle(cycles: Dict[str, CycleInfo]) -> Optional[str]:
     if not maintained:
         return None
     # Pick numerically greatest X.Y
-    def keyfn(s: str) -> Tuple[int, int]:
+    def keyfn(s: str) -> tuple[int, int]:
         x, y = s.split(".")
         return int(x), int(y)
     return max(maintained, key=keyfn)
@@ -237,7 +236,7 @@ def main() -> int:
         print("No Python installations found (py launcher/registry).")
         return 1
 
-    installs: List[Install] = []
+    installs: list[Install] = []
     for exe in exes:
         v = get_python_version(exe)
         if not v:
@@ -264,8 +263,8 @@ def main() -> int:
 
     for inst in installs:
         ci = cycles.get(inst.cycle)
-        status_lines: List[str] = []
-        recs: List[str] = []
+        status_lines: list[str] = []
+        recs: list[str] = []
 
         # Patch status for same cycle
         if ci and ci.latest:
