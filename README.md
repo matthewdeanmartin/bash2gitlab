@@ -10,9 +10,9 @@ best of both worlds.
 Bash in yaml is Bash without quality gates. Also, includes support for inlining a large number of scripts from other
 language, from python to PHP.
 
----
+______________________________________________________________________
 
-### Before
+## Before
 
 Your IDE sees a single YAML string, and your scripts are trapped in one file.
 
@@ -28,7 +28,7 @@ build-job:
     - echo "Build complete."
 ```
 
-### After
+## After
 
 Your IDE provides full support for Bash, and your scripts can be versioned, shared, and tested independently.
 
@@ -53,17 +53,17 @@ build-job:
 
 Run `bash2gitlab compile`, and the final, valid `.gitlab-ci.yml` is generated for you.
 
----
+______________________________________________________________________
 
 ## Who is this for?
 
 This tool is for you if:
 
-* You manage CI/CD templates in a centralized repository and `include:` them in many other projects.
-* Your `.gitlab-ci.yml` files contain thousands of lines of shell scripts.
-* You want to write, test, and debug your CI scripts locally without involving Docker or a full pipeline simulation.
-* Your IDE's lack of Bash support in YAML files is slowing you down.
-* You want to be able to put Python or other non-Bash scripts into your shared templates.
+- You manage CI/CD templates in a centralized repository and `include:` them in many other projects.
+- Your `.gitlab-ci.yml` files contain thousands of lines of shell scripts.
+- You want to write, test, and debug your CI scripts locally without involving Docker or a full pipeline simulation.
+- Your IDE's lack of Bash support in YAML files is slowing you down.
+- You want to be able to put Python or other non-Bash scripts into your shared templates.
 
 If your CI/CD configuration is simple or contained entirely within a single repository, you might not need this tool.
 
@@ -85,7 +85,7 @@ pip install bash2gitlab
    Run `bash2gitlab init` to create a configuration file (`.bash2gitlab.toml`) and directories to organize your source
    files.
 
-2. **Decompile an Existing Configuration**
+1. **Decompile an Existing Configuration**
    If you have an existing `.gitlab-ci.yml` with inline scripts, you can extract them automatically:
 
 ```bash
@@ -124,41 +124,41 @@ Run with
 
 ### Core Compile/Decompile
 
-| Command     | Description                                                                |
+| Command | Description |
 |:------------|:---------------------------------------------------------------------------|
-| `compile`   | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.        |
+| `compile` | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`. |
 | `decompile` | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files. |
 
 ### Debugging from remote repo
 
-| Command      | Description                                                                    |
+| Command | Description |
 |:-------------|:-------------------------------------------------------------------------------|
-| `copy2local` | Copies compiled files from a central repo to a local project for testing.      |
+| `copy2local` | Copies compiled files from a central repo to a local project for testing. |
 | `map-deploy` | Copies compiled files from a central repo to a many local project for testing. |
-| `commit-map` | Copies intential changes in local projects back to the central repo.           |
+| `commit-map` | Copies intential changes in local projects back to the central repo. |
 
 ### Setup
 
-| Command               | Description                                              |
+| Command | Description |
 |:----------------------|:---------------------------------------------------------|
-| `init`                | Initializes a new `bash2gitlab` project and config file. |
-| `clean`               | Carefully delete output in target folder.                |
-| `install-precommit`   | Add git hook to compile before commit                    |
-| `uninstall-precommit` | Remove precommit hook                                    |
+| `init` | Initializes a new `bash2gitlab` project and config file. |
+| `clean` | Carefully delete output in target folder. |
+| `install-precommit` | Add git hook to compile before commit |
+| `uninstall-precommit` | Remove precommit hook |
 
 ### Diagnostics
 
-| Command        | Description                                                      |
+| Command | Description |
 |:---------------|:-----------------------------------------------------------------|
-| `lint`         | Call gitlab APIs to lint you yaml                                |
+| `lint` | Call gitlab APIs to lint you yaml |
 | `detect-drift` | Report what unexpected changes were made to the generated files. |
-| `show-config`  | Display config after cascade                                     |
-| `doctor`       | Look for environment problems                                    |
-| `graph`        | Generate graph inline relationships                              |
+| `show-config` | Display config after cascade |
+| `doctor` | Look for environment problems |
+| `graph` | Generate graph inline relationships |
 
 For detailed options on any command, run `bash2gitlab <command> --help`.
 
----
+______________________________________________________________________
 
 ## Advanced Topics
 
@@ -177,21 +177,21 @@ To define variables that should be inlined into the global `variables:` block of
 
 #### Limitations
 
-* **No `include:` Inlining:** This tool only inlines `.sh` file references. It does not process or merge GitLab's
+- **No `include:` Inlining:** This tool only inlines `.sh` file references. It does not process or merge GitLab's
   `include:` statements for other YAML files.
-* **Single Statement Invocations:** The script invocation must be on its own line. Multi-statement lines like
+- **Single Statement Invocations:** The script invocation must be on its own line. Multi-statement lines like
   `echo "hello" && script.sh` are not supported.
-* **Comments:** Comments in the source YAML may not be preserved in the final compiled output.
+- **Comments:** Comments in the source YAML may not be preserved in the final compiled output.
 
 ## How It Compares
 
-* **[gitlab-ci-local](https://github.com/firecow/gitlab-ci-local):** This is an excellent tool for running your entire
+- **[gitlab-ci-local](https://github.com/firecow/gitlab-ci-local):** This is an excellent tool for running your entire
   GitLab pipeline in local Docker containers. `bash2gitlab` is different—it focuses on the "unit testing" of your Bash
   logic itself, assuming you can and want to execute your scripts on your local machine without the overhead of Docker.
-* **GitHub Actions
-  ** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
+- \*\*GitHub Actions
+  \*\* [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
   do not have this problem. A shared GitHub action can reference a script in the shared action's repo. A GitHub
   "reusable" workflow is a single yaml file and might suffer from the same problem as Gitlab pipelines.
-* **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.
-* **Base image holds all bash** You can only have one base image, so if you are using it for bash and yaml, you can't
+- **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.
+- **Base image holds all bash** You can only have one base image, so if you are using it for bash and yaml, you can't
   use other base images.

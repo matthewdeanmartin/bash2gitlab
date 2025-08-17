@@ -69,9 +69,9 @@ bash2gitlab compile \
   [--dry-run] [-v|-q] [--watch]
 ```
 
-**Typical layout**
+#### Typical layout
 
-```
+```text
 repo/
   .gitlab-ci.yml              # includes/uses jobs
   scripts/                    # your *.sh files
@@ -79,14 +79,14 @@ repo/
   compiled/                   # output
 ```
 
-**Behavior**
+#### Behavior
 
 * Resolves `script:` entries like `./scripts/build.sh` and **inlines their contents**.
 * Follows `source`/`.` directives **within scripts** (see *Inlining rules* below).
 * Optionally inlines `global_variables.sh` into YAML `variables:` (see *Conventions*).
 * Strips script shebangs when inlining.
 
-**Good to know**
+#### Good to know
 
 * `--dry-run` shows planned work without writing files.
 * `--watch` re-runs on changes to inputs.
@@ -109,7 +109,7 @@ bash2gitlab decompile \
   [--dry-run] [-v|-q]
 ```
 
-**Behavior**
+#### Behavior
 
 * Finds `script:` blocks in YAML and writes them to `*.sh` files.
 * Replaces the YAML `script:` with a shell call (e.g., `- ./scripts/jobname.sh`).
@@ -127,13 +127,12 @@ bash2gitlab copy2local \
   --out <TEMPLATES_OUT>
 ```
 
-**Typical use**
+#### Typical use
 
 * You `include:` YAML from a central repo.
 * Use `copy2local` to copy those templates (and their `src` shell folders) into `./local-ci/` in your repo.
-* Point `compile --templates-in ./local-ci` during iteration.
 
-**Notes**
+#### Notes
 
 * Copies `src/` contents (not the folder itself) to reduce path nesting.
 
@@ -147,7 +146,7 @@ Create a minimal skeleton to try the workflow quickly.
 bash2gitlab init --out .
 ```
 
-Creates a sample `.gitlab-ci.yml`, `scripts/`, and a TOML config stub.
+Prompts you with questions and then creates a toml config.
 
 ---
 
@@ -176,10 +175,8 @@ Creates a sample `.gitlab-ci.yml`, `scripts/`, and a TOML config stub.
 
 ---
 
-## File & directory conventions
+## File conventions
 
-* `scripts/` contains your extracted shell files.
-* `templates/` (optional) contains YAML templates you author locally.
 * `global_variables.sh` (optional): lines of `KEY=VALUE` (no spaces around `=`); will be inlined into YAML `variables:`.
 
 **Example**
@@ -214,19 +211,12 @@ You can set options via **CLI flags**, **environment variables**, or **TOML conf
 **TOML example**
 
 ```toml
-[in]
-path = "."
-
-[out]
-path = "./compiled"
-
-[scripts]
-path = "./scripts"
-
-[templates]
-in = "."
-out = "./compiled"
+[tool.bash2gitlab]
+# --- General Settings ---
+input_dir = "ci/src"
+output_dir = "ci/dist"
 ```
+See config section for full example.
 
 ---
 

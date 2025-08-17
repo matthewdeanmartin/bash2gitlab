@@ -11,7 +11,7 @@
 `process_uncompiled_directory(uncompiled_path: Path, output_path: Path, scripts_path: Path, templates_dir: Path, output_templates_dir: Path, dry_run: bool = False) ‑> int`
 : Main function to process a directory of uncompiled GitLab CI files.
 
-```
+```text
 Args:
     uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
     output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
@@ -27,7 +27,7 @@ Returns:
 : Loads a GitLab CI YAML file, decompiles all script blocks into separate .sh files,
 and saves the modified YAML.
 
-```
+```text
 Args:
     input_yaml_path (Path): Path to the input .gitlab-ci.yml file.
     output_yaml_path (Path): Path to write the modified .gitlab-ci.yml file.

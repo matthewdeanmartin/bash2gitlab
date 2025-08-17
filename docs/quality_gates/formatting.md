@@ -2,7 +2,7 @@
 
 Technically no one has to format their code, it is cosmetic. 
 
-Because so many linting tools have formating rules, sometimes it easier
+Because so many linting tools have formatting rules, sometimes it easier
 to format your code before running a linter over it.
 
 ## Bash formatting
