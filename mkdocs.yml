@@ -20,26 +20,26 @@ markdown_extensions:
 
 nav:
   - "Overview":
-      - "Readme.md": "index.md"
-      - "Who is this for?": "who_is_this_for.md"
+      - "Readme.md": "overview/README.md"
+      - "Who is this for?": "overview/who_is_this_for.md"
   - "Installation": "installation.md"
   - "Usage":
-      - "Quick Start": "usage.md"
-      - "Commands": "commands.md"
-      - "Configuration": "config.md"
-      - "Workflows": "workflows.md"
+      - "Quick Start": "usage/usage.md"
+      - "Commands": "usage/commands.md"
+      - "Configuration": "usage/config.md"
+      - "Workflows": "usage/workflows.md"
   - "Level up your YAML + Bash":
-      - "Orchestrating (TODO)" : "orchestrating.md"
-      - "Formatting YAML": "formatting.md"
-      - "Linting (TODO)" : "linting.md"
-      - "Testing (TODO)" : "testing.md"
+      - "Orchestrating " : "quality_gates/orchestrating.md"
+      - "Formatting YAML": "quality_gates/formatting.md"
+      - "Linting" : "quality_gates/linting.md"
+      - "Testing" : "quality_gates/testing.md"
   - "Extending":
-    - "Extension points": "extending.md"
-    - "API": "API.md"
+    - "Extension points": "extending/extending.md"
+    - "API": "extending/API.md"
+    - "Contributing": "extending/CONTRIBUTING.md"
   - "Prior Art":
       - "Keep Bash in Yaml": "PRIOR_ART.md"
   - "Change Log": "CHANGELOG.md"
-  - "Contributing": "CONTRIBUTING.md"
 
 validation:
   nav:
@@ -52,3 +52,4 @@ validation:
 plugins:
   - search
   - mkdocstrings
+  - print-site

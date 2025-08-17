@@ -19,7 +19,7 @@ from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["generate_dependency_graph"]
+__all__ = ["generate_dependency_graph", "find_script_references_in_node"]
 
 
 def format_dot_output(graph: dict[Path, set[Path]], root_path: Path) -> str:

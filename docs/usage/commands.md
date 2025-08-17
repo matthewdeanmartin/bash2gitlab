@@ -206,7 +206,7 @@ variables.
 1. **`compile`**: Generate your CI/CD files.
 2. **`lint`**: Run `bash2gitlab lint` against the output directory to check for errors.
 3. **Fix and Re-compile**: If errors are found, fix them in your source files and run `compile` and `lint` again.
-   This cycle is crucial for maintaining valid CI/CD configurations, especially in complex projects.
+   This cycle is important for maintaining valid CI/CD configurations, especially in complex projects.
 
 ### Parameters
 

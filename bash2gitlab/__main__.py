@@ -46,7 +46,7 @@ from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_de
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.doctor import run_doctor
 from bash2gitlab.commands.graph_all import generate_dependency_graph
-from bash2gitlab.commands.init_project import create_config_file, prompt_for_config
+from bash2gitlab.commands.init_project import run_init
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.commands.map_deploy import run_map_deploy
@@ -57,7 +57,6 @@ from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
 from bash2gitlab.utils.update_checker import check_for_updates
-from bash2gitlab.utils.utils import short_path
 from bash2gitlab.watch_files import start_watch
 
 # emoji support
@@ -126,18 +125,10 @@ def lint_handler(args: argparse.Namespace) -> int:
 def init_handler(args: argparse.Namespace) -> int:
     """Handles the `init` command logic."""
     logger.info("Starting interactive project initializer...")
-    base_path = Path(args.directory).resolve()
-
-    if not base_path.exists():
-        base_path.mkdir(parents=True)
-        logger.info(f"Created project directory: {short_path(base_path)}")
-    elif (base_path / "bash2gitlab.toml").exists():
-        logger.error(f"A 'bash2gitlab.toml' file already exists in '{short_path(base_path)}'. Aborting.")
-        return 1
-
+    directory = args.directory
+    force = args.force
     try:
-        user_config = prompt_for_config()
-        create_config_file(base_path, user_config, args.dry_run)
+        run_init(directory, force)
     except (KeyboardInterrupt, EOFError):
         logger.warning("\nInitialization cancelled by user.")
         return 1
@@ -507,9 +498,10 @@ def main() -> int:
     copy2local_parser.set_defaults(func=clone2local_handler)
 
     # Init Parser
+    # Init Parser
     init_parser = subparsers.add_parser(
         "init",
-        help="Initialize a new bash2gitlab project and config file.",
+        help="Initialize a new bash2gitlab project in pyproject.toml.",
     )
     init_parser.add_argument(
         "directory",
@@ -517,8 +509,13 @@ def main() -> int:
         default=".",
         help="The directory to initialize the project in. Defaults to the current directory.",
     )
+    init_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite an existing [tool.bash2gitlab] section in pyproject.toml.",
+    )
     add_common_arguments(init_parser)
-    init_parser.set_defaults(func=init_handler)
+    init_parser.set_defaults(func=init_handler)  # Changed from init_handler to run_init
 
     # --- map-deploy Command ---
     map_deploy_parser = subparsers.add_parser(

@@ -136,7 +136,7 @@ def shell_single_quote(s: str) -> str:
 
 
 def normalize_interp(interp: str) -> str:
-    """Map interpreter aliases to their base key for lookups.
+    """Map interpreter aliases to their base key for look-ups.
     e.g., python3.12 → python.
     """
     if interp.startswith("python"):
@@ -203,7 +203,7 @@ def build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | N
 
 def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
     """If *line* looks like an interpreter execution we can inline, return:
-    [BEGIN_MARK, <interp -flag 'code'>, END_MARK]. Otherwise return None.
+    [BEGIN_MARK, <interpreter -flag 'code'>, END_MARK]. Otherwise, return None.
     """
     m = _INTERP_LINE.match(line)
     if not m:

@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.8.15] - 2025-08-16
 
+### Changed
+
+- Documentation, docstrings, help text
+- Init now covers all the config option.
+
+## [0.8.15] - 2025-08-16
+
 ### Added
 
 - Interactive mode via bash2gitlab-interactive command

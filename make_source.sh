@@ -1,1 +1,1 @@
-git2md bash2gitlab --ignore __init__.py __pycache__ utils dotenv.py mock_ci_vars.py __about__.py logging_config.py py.typed --output SOURCE.md
+git2md bash2gitlab --ignore __init__.py __pycache__ gui.py tui.py interactive.py utils dotenv.py mock_ci_vars.py __about__.py logging_config.py py.typed --output SOURCE.md

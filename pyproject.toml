@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.8.15"
+version = "0.8.16"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -18,6 +18,8 @@ dependencies = [
     # UI
     "textual",
     "colorlog",
+    "rich",
+    "tomlkit",
     # graphing
     "pyvis",
     "graphviz",
@@ -65,19 +67,12 @@ packages = [
 
 #[project.optional-dependencies]
 #chat = ["bash2gitlab-chat"]
-#issue-tracker = ["bash2gitlab-issue-tracker"]
-#code-review = ["bash2gitlab-code-review"]
-#documentation = ["bash2gitlab-documentation"]
 #all = [
 #    "bash2gitlab-chat",
-#    "bash2gitlab-issue-tracker",
-#    "bash2gitlab-code-review",
-#    "bash2gitlab-documentation"
 #]
 
 [dependency-groups]
 dev = [
-
     "git2md; python_version >= '3.10'",
     "pyclean; python_version >= '3.12'",
     "strip-docs>=1.0; python_version >= '3.12'",
@@ -146,7 +141,6 @@ members = ["./",
 ]
 
 [project.scripts]
-# These are all aliases.
 bash2gitlab = "bash2gitlab.__main__:main"
 b2gl = "bash2gitlab.__main__:main"
 

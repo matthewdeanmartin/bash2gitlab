@@ -379,10 +379,7 @@ def write_yaml_and_hash(
 
 
 def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
-    """Return a unified diff between *old* and *new* content with filenames.
-
-    keepends=True preserves newline structure for line-accurate diffs in logs.
-    """
+    """Return a unified diff between *old* and *new* content with filenames."""
     return "".join(
         difflib.unified_diff(
             old.splitlines(keepends=True),

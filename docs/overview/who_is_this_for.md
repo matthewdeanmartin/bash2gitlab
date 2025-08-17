@@ -18,6 +18,12 @@ script:
   - remote: project/folder/script.sh
 ```
 
+## You want centralized scripts that are not Bash
+
+Gitlab runners [support bash, sh, powershell and pwsh](https://docs.gitlab.com/runner/shells/). Anything else has to be 
+launched from one of these four. By using `bash -c` and then the analogous pattern from Python, etcetera, you can simulate
+support for many, many more languages.
+
 ## You need quality gates
 
 Quality gates are tools like shellcheck, bats, formatters and IDEs. These tool never support working with bash in yaml

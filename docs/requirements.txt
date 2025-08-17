@@ -7,3 +7,6 @@ mkdocstrings[python]
 # themes
 mkdocs-material
 mkdocs-material-extensions
+
+# tools
+mkdocs-print-site-plugin

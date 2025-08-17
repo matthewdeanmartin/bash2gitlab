@@ -219,7 +219,7 @@ def lint_single_text(
 
     resp = post_json(url, payload, private_token=private_token, timeout=timeout)
 
-    # GitLab returns varing shapes across versions. Normalize defensively.
+    # GitLab returns varying shapes across versions. Normalize defensively.
     status = str(resp.get("status") or ("valid" if resp.get("valid") else "invalid"))
     valid = bool(resp.get("valid", status == "valid"))
 

@@ -1,13 +1,5 @@
 # TODO
 
-## Compile
-- Support `# bash2gitlab: Do not inine` Pragma
-- Support `# bash2gitlab: start/stop ignore` Pragma
-- Config option - prefer yaml comment, prefer bash comment (Maybe not?)
-
-## UI 
-- non tui interactive UI
-
 ## Decompile
 - min lines before extracting (1 is too small?)
 - support value/description syntax
@@ -19,9 +11,12 @@ variables:
     description: "The name of the tox executable."
 ```
 
-## Config
-- custom shebang
-- custom "do not edit" banner
+## Docs
+- docstrings
+- reconcile docs to actual code
+- merge docs script
+- copy readme/contributing/change log at build time
 
-## Advanced Features
-- Validate/lint with API calls to Gitlab.
+## Analysis and design
+- Do analysis & design doc for as-is
+- Generate some improvement proposals
