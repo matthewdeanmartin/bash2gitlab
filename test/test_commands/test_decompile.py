@@ -9,8 +9,7 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-from bash2gitlab.commands.decompile_all import run_decompile_gitlab  # alias to run_decompile_gitlab_file in new code
-from bash2gitlab.commands.decompile_all import SHEBANG, create_script_filename
+from bash2gitlab.commands.decompile_all import SHEBANG, create_script_filename, run_decompile_gitlab_file
 
 # A sample GitLab CI configuration with various script definitions for comprehensive testing.
 SAMPLE_GITLAB_CI_CONTENT = """
@@ -101,7 +100,7 @@ class TestdecompileGitlabCI:
         """Tests the standard decompileding process from end to end (single file)."""
         input_yaml, output_dir = setup_test_env
 
-        jobs_processed, files_created, out_yaml = run_decompile_gitlab(
+        jobs_processed, files_created, out_yaml = run_decompile_gitlab_file(
             input_yaml_path=input_yaml,
             output_dir=output_dir,
             dry_run=False,
@@ -154,7 +153,7 @@ class TestdecompileGitlabCI:
         """Ensures that no files are written to disk during a dry run."""
         input_yaml, output_dir = setup_test_env
 
-        jobs_processed, files_created, out_yaml = run_decompile_gitlab(
+        jobs_processed, files_created, out_yaml = run_decompile_gitlab_file(
             input_yaml_path=input_yaml,
             output_dir=output_dir,
             dry_run=True,
@@ -179,7 +178,7 @@ job_b:
         input_yaml.write_text(no_script_content, encoding="utf-8")
         output_dir = tmp_path / "out"
 
-        jobs_processed, files_created, out_yaml = run_decompile_gitlab(
+        jobs_processed, files_created, out_yaml = run_decompile_gitlab_file(
             input_yaml_path=input_yaml,
             output_dir=output_dir,
         )
@@ -193,7 +192,7 @@ job_b:
     def test_decompile_file_not_found(self, tmp_path: Path):
         """Ensures a FileNotFoundError is raised for a non-existent input file."""
         with pytest.raises(FileNotFoundError, match="Input YAML file not found"):
-            run_decompile_gitlab(
+            run_decompile_gitlab_file(
                 input_yaml_path=tmp_path / "nonexistent.yml",
                 output_dir=tmp_path / "out",
             )

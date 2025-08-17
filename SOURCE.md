@@ -5376,6 +5376,7 @@ from ruamel.yaml.scalarstring import FoldedScalarString
 from bash2gitlab.config import config
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.utils import short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
@@ -5385,20 +5386,10 @@ SHEBANG = "#!/bin/bash"
 __all__ = [
     "run_decompile_gitlab_file",
     "run_decompile_gitlab_tree",
-    # Back-compat alias (old name processed a single file)
-    "run_decompile_gitlab",
 ]
 
 
 # --- helpers -----------------------------------------------------------------
-
-
-def rel(p: Path) -> str:
-    """Return the path relative to CWD when possible for quieter logs."""
-    try:
-        return str(p.resolve().relative_to(Path.cwd()))
-    except Exception:
-        return str(p)
 
 
 def dump_inline_no_doc_markers(yaml: YAML, node: Any) -> str:
@@ -5581,7 +5572,7 @@ def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dr
     makefile_content = "\n".join(makefile_lines)
     makefile_path = output_dir / "Makefile"
 
-    logger.info("Generating Makefile at: %s", rel(makefile_path))
+    logger.info("Generating Makefile at: %s", short_path(makefile_path))
 
     if not dry_run:
         makefile_path.write_text(makefile_content, encoding="utf-8")
@@ -5616,7 +5607,7 @@ def decompile_variables_block(
     script_filepath = scripts_output_path / script_filename
     full_script_content = "\n".join(variable_lines) + "\n"
 
-    logger.info("Decompileding variables for '%s' to '%s'", base_name, rel(script_filepath))
+    logger.info("Decompileding variables for '%s' to '%s'", base_name, short_path(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -5676,7 +5667,7 @@ def decompile_script_block(
     script_header = "\n".join(header_parts)
     full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
 
-    logger.info("Decompileding script from '%s:%s' to '%s'", job_name, script_key, rel(script_filepath))
+    logger.info("Decompileding script from '%s:%s' to '%s'", job_name, script_key, short_path(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -5776,7 +5767,7 @@ def run_decompile_gitlab_file(
     yaml = get_yaml()
     yaml.indent(mapping=2, sequence=4, offset=2)
 
-    logger.info("Loading GitLab CI configuration from: %s", rel(input_yaml_path))
+    logger.info("Loading GitLab CI configuration from: %s", short_path(input_yaml_path))
     data = yaml.load(input_yaml_path)
 
     # Layout: write YAML and scripts side-by-side under output_dir[/subdirs]
@@ -5816,7 +5807,7 @@ def run_decompile_gitlab_file(
     if total_files_created > 0:
         logger.info("Decompileded %s file(s) from %s job(s).", total_files_created, jobs_processed)
         if not dry_run:
-            logger.info("Writing modified YAML to: %s", rel(output_yaml_path))
+            logger.info("Writing modified YAML to: %s", short_path(output_yaml_path))
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             with output_yaml_path.open("w", encoding="utf-8") as f:
                 yaml.dump(data, f)
@@ -5864,10 +5855,6 @@ def run_decompile_gitlab_tree(
         total_created += created
 
     return yaml_files_processed, total_jobs, total_created
-
-
-# Back-compat alias (old API name) – keep single-file semantics
-run_decompile_gitlab = run_decompile_gitlab_file
 ```
 ## File: commands\detect_drift.py
 ```python
@@ -8765,6 +8752,14 @@ def short_path(path: Path) -> str:
         return str(path.relative_to(Path.cwd()))
     except ValueError:
         return str(path.resolve())
+
+
+# def rel(p: Path) -> str:
+#     """Return the path relative to CWD when possible for quieter logs."""
+#     try:
+#         return str(p.resolve().relative_to(Path.cwd()))
+#     except Exception:
+#         return str(p)
 ```
 ## File: utils\yaml_factory.py
 ```python

@@ -30,3 +30,11 @@ def short_path(path: Path) -> str:
         return str(path.relative_to(Path.cwd()))
     except ValueError:
         return str(path.resolve())
+
+
+# def rel(p: Path) -> str:
+#     """Return the path relative to CWD when possible for quieter logs."""
+#     try:
+#         return str(p.resolve().relative_to(Path.cwd()))
+#     except Exception:
+#         return str(p)
