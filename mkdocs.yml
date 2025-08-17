@@ -22,13 +22,18 @@ nav:
   - "Overview": "index.md"
   - "Installation": "installation.md"
   - "Usage":
-      - "Usage": "usage.md"
-      - "Configuration": "config.md"
+      - "Quick Start": "usage.md"
       - "Commands": "commands.md"
+      - "Configuration": "config.md"
       - "Workflows": "workflows.md"
   - "Level up your YAML + Bash":
+      - "Orchestrating (TODO)" : "orchestrating.md"
       - "Formatting YAML": "formatting.md"
-  - "API": "API.md"
+      - "Linting (TODO)" : "linting.md"
+      - "Testing (TODO)" : "testing.md"
+  - "Extending":
+    - "Extension points": "extending.md"
+    - "API": "API.md"
   - "Prior Art":
       - "Keep Bash in Yaml": "PRIOR_ART.md"
   - "Change Log": "CHANGELOG.md"
