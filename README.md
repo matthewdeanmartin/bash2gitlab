@@ -86,11 +86,11 @@ pip install bash2gitlab
    Run `bash2gitlab init` to create a configuration file (`.bash2gitlab.toml`) and directories to organize your source
    files.
 
-2. **"Shred" an Existing Configuration (Optional)**
+2. **Decompile an Existing Configuration (Optional)**
    If you have an existing `.gitlab-ci.yml` with inline scripts, you can extract them automatically:
 
 ```bash
-bash2gitlab shred --in .gitlab-ci.yml --out my-project/
+bash2gitlab decompile --in .gitlab-ci.yml --out my-project/
 ```
 
 3. **Write and Edit Your Scripts**
@@ -124,10 +124,10 @@ Run with
 
 ### Core Compile/Decompile
 
-| Command               | Description                                                                    |
-|:----------------------|:-------------------------------------------------------------------------------|
-| `compile`             | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.            |
-| `shred`               | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files.     |
+| Command     | Description                                                                    |
+|:------------|:-------------------------------------------------------------------------------|
+| `compile`   | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.            |
+| `decompile` | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files.     |
 
 ### Debugging from remote repo
 

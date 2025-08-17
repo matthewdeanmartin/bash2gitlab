@@ -19,7 +19,9 @@ markdown_extensions:
       permalink: true
 
 nav:
-  - "Overview": "index.md"
+  - "Overview":
+      - "Readme.md": "index.md"
+      - "Who is this for?": "who_is_this_for.md"
   - "Installation": "installation.md"
   - "Usage":
       - "Quick Start": "usage.md"
