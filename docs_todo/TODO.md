@@ -12,6 +12,14 @@ variables:
     description: "The name of the tox executable."
 ```
 
+## Config
+
+- move all config logic to config (cascade also happens in dunder-main)
+- stronger concept of shared params
+- allow --config-file to be set on any command
+- better example of how to set config via env vars
+
+
 ## Docs
 
 - docstrings

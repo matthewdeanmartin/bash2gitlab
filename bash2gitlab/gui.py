@@ -40,7 +40,7 @@ class LogHandler(logging.Handler):
 class CommandRunner:
     """Handles running bash2gitlab commands in a separate thread."""
 
-    def __init__(self, output_widget: tk.Text, notebook:ttk.Notebook, output_frame:tk.Frame) -> None:
+    def __init__(self, output_widget: tk.Text, notebook: ttk.Notebook, output_frame: tk.ttk.Frame) -> None:
         self.output_widget = output_widget
         self.current_process: subprocess.Popen | None = None
         self.is_running = False
@@ -104,7 +104,6 @@ class CommandRunner:
             # Call callback if provided
             if callback:
                 callback(return_code)
-
 
         except Exception as e:
             error_msg = f"Error running command: {str(e)}\n"
