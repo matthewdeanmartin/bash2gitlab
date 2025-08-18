@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import logging.config
+import os
 import subprocess  # nosec
 import sys
 from typing import Any
@@ -691,6 +692,10 @@ class CommandScreen(Screen):
         try:
             log.write(f"[bold green]Starting command:[/bold green] {' '.join(self.command_args)}")
 
+            env = {}
+            for key, value in os.environ.items():
+                env[key] = value
+            env["NO_COLOR"] = "1"
             self.process = subprocess.Popen(  # nosec
                 self.command_args,
                 stdout=subprocess.PIPE,
@@ -698,6 +703,7 @@ class CommandScreen(Screen):
                 universal_newlines=True,
                 encoding="utf-8",
                 bufsize=1,
+                env=env,
             )
 
             # Stream output

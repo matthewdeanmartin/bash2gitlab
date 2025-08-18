@@ -578,7 +578,6 @@ def main() -> int:
         "--gitlab-url",
         default=config.lint_gitlab_url,
         dest="gitlab_url",
-        required=True,
         help="Base GitLab URL (e.g., https://gitlab.com).",
     )
     lint_parser.add_argument(

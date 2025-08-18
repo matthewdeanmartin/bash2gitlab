@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import webbrowser
 from pathlib import Path
 from typing import Any, Literal
@@ -14,6 +15,7 @@ from ruamel.yaml.error import YAMLError
 from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.temp_env import temporary_env_var
 from bash2gitlab.utils.utils import short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
 
@@ -217,8 +219,10 @@ def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filenam
 def generate_dependency_graph(
     uncompiled_path: Path,
     *,
-    open_graph_in_browser: bool = False,
+    open_graph_in_browser: bool = True,
     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
+    attempts: int = 0,
+    renderers_attempted: set[str] | None = None,
 ) -> str:
     """
     Analyze YAML + scripts to build a dependency graph.
@@ -227,10 +231,13 @@ def generate_dependency_graph(
         uncompiled_path: Root directory of the uncompiled source files.
         open_graph_in_browser: If True, write a graph file to CWD and open it.
         renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
+        attempts: how many renderers attempted
+        renderers_attempted: which were tried
 
     Returns:
         DOT graph as a string (stdout responsibility is left to the caller).
     """
+    auto_mode = renderer == "auto"
     graph: dict[Path, set[Path]] = {}
     processed_scripts: set[Path] = set()
     yaml_parser = get_yaml()
@@ -286,19 +293,37 @@ def generate_dependency_graph(
         chosen = _auto_pick() if renderer == "auto" else renderer
 
         try:
-            if chosen == "graphviz":
-                out_path = _render_with_graphviz(dot_output, filename_base)
-            elif chosen == "pyvis":
-                out_path = _render_with_pyvis(graph, root_path, filename_base)
-            elif chosen == "networkx":
-                out_path = _render_with_networkx(graph, root_path, filename_base)
-            else:
-                raise RuntimeError(
-                    "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
-                )
+            # pyvis needs utf-8 but doesn't explicitly set it so it fails on Windows.
+            with temporary_env_var("PYTHONUTF8", "1"):
+                if chosen == "graphviz":
+                    # best, but requires additional installation
+                    out_path = _render_with_graphviz(dot_output, filename_base)
+                elif chosen == "pyvis":
+                    # not at godo as graphviz
+                    out_path = _render_with_pyvis(graph, root_path, filename_base)
+                elif chosen == "networkx":
+                    # can be a messy diagram
+                    out_path = _render_with_networkx(graph, root_path, filename_base)
+                else:
+                    raise RuntimeError(
+                        "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
+                    )
+
             logger.info("Wrote graph to %s", short_path(out_path))
-            webbrowser.open(out_path.as_uri())
+            if not os.environ.get("CI"):
+                webbrowser.open(out_path.as_uri())
         except Exception as e:  # pragma: no cover - env dependent
             logger.error("Failed to render or open the graph: %s", e)
+            if (1 < attempts < 4 and len(renderers_attempted or {}) < 3) or auto_mode:
+                if not renderers_attempted:
+                    renderers_attempted = set()
+                renderers_attempted.add(renderer)
+                attempts += 1
+                return generate_dependency_graph(
+                    uncompiled_path,
+                    open_graph_in_browser=open_graph_in_browser,
+                    attempts=attempts,
+                    renderers_attempted=renderers_attempted,
+                )
 
     return dot_output

@@ -53,8 +53,8 @@ js = "#!/usr/bin/env node"
 # output_dir = "ci/compiled"
 watch = false # Default for --watch flag
 
-[shred]
-# Overrides for the 'shred' command.
+[decompile]
+# Overrides for the 'decompile' command.
 # For example, you can set default input and output paths.
 input_file = "ci/dist/.gitlab-ci.yml"
 # input_folder = "ci/dist/"

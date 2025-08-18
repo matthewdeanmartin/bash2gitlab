@@ -12,7 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.8.15] - 2025-08-16
+## [0.8.17] - 2025-08-17
+
+### Fixed
+
+- Graph failed to retry other renderers
+- Graph failed on utf-8 error
+- Color logging not useful in GUI/TUI Popen calls
+- Lint didn't get gitlab_url from config
+- Fix `Pragma` feature
+- Fix tkinter to change tab when command run
+
+## [0.8.16] - 2025-08-17
 
 ### Changed
 
@@ -28,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Shred renamed to decompile.
+- `shred` renamed to decompile.
 - Config updates to support storing almost all command options in config file 
 - Inline supports Pragma commands to skip certain bash from being in-lined.
     - `# Pragma: do-not-inline`: Prevents inlining on the current line.
@@ -42,13 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Basc textual TUI added to mirror the CLI interface
-- Generates makefile for shred command
+- Generates makefile for decompile command
 
 ## [0.8.13] - 2025-08-15
 
 ### Fixed
 
-- Shred command had wrong CLI argument validation
+- decompile command had wrong CLI argument validation
 
 ### Changed
 
@@ -64,11 +75,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Shred write to a folder now.
-- Shred will take --in-file or --in-folder
-- Shred records `!reference [.job, key]` as bash comment
-- Shred now logs with relative path.
-- Shred should now use path relative to yaml not cwd
+- decompile write to a folder now.
+- decompile will take --in-file or --in-folder
+- decompile records `!reference [.job, key]` as bash comment
+- decompile now logs with relative path.
+- decompile should now use path relative to yaml not cwd
 - Leading `.` got stripped from file names. Fixed
 
 ## [0.8.11] - 2025-08-14
@@ -259,9 +270,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Watch mode (--watch) to recompile on file changes
-- Shred supports job-level variables
-- Shred automatically includes if-block to include job level and global variables.
-- Shred generates mock CI variables file
+- decompile supports job-level variables
+- decompile automatically includes if-block to include job level and global variables.
+- decompile generates mock CI variables file
 - init command to generate config file
 
 ## [0.3.0] - 2025-07-27
@@ -278,7 +289,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- shred command to turn pre-existing bash-in-yaml pipeline templates into shell files and yaml
+- decompile command to turn pre-existing bash-in-yaml pipeline templates into shell files and yaml
 
 ## [0.1.0] - 2025-07-26
 

@@ -109,7 +109,7 @@ def test_find_script_references_traces_yaml_to_script_then_sources(tmp_path: Pat
 def test_generate_dependency_graph_no_yaml_returns_empty(tmp_path: Path):
     root = tmp_path / "empty"
     root.mkdir(parents=True, exist_ok=True)
-    assert graph_mod.generate_dependency_graph(root) == ""
+    assert graph_mod.generate_dependency_graph(root, open_graph_in_browser=False) == ""
 
 
 def test_generate_dependency_graph_handles_yaml_error(tmp_path: Path):
@@ -117,7 +117,7 @@ def test_generate_dependency_graph_handles_yaml_error(tmp_path: Path):
     root.mkdir(parents=True, exist_ok=True)
     bad_yaml = _w(root / "oops.yml", "stages: [build  # missing closing bracket causes YAML error\n")
 
-    dot = graph_mod.generate_dependency_graph(root)
+    dot = graph_mod.generate_dependency_graph(root, open_graph_in_browser=False)
 
     # Graph still produced with YAML node but no edges
     bad_rel = _norm_rel(root, bad_yaml)

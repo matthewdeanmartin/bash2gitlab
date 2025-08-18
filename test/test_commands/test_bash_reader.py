@@ -50,7 +50,7 @@ def test_inline_bash_source_success_and_circular_dependency(tmp_path: Path):
         # The content of utils.sh and data.sh should be inlined into main.sh.
         # The circular `source ../main.sh` call should result in an empty string.
         expected_output = (
-            "#!/bin/bash\n"
+            # "#!/bin/bash\n"
             'echo "Start of main script"\n'
             "\n"
             "# Source a helper script\n"

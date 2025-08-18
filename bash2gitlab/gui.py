@@ -9,6 +9,7 @@ commands, making it easier to use without memorizing CLI arguments.
 from __future__ import annotations
 
 import logging
+import os
 import subprocess  # nosec
 import threading
 import tkinter as tk
@@ -39,10 +40,12 @@ class LogHandler(logging.Handler):
 class CommandRunner:
     """Handles running bash2gitlab commands in a separate thread."""
 
-    def __init__(self, output_widget: tk.Text) -> None:
+    def __init__(self, output_widget: tk.Text, notebook:ttk.Notebook, output_frame:tk.Frame) -> None:
         self.output_widget = output_widget
         self.current_process: subprocess.Popen | None = None
         self.is_running = False
+        self.notebook = notebook
+        self.output_frame = output_frame
 
     def run_command(self, cmd: list[str], callback: Callable[[int], None] | None = None) -> None:
         """Run a command in a separate thread."""
@@ -64,7 +67,13 @@ class CommandRunner:
             # Show command being executed
             self.output_widget.after(0, lambda: self.output_widget.insert(tk.END, f"Running: {' '.join(cmd)}\n\n"))
 
+            self.notebook.select(self.output_frame)
+
             # Start process
+            env = {}
+            for key, value in os.environ.items():
+                env[key] = value
+            env["NO_COLOR"] = "1"
             self.current_process = subprocess.Popen(  # nosec
                 cmd,
                 stdout=subprocess.PIPE,
@@ -72,6 +81,7 @@ class CommandRunner:
                 universal_newlines=True,
                 encoding="utf-8",
                 bufsize=1,
+                env=env,
             )
 
             # Read output line by line
@@ -94,6 +104,7 @@ class CommandRunner:
             # Call callback if provided
             if callback:
                 callback(return_code)
+
 
         except Exception as e:
             error_msg = f"Error running command: {str(e)}\n"
@@ -132,6 +143,7 @@ class Bash2GitlabGUI:
         """Set up the main GUI layout."""
         # Create notebook for tabs
         notebook = ttk.Notebook(self.root)
+        self.notebook = notebook
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         # Create tabs for different command categories
@@ -495,25 +507,25 @@ class Bash2GitlabGUI:
 
     def create_output_tab(self, parent: ttk.Notebook) -> None:
         """Create the output/console tab."""
-        frame = ttk.Frame(parent)
-        parent.add(frame, text="Console Output")
+        self.output_frame = ttk.Frame(parent)
+        parent.add(self.output_frame, text="Console Output")
 
         # Output area
-        output_frame = ttk.LabelFrame(frame, text="Command Output", padding=5)
+        output_frame = ttk.LabelFrame(self.output_frame, text="Command Output", padding=5)
         output_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         self.output_text = scrolledtext.ScrolledText(output_frame, wrap=tk.WORD, height=25, font=("Courier", 10))
         self.output_text.pack(fill=tk.BOTH, expand=True)
 
         # Control buttons
-        control_frame = ttk.Frame(frame)
+        control_frame = ttk.Frame(self.output_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Button(control_frame, text="Clear Output", command=self.clear_output).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Stop Command", command=self.stop_command).pack(side=tk.LEFT, padx=5)
 
         # Initialize command runner
-        self.command_runner = CommandRunner(self.output_text)
+        self.command_runner = CommandRunner(self.output_text, self.notebook, self.output_frame)
 
     def update_decompile_inputs(self) -> None:
         """Update decompile input fields based on selection."""

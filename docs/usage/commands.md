@@ -235,7 +235,7 @@ bash2gitlab lint --out compiled \
   --project-id 1234
 ```
 
-If a `.env` file with the BASH2GITLAB_TOKEN variables is set, that will be used. Storing the token in pyproject.toml
+If a `.env` file with the BASH2GITLAB_LINT_TOKEN variables is set, that will be used. Storing the token in pyproject.toml
 is not supported because of the likelihood that it would be checked into source control by accident.
 
 ### Configuration (`bash2gitlab.toml` or `pyproject.toml`)

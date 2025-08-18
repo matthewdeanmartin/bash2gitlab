@@ -20,7 +20,7 @@ orchestrating template complexity.
 
 ```bash
 # 1) Extract shell commands from your pipeline to real scripts
-bash2gitlab decompile --in . --out ./compiled --scripts ./scripts
+bash2gitlab decompile --in-file . --out ./compiled --scripts ./scripts
 
 # 2) Edit scripts locally (lint, test, run)
 vim scripts/my_job.sh
@@ -265,7 +265,7 @@ build:
 ### Example: decompile then edit
 
 ```bash
-bash2gitlab decompile --in . --out ./compiled --scripts ./scripts
+bash2gitlab decompile --in-file . --out ./compiled --scripts ./scripts
 # edit ./scripts/test.sh
 bash2gitlab compile --in . --out ./compiled --scripts ./scripts
 ```
