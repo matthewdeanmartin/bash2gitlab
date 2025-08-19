@@ -1,9 +1,41 @@
 # TODO
 
+## Compile
+
+- config option to only inline if `.` or `source`?
+- `Compiled with the command` will omit all the switches! Need to be able to normalize to command that reproduces.
+
+## Compile Bug
+- variables treated as scripts.
+
+Secretly variables
+```
+.variables
+   - X: 1
+```
+
+Explicitly variables
+```
+variables:
+   - X: 1
+```
+
+Obviously variables
+```
+.some_job:
+    variables:
+       - X: 1
+```
+
+
+## Complement to drift-detection
+
+- Detect uncompiled
+
 ## Decompile
 
-- min lines before extracting (1 is too small?)
-- support value/description syntax
+- min lines before extracting (1 is too small?). Partially done, need to make available to config/ui
+- support value/description syntax. Partially done, need to update calling code.
 
 ```yaml
 variables:
@@ -68,3 +100,8 @@ variables:
 ## Config
 
 - Is parallelism coming from shared?
+
+## Tests needed
+- test of !reference "variable/scripts"
+- test of variables with description
+

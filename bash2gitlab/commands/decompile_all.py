@@ -278,6 +278,7 @@ def decompile_script_block(
     dry_run: bool = False,
     global_vars_filename: str | None = None,
     job_vars_filename: str | None = None,
+    minimum_lines: int = 1,
 ) -> tuple[str | None, str | None]:
     """Extract a script block into a ``.sh`` file and return (script_path, bash_command).
 
@@ -291,6 +292,17 @@ def decompile_script_block(
     script_lines = bashify_script_items(script_content, yaml)
     if not script_lines:
         logger.debug("Skipping empty script block in job '%s' for key '%s'.", job_name, script_key)
+        return None, None
+
+    # Check if the script meets the minimum lines requirement
+    if len(script_lines) < minimum_lines:
+        logger.debug(
+            "Skipping script block in job '%s' for key '%s' - only %d lines (minimum: %d)",
+            job_name,
+            script_key,
+            len(script_lines),
+            minimum_lines,
+        )
         return None, None
 
     script_filename = create_script_filename(job_name, script_key)
@@ -318,7 +330,7 @@ def decompile_script_block(
     script_header = "\n".join(header_parts)
     full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
 
-    logger.info("Decompileding script from '%s:%s' to '%s'", job_name, script_key, short_path(script_filepath))
+    logger.info("Decompileded script from '%s:%s' to '%s'", job_name, script_key, short_path(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -348,6 +360,7 @@ def process_decompile_job(
     yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
+    minimum_lines: int = 1,
 ) -> tuple[int, dict[str, str]]:
     """Process a single job definition to decompile its script and variables blocks.
 
@@ -379,6 +392,7 @@ def process_decompile_job(
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
                 job_vars_filename=job_vars_filename,
+                minimum_lines=minimum_lines,
             )
             if command:
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
@@ -400,10 +414,7 @@ def iterate_yaml_files(root: Path) -> Iterable[Path]:
 
 
 def run_decompile_gitlab_file(
-    *,
-    input_yaml_path: Path,
-    output_dir: Path,
-    dry_run: bool = False,
+    *, input_yaml_path: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1
 ) -> tuple[int, int, Path]:
     """Decompile a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
 
@@ -450,6 +461,7 @@ def run_decompile_gitlab_file(
                 yaml_dir=yaml_dir,
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
+                minimum_lines=minimum_lines,
             )
             total_files_created += decompiled_count
             if scripts_info:
@@ -479,10 +491,7 @@ def run_decompile_gitlab_file(
 
 
 def run_decompile_gitlab_tree(
-    *,
-    input_root: Path,
-    output_dir: Path,
-    dry_run: bool = False,
+    *, input_root: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1
 ) -> tuple[int, int, int]:
     """Decompile *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
 
@@ -500,7 +509,9 @@ def run_decompile_gitlab_tree(
     for in_file in iterate_yaml_files(input_root):
         rel_dir = in_file.parent.relative_to(input_root)
         out_subdir = (output_dir / rel_dir).resolve()
-        jobs, created, _ = run_decompile_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
+        jobs, created, _ = run_decompile_gitlab_file(
+            input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run, minimum_lines=minimum_lines
+        )
         yaml_files_processed += 1
         total_jobs += jobs
         total_created += created

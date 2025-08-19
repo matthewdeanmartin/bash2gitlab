@@ -1,6 +1,6 @@
 import pytest
 
-from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
+from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX
 
 # A list of test cases with the line to test and the expected captured path.
 # If the expected path is None, the regex should not match the line.

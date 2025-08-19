@@ -1,3 +1,5 @@
+# this is not safe to inline
+# what if this is going to be dereferenced from variables?
 .some-script: &some-anchor
   - ./script1.sh
   - ./script2.sh

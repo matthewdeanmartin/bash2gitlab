@@ -18,6 +18,9 @@ def test_yaml_it_src_to_out_hidden_jobs_9():
             output = file.read_text(encoding="utf-8")
             for line in output.split("\n"):
                 if ">>>" not in line and "<<<" not in line:
-                    assert ".sh" not in line or ". before_script.sh" in line
+                    # inlining "jobs" with custom names is not safe. This could be dereferenced into
+                    # something that isn't a script. Maybe need pragma to handle this.
+                    assert ".sh" in line or ".some-script:" in line
+                    # assert ".sh" not in line or ". before_script.sh" in line
             found += 1
         assert found

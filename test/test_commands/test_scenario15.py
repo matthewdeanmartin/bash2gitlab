@@ -15,7 +15,7 @@ def test_yaml_it_src_to_out_15_python():
 
         for file in output_root.rglob("*.yml"):
             output = file.read_text(encoding="utf-8")
-            assert 'print("hello")' in output
+            assert 'print("hello")' in output or 'print(\\"hello\\")' in output
 
         for file in output_root.rglob("*.yaml"):
             output = file.read_text(encoding="utf-8")

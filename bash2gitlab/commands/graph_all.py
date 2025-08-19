@@ -12,7 +12,7 @@ from graphviz import Source
 from pyvis.network import Network
 from ruamel.yaml.error import YAMLError
 
-from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
+from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.temp_env import temporary_env_var

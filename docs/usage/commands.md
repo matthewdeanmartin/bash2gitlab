@@ -77,6 +77,21 @@ output_dir = "gitlab-ci"
 watch = false
 ```
 
+### Quirks
+
+`&` and `*` reference/dereference syntax will cause that to be resolved. This means, all code has to be compiled
+together to get the same semantics.
+
+"Jobs" that are secretly variables could be parsed as scripts and turned into a single string.
+
+```yaml
+.more_variables
+  - A: 1
+  - B: 2
+```
+
+
+
 -----
 
 ## Command: `decompile`

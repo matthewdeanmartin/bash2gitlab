@@ -1,18 +1,19 @@
 ## Tree for bash2gitlab
 ```
-├── bash_reader.py
-├── bash_reader2.py
 ├── builtin_plugins.py
 ├── commands/
 │   ├── clean_all.py
 │   ├── clone2local.py
 │   ├── compile_all.py
+│   ├── compile_bash_reader.py
+│   ├── compile_detct_last_change.py
 │   ├── compile_not_bash.py
 │   ├── decompile_all.py
 │   ├── detect_drift.py
 │   ├── doctor.py
 │   ├── graph_all.py
 │   ├── init_project.py
+│   ├── input_change_detector.py
 │   ├── lint_all.py
 │   ├── map_commit.py
 │   ├── map_deploy.py
@@ -43,537 +44,6 @@
 └── __main__.py
 ```
 
-## File: bash_reader.py
-```python
-"""Read a bash script and inline any `source script.sh` patterns."""
-
-from __future__ import annotations
-
-import logging
-import os
-import re
-from pathlib import Path
-
-from bash2gitlab.utils.pathlib_polyfills import is_relative_to
-from bash2gitlab.utils.utils import short_path
-
-__all__ = ["read_bash_script"]
-
-# Set up a logger for this module
-logger = logging.getLogger(__name__)
-
-# Regex to match 'source file.sh' or '. file.sh'
-# It ensures the line contains nothing else but the sourcing command, except a comment.
-# - ^\s* - Start of the line with optional whitespace.
-# - (?:source|\.) - Non-capturing group for 'source' or '.'.
-# - \s+         - At least one whitespace character.
-# - (?P<path>[\w./\\-]+) - Captures the file path.
-# - \s*$        - Optional whitespace until the end of the line.
-# SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
-# Handle optional comment.
-SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(?:#.*)?$")
-
-# Regex to match pragmas like '# Pragma: do-not-inline'
-# It is case-insensitive to 'Pragma' and captures the command.
-PRAGMA_REGEX = re.compile(
-    r"#\s*Pragma:\s*(?P<command>do-not-inline(?:-next-line)?|start-do-not-inline|end-do-not-inline|allow-outside-root)",
-    re.IGNORECASE,
-)
-
-
-class SourceSecurityError(RuntimeError):
-    pass
-
-
-class PragmaError(ValueError):
-    """Custom exception for pragma parsing errors."""
-
-
-def secure_join(
-    base_dir: Path,
-    user_path: str,
-    allowed_root: Path,
-    *,
-    bypass_security_check: bool = False,
-) -> Path:
-    """
-    Resolve 'user_path' (which may contain ../ and symlinks) against base_dir,
-    then ensure the final real path is inside allowed_root.
-
-    Args:
-        base_dir: The directory of the script doing the sourcing.
-        user_path: The path string from the source command.
-        allowed_root: The root directory that sourced files cannot escape.
-        bypass_security_check: If True, skips the check against allowed_root.
-    """
-    # Normalize separators and strip quotes/whitespace
-    user_path = user_path.strip().strip('"').strip("'").replace("\\", "/")
-
-    # Resolve relative to the including script's directory
-    candidate = (base_dir / user_path).resolve(strict=True)
-
-    # Ensure the real path (after following symlinks) is within allowed_root
-    allowed_root = allowed_root.resolve(strict=True)
-
-    if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS") and not bypass_security_check:
-        if not is_relative_to(candidate, allowed_root):
-            raise SourceSecurityError(f"Refusing to source '{candidate}': escapes allowed root '{allowed_root}'.")
-    elif bypass_security_check:
-        logger.warning(
-            "Security check explicitly bypassed for path '%s' due to 'allow-outside-root' pragma.",
-            candidate,
-        )
-
-    return candidate
-
-
-def read_bash_script(path: Path) -> str:
-    """
-    Reads a bash script and inlines any sourced files.
-    This is the main entry point.
-    """
-    logger.debug(f"Reading and inlining script from: {path}")
-
-    # Use the recursive inliner to do all the work, including shebang handling.
-    content = inline_bash_source(path)
-
-    if not content.strip():
-        raise ValueError(f"Script is empty or only contains whitespace: {path}")
-
-    # The returned content is now final.
-    return content
-
-
-def inline_bash_source(
-    main_script_path: Path,
-    processed_files: set[Path] | None = None,
-    *,
-    allowed_root: Path | None = None,
-    max_depth: int = 64,
-    _depth: int = 0,
-) -> str:
-    """
-    Reads a bash script and recursively inlines content from sourced files,
-    honoring pragmas to prevent inlining or bypass security.
-
-    This function processes a bash script, identifies any 'source' or '.' commands,
-    and replaces them with the content of the specified script. It handles
-    nested sourcing, prevents infinite loops, and respects the following pragmas:
-    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
-    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
-    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
-    - `# Pragma: end-do-not-inline`: Ends the block.
-    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
-
-    Args:
-        main_script_path: The absolute path to the main bash script to process.
-        processed_files: A set used internally to track already processed files.
-        allowed_root: Root to prevent parent traversal.
-        max_depth: Maximum recursion depth for sourcing.
-        _depth: Current recursion depth (used internally).
-
-    Returns:
-        A string containing the script content with all sourced files inlined.
-
-    Raises:
-        FileNotFoundError: If the main_script_path or any sourced script does not exist.
-        PragmaError: If start/end pragmas are mismatched.
-        RecursionError: If max_depth is exceeded.
-    """
-    if processed_files is None:
-        processed_files = set()
-
-    if allowed_root is None:
-        allowed_root = Path.cwd()
-
-    # Normalize and security-check the entry script itself
-    try:
-        main_script_path = secure_join(
-            base_dir=main_script_path.parent if main_script_path.is_absolute() else Path.cwd(),
-            user_path=str(main_script_path),
-            allowed_root=allowed_root,
-        )
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Script not found: {main_script_path}") from None
-
-    if _depth > max_depth:
-        raise RecursionError(f"Max include depth ({max_depth}) exceeded at {main_script_path}")
-
-    if main_script_path in processed_files:
-        logger.warning("Circular source detected and skipped: %s", main_script_path)
-        return ""
-
-    # Check if the script exists before trying to read it
-    if not main_script_path.is_file():
-        raise FileNotFoundError(f"Script not found: {main_script_path}")
-
-    logger.debug(f"Processing script: {main_script_path}")
-    processed_files.add(main_script_path)
-
-    final_content_lines: list[str] = []
-    in_do_not_inline_block = False
-    skip_next_line = False
-
-    try:
-        with main_script_path.open("r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-            # --- (FIX) SHEBANG HANDLING MOVED HERE ---
-            # Only strip the shebang if this is the top-level script (_depth == 0).
-            # This respects pragmas because the logic now happens *before* line-by-line processing.
-            if _depth == 0 and lines and lines[0].startswith("#!"):
-                logger.debug(f"Stripping shebang from main script: {lines[0].strip()}")
-                lines = lines[1:]
-
-            for line_num, line in enumerate(lines, 1):
-                source_match = SOURCE_COMMAND_REGEX.match(line)
-                pragma_match = PRAGMA_REGEX.search(line)
-                pragma_command = pragma_match.group("command").lower() if pragma_match else None
-
-                # --- (FIX) Phase 1: State Management & Strippable Pragmas ---
-                # These pragmas are control directives and should be stripped from the output.
-                if pragma_command == "start-do-not-inline":
-                    if in_do_not_inline_block:
-                        raise PragmaError(f"Cannot nest 'start-do-not-inline' at {main_script_path}:{line_num}")
-                    in_do_not_inline_block = True
-                    continue  # Strip the pragma line itself
-
-                if pragma_command == "end-do-not-inline":
-                    if not in_do_not_inline_block:
-                        raise PragmaError(f"Found 'end-do-not-inline' without 'start' at {main_script_path}:{line_num}")
-                    in_do_not_inline_block = False
-                    continue  # Strip the pragma line itself
-
-                if pragma_command == "do-not-inline-next-line":
-                    skip_next_line = True
-                    continue  # Strip the pragma line itself
-
-                # Any line with a 'do-not-inline' pragma is now stripped.
-                if pragma_command == "do-not-inline":
-                    continue
-
-                # --- (FIX) Phase 2: Content Filtering ---
-                # If we are inside a do-not-inline block, strip this line of content.
-                if in_do_not_inline_block:
-                    continue
-
-                # --- Phase 3: Line-by-line Processing (for lines we intend to keep) ---
-                should_inline = source_match is not None
-                reason_to_skip = ""
-
-                if skip_next_line:
-                    reason_to_skip = "previous line had 'do-not-inline-next-line' pragma"
-                    should_inline = False
-                    skip_next_line = False  # Consume the flag
-                    continue
-                # elif in_do_not_inline_block:
-                #     reason_to_skip = "currently in 'do-not-inline' block"
-                #     should_inline = False
-                elif pragma_command == "do-not-inline":
-                    reason_to_skip = "line contains 'do-not-inline' pragma"
-                    should_inline = False
-                    # Line is kept, just not inlined. Warning for non-sourcing lines.
-                    if not source_match:
-                        logger.warning(
-                            "Pragma 'do-not-inline' on non-sourcing line at %s:%d has no effect.",
-                            main_script_path,
-                            line_num,
-                        )
-
-                if pragma_command == "allow-outside-root" and not source_match:
-                    logger.warning(
-                        "Pragma 'allow-outside-root' on non-sourcing line at %s:%d has no effect.",
-                        main_script_path,
-                        line_num,
-                    )
-
-                # --- Perform Action: Inline or Append ---
-                if should_inline and source_match:
-                    sourced_script_name = source_match.group("path")
-                    bypass_security = pragma_command == "allow-outside-root"
-                    try:
-                        sourced_script_path = secure_join(
-                            base_dir=main_script_path.parent,
-                            user_path=sourced_script_name,
-                            allowed_root=allowed_root,
-                            bypass_security_check=bypass_security,
-                        )
-                    except (FileNotFoundError, SourceSecurityError) as e:
-                        logger.error(
-                            "Blocked/missing source '%s' from '%s': %s", sourced_script_name, main_script_path, e
-                        )
-                        raise
-
-                    logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
-                    inlined = inline_bash_source(
-                        sourced_script_path,
-                        processed_files,
-                        allowed_root=allowed_root,
-                        max_depth=max_depth,
-                        _depth=_depth + 1,
-                    )
-                    final_content_lines.append(inlined)
-                else:
-                    if source_match and reason_to_skip:
-                        logger.info(
-                            "Skipping inline of '%s' at %s:%d because %s.",
-                            source_match.group("path"),
-                            main_script_path,
-                            line_num,
-                            reason_to_skip,
-                        )
-                    final_content_lines.append(line)
-
-        if in_do_not_inline_block:
-            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {main_script_path}")
-
-    except Exception:
-        # Propagate after logging context
-        logger.exception("Failed to read or process %s", main_script_path)
-        raise
-
-    final = "".join(final_content_lines)
-    if not final.endswith("\n"):
-        return final + "\n"
-    return final
-```
-## File: bash_reader2.py
-```python
-"""Read a bash script and inline any `source script.sh` patterns."""
-
-from __future__ import annotations
-
-import logging
-import os
-import re
-from pathlib import Path
-
-from bash2gitlab.utils.pathlib_polyfills import is_relative_to
-from bash2gitlab.utils.utils import short_path
-
-# NOTE: No changes to imports, constants, or helper functions are needed.
-# The following are included for completeness.
-
-
-__all__ = ["read_bash_script"]
-
-# Set up a logger for this module
-logger = logging.getLogger(__name__)
-
-# Regex to match 'source file.sh' or '. file.sh'
-# It ensures the line contains nothing else but the sourcing command, except a comment.
-# - ^\s* - Start of the line with optional whitespace.
-# - (?:source|\.) - Non-capturing group for 'source' or '.'.
-# - \s+         - At least one whitespace character.
-# - (?P<path>[\w./\\-]+) - Captures the file path.
-# - \s*$        - Optional whitespace until the end of the line.
-# SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
-# Handle optional comment.
-SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(?:#.*)?$")
-
-# Regex to match pragmas like '# Pragma: do-not-inline'
-# It is case-insensitive to 'Pragma' and captures the command.
-PRAGMA_REGEX = re.compile(
-    r"#\s*Pragma:\s*(?P<command>do-not-inline(?:-next-line)?|start-do-not-inline|end-do-not-inline|allow-outside-root)",
-    re.IGNORECASE,
-)
-
-
-class SourceSecurityError(RuntimeError):
-    pass
-
-
-class PragmaError(ValueError):
-    pass
-
-
-def secure_join(base_dir: Path, user_path: str, allowed_root: Path, *, bypass_security_check: bool = False) -> Path:
-    user_path = user_path.strip().strip('"').strip("'").replace("\\", "/")
-    candidate = (base_dir / user_path).resolve(strict=True)
-    allowed_root = allowed_root.resolve(strict=True)
-    if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS") and not bypass_security_check:
-        if not is_relative_to(candidate, allowed_root):
-            raise SourceSecurityError(f"Refusing to source '{candidate}': escapes allowed root '{allowed_root}'.")
-    elif bypass_security_check:
-        logger.warning(
-            "Security check explicitly bypassed for path '%s' due to 'allow-outside-root' pragma.", candidate
-        )
-    return candidate
-
-
-def read_bash_script(path: Path) -> str:
-    """
-    Reads a bash script and inlines any sourced files.
-    This is the main entry point.
-    """
-    logger.debug(f"Reading and inlining script from: {path}")
-
-    # Use the recursive inliner to do all the work, including shebang handling.
-    content = inline_bash_source(path)
-
-    if not content.strip():
-        raise ValueError(f"Script is empty or only contains whitespace: {path}")
-
-    # The returned content is now final.
-    return content
-
-
-# --- FUNCTION WITH THE FIX ---
-def inline_bash_source(
-    main_script_path: Path,
-    processed_files: set[Path] | None = None,
-    *,
-    allowed_root: Path | None = None,
-    max_depth: int = 64,
-    _depth: int = 0,
-) -> str:
-    """
-    Reads a bash script and recursively inlines content from sourced files,
-    honoring pragmas to prevent inlining or bypass security.
-    """
-    if processed_files is None:
-        processed_files = set()
-    if allowed_root is None:
-        allowed_root = Path.cwd()
-
-    try:
-        main_script_path = secure_join(
-            base_dir=main_script_path.parent if main_script_path.is_absolute() else Path.cwd(),
-            user_path=str(main_script_path),
-            allowed_root=allowed_root,
-        )
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Script not found: {main_script_path}") from None
-
-    if _depth > max_depth:
-        raise RecursionError(f"Max include depth ({max_depth}) exceeded at {main_script_path}")
-    if main_script_path in processed_files:
-        logger.warning("Circular source detected and skipped: %s", main_script_path)
-        return ""
-    if not main_script_path.is_file():
-        raise FileNotFoundError(f"Script not found: {main_script_path}")
-
-    logger.debug(f"Processing script: {main_script_path}")
-    processed_files.add(main_script_path)
-
-    final_content_lines: list[str] = []
-    in_do_not_inline_block = False
-    skip_next_line = False
-
-    try:
-        with main_script_path.open("r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-            # --- (FIX) SHEBANG HANDLING MOVED HERE ---
-            # Only strip the shebang if this is the top-level script (_depth == 0).
-            # This respects pragmas because the logic now happens *before* line-by-line processing.
-            if _depth == 0 and lines and lines[0].startswith("#!"):
-                logger.debug(f"Stripping shebang from main script: {lines[0].strip()}")
-                lines = lines[1:]
-
-            for line_num, line in enumerate(lines, 1):
-                source_match = SOURCE_COMMAND_REGEX.match(line)
-                pragma_match = PRAGMA_REGEX.search(line)
-                pragma_command = pragma_match.group("command").lower() if pragma_match else None
-
-                # --- (FIX) Phase 1: State Management & Strippable Pragmas ---
-                # These pragmas are control directives and should be stripped from the output.
-                if pragma_command == "start-do-not-inline":
-                    if in_do_not_inline_block:
-                        raise PragmaError(f"Cannot nest 'start-do-not-inline' at {main_script_path}:{line_num}")
-                    in_do_not_inline_block = True
-                    continue  # Strip the pragma line itself
-
-                if pragma_command == "end-do-not-inline":
-                    if not in_do_not_inline_block:
-                        raise PragmaError(f"Found 'end-do-not-inline' without 'start' at {main_script_path}:{line_num}")
-                    in_do_not_inline_block = False
-                    continue  # Strip the pragma line itself
-
-                if pragma_command == "do-not-inline-next-line":
-                    skip_next_line = True
-                    continue  # Strip the pragma line itself
-
-                # --- (FIX) Phase 2: Content Filtering ---
-                # If we are inside a do-not-inline block, strip this line of content.
-                if in_do_not_inline_block:
-                    continue
-
-                # --- Phase 3: Line-by-line Processing (for lines we intend to keep) ---
-                should_inline = source_match is not None
-                reason_to_skip = ""
-
-                if skip_next_line:
-                    reason_to_skip = "previous line had 'do-not-inline-next-line' pragma"
-                    should_inline = False
-                    skip_next_line = False  # Consume the flag
-                elif pragma_command == "do-not-inline":
-                    reason_to_skip = "line contains 'do-not-inline' pragma"
-                    should_inline = False
-                    # Line is kept, just not inlined. Warning for non-sourcing lines.
-                    if not source_match:
-                        logger.warning(
-                            "Pragma 'do-not-inline' on non-sourcing line at %s:%d has no effect.",
-                            main_script_path,
-                            line_num,
-                        )
-
-                if pragma_command == "allow-outside-root" and not source_match:
-                    logger.warning(
-                        "Pragma 'allow-outside-root' on non-sourcing line at %s:%d has no effect.",
-                        main_script_path,
-                        line_num,
-                    )
-
-                # --- Perform Action: Inline or Append ---
-                if should_inline and source_match:
-                    sourced_script_name = source_match.group("path")
-                    bypass_security = pragma_command == "allow-outside-root"
-                    try:
-                        sourced_script_path = secure_join(
-                            base_dir=main_script_path.parent,
-                            user_path=sourced_script_name,
-                            allowed_root=allowed_root,
-                            bypass_security_check=bypass_security,
-                        )
-                    except (FileNotFoundError, SourceSecurityError) as e:
-                        logger.error(
-                            "Blocked/missing source '%s' from '%s': %s", sourced_script_name, main_script_path, e
-                        )
-                        raise
-                    logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
-                    inlined = inline_bash_source(
-                        sourced_script_path,
-                        processed_files,
-                        allowed_root=allowed_root,
-                        max_depth=max_depth,
-                        _depth=_depth + 1,
-                    )
-                    final_content_lines.append(inlined)
-                else:
-                    if source_match and reason_to_skip:
-                        logger.info(
-                            "Skipping inline of '%s' at %s:%d because %s.",
-                            source_match.group("path"),
-                            main_script_path,
-                            line_num,
-                            reason_to_skip,
-                        )
-                    final_content_lines.append(line)
-
-        if in_do_not_inline_block:
-            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {main_script_path}")
-
-    except Exception:
-        # Propagate after logging context
-        logger.exception("Failed to read or process %s", main_script_path)
-        raise
-
-    final = "".join(final_content_lines)
-    if not final.endswith("\n") and final:
-        return final + "\n"
-    return final
-```
 ## File: builtin_plugins.py
 ```python
 from __future__ import annotations
@@ -3455,7 +2925,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.17"
+__version__ = "0.8.18"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -4693,7 +4163,17 @@ def clone_repository_ssh(
 ```
 ## File: commands\compile_all.py
 ```python
-"""Command to inline bash or powershell into gitlab pipeline yaml."""
+"""Command to inline bash or powershell into gitlab pipeline yaml.
+
+Patch notes (key changes):
+- Preserve YAML sequence tags (e.g. `!reference`) on CommentedSeq values.
+- Treat any tagged sequence as a *YAML feature* and never collapse it into a
+  literal scalar or modify its element shape.
+- Skip processing of top-level list-valued keys that are known non-script
+  fields (e.g. `variables`, `rules`) or any list with a YAML tag.
+- Copy over both `ca` (comment association) *and* the YAML tag when rebuilding
+  ruamel sequences.
+"""
 
 from __future__ import annotations
 
@@ -4711,8 +4191,8 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from bash2gitlab.bash_reader import read_bash_script
 from bash2gitlab.commands.clean_all import report_targets
+from bash2gitlab.commands.compile_bash_reader import read_bash_script
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
@@ -4752,7 +4232,7 @@ def get_banner() -> str:
 
 def as_items(
     seq_or_list: list[TaggedScalar | str] | CommentedSeq | str,
-) -> tuple[list[Any], bool, CommentedSeq | None]:
+) -> tuple[list[Any], bool, CommentedSeq | None, bool]:
     """Normalize input to a Python list of items.
 
     Args:
@@ -4765,12 +4245,11 @@ def as_items(
             - the original CommentedSeq (if any) for potential metadata reuse.
     """
     if isinstance(seq_or_list, str):
-        return [seq_or_list], False, None
+        return [seq_or_list], False, None, False
     if isinstance(seq_or_list, CommentedSeq):
-        # Make a shallow list copy to manipulate while preserving the original node
-        return list(seq_or_list), True, seq_or_list
-    # Already a Python list (possibly containing ruamel nodes)
-    return list(seq_or_list), False, None
+        has_tag = bool(getattr(seq_or_list, "tag", None))
+        return list(seq_or_list), True, seq_or_list, has_tag
+    return list(seq_or_list), False, None, False
 
 
 def rebuild_seq_like(
@@ -4794,9 +4273,14 @@ def rebuild_seq_like(
     new_seq = CommentedSeq(processed)
     # Best-effort carry over comment association metadata to reduce churn.
     try:
-        if original_seq is not None and hasattr(original_seq, "ca"):
-            new_seq.ca = original_seq.ca  # type: ignore[misc]
-    # metadata copy is best-effort
+        if original_seq is not None:
+            # Preserve comments/anchors
+            if hasattr(original_seq, "ca"):
+                new_seq.ca = original_seq.ca  # type: ignore[misc]
+            # Preserve YAML tag (e.g., !reference)
+            if getattr(original_seq, "tag", None):
+                new_seq.yaml_set_tag(original_seq.tag.value)  # type: ignore[attr-defined]
+    # best-effort only
     except Exception:  # nosec
         pass
     return new_seq
@@ -4834,6 +4318,14 @@ def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any
     return out
 
 
+SCRIPTY_KEYS = {"script", "before_script", "after_script", "pre_get_sources_script"}
+NON_SCRIPT_TOPLEVEL_LIST_KEYS = {"variables", "rules", "stages", "services", "needs", "tags"}
+
+
+def _list_has_yaml_tag(seq: Any) -> bool:
+    return isinstance(seq, CommentedSeq) and bool(getattr(seq, "tag", None))
+
+
 def process_script_list(
     script_list: list[TaggedScalar | str] | CommentedSeq | str,
     scripts_root: Path,
@@ -4847,6 +4339,9 @@ def process_script_list(
     literal scalar string (``|``). If any YAML features such as anchors, tags, or
     ``TaggedScalar`` nodes are present, it preserves list form to avoid losing semantics.
 
+    Key safety rule: If the *sequence itself* has a YAML tag (e.g. ``!reference``),
+    **do not** collapse it or alter its element layout.
+
     Args:
         script_list (list[TaggedScalar | str] | CommentedSeq | str): YAML script lines.
         scripts_root (Path): Root directory used to resolve script paths for inlining.
@@ -4856,7 +4351,8 @@ def process_script_list(
         ``LiteralScalarString`` when safe to collapse; otherwise returns a list or
         ``CommentedSeq`` (matching the input style) to preserve YAML features.
     """
-    items, was_commented_seq, original_seq = as_items(script_list)
+    items, was_commented_seq, original_seq, has_sequence_tag = as_items(script_list)
+    #    items, was_commented_seq, original_seq = as_items(script_list)
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
@@ -4924,6 +4420,10 @@ def process_script_list(
         contains_tagged_scalar or contains_anchors_or_tags or was_commented_seq and not only_plain_strings
     )
 
+    # NEW: If the original node had a YAML tag (e.g. !reference), do not collapse/compact.
+    if has_sequence_tag:
+        return rebuild_seq_like(processed_items, was_commented_seq, original_seq)
+
     # Collapse to literal block only when no YAML features and sufficiently long
     if not has_yaml_features and only_plain_strings and len(processed_items) > 2:
         final_script_block = "\n".join(processed_items)
@@ -4941,10 +4441,10 @@ def process_script_list(
 def process_job(job_data: dict, scripts_root: Path) -> int:
     """Processes a single job definition to inline scripts."""
     found = 0
-    for script_key in ["script", "before_script", "after_script", "pre_get_sources_script"]:
+    for script_key in SCRIPTY_KEYS:
         if script_key in job_data:
             result = process_script_list(job_data[script_key], scripts_root)
-            if result != job_data[script_key]:
+            if result is not job_data[script_key]:
                 job_data[script_key] = result
                 found += 1
     return found
@@ -4996,57 +4496,59 @@ def inline_gitlab_scripts(
                 data[name] = result
                 inlined_count += 1
 
-    # Process all jobs and top-level script lists (which are often used for anchors)
-    for job_name, job_data in data.items():
-        # Handle top-level keys that are lists of scripts. This pattern is commonly
-        # used to create reusable script blocks with YAML anchors, e.g.:
-        # .my-script-template: &my-script-anchor
-        #   - ./scripts/my-script.sh
-        if isinstance(job_data, list):
-            logger.debug(f"Processing top-level list key '{job_name}', potentially a script anchor.")
-            result = process_script_list(job_data, scripts_root)
-            if result != job_data:
-                data[job_name] = result
-                inlined_count += 1
-        elif isinstance(job_data, dict):
-            # Look for and process job-specific variables file
-            safe_job_name = job_name.replace(":", "_")
+    # Process jobs and *only* safe top-level list anchors
+    for key, value in list(data.items()):
+        # Skip known non-script list keys entirely
+        if key in NON_SCRIPT_TOPLEVEL_LIST_KEYS:
+            continue
+        # Only treat plain list/CommentedSeq without YAML tags as potential script anchors
+        if isinstance(value, (list, CommentedSeq)):
+            if _list_has_yaml_tag(value):
+                # e.g., variables: !reference [...]  -> do NOT touch
+                logger.debug("Skipping tagged top-level list '%s' (YAML tag detected).", key)
+                continue
+            # Heuristic: consider this a script anchor only if items look like commands/paths
+            looks_scripty = all(isinstance(it, str) and ("/" in it or it.startswith("./") or " " in it) for it in value)
+            if looks_scripty:
+                logger.debug("Processing top-level list key '%s' as potential script anchor.", key)
+                result = process_script_list(value, scripts_root)
+                if result is not value:
+                    data[key] = result
+                    inlined_count += 1
+
+        elif isinstance(value, dict):
+            safe_job_name = key.replace(":", "_")
             job_vars_filename = f"{safe_job_name}_variables.sh"
             job_vars_path = uncompiled_path / job_vars_filename
 
             if job_vars_path.is_file():
-                logger.debug(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
+                logger.debug(f"Found and loading job-specific variables for '{safe_job_name}' from {job_vars_path}")
                 content = job_vars_path.read_text(encoding="utf-8")
                 job_specific_vars = parse_env_file(content)
 
                 if job_specific_vars:
-                    existing_job_vars = job_data.get("variables", CommentedMap())
-                    # Start with variables from the .sh file
+                    existing_job_vars = value.get("variables", CommentedMap())
                     merged_job_vars = CommentedMap(job_specific_vars.items())
                     # Update with variables from the YAML, so they take precedence
                     merged_job_vars.update(existing_job_vars)
-                    job_data["variables"] = merged_job_vars
+                    value["variables"] = merged_job_vars
                     inlined_count += 1
 
-            # A simple heuristic for a "job" is a dictionary with a 'script' key.
-            if (
-                "script" in job_data
-                or "before_script" in job_data
-                or "after_script" in job_data
-                or "pre_get_sources_script" in job_data
-            ):
-                logger.debug(f"Processing job: {job_name}")
-                inlined_count += process_job(job_data, scripts_root)
-            if "hooks" in job_data:
-                if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
-                    logger.debug(f"Processing pre_get_sources_script: {job_name}")
-                    inlined_count += process_job(job_data["hooks"], scripts_root)
-            if "run" in job_data:
-                if isinstance(job_data["run"], list):
-                    for item in job_data["run"]:
-                        if isinstance(item, dict) and "script" in item:
-                            logger.debug(f"Processing run/script: {job_name}")
-                            inlined_count += process_job(item, scripts_root)
+            # Only process known script-like keys inside jobs
+            if any(k in value for k in SCRIPTY_KEYS) or "hooks" in value or "run" in value:
+                logger.debug(f"Processing job: {key}")
+                inlined_count += process_job(value, scripts_root)
+
+            if "hooks" in value and isinstance(value["hooks"], dict):
+                if "pre_get_sources_script" in value["hooks"]:
+                    logger.debug(f"Processing pre_get_sources_script: {key}")
+                    inlined_count += process_job(value["hooks"], scripts_root)
+
+            if "run" in value and isinstance(value["run"], list):
+                for item in value["run"]:
+                    if isinstance(item, dict) and "script" in item:
+                        logger.debug(f"Processing run/script: {key}")
+                        inlined_count += process_job(item, scripts_root)
 
     out_stream = io.StringIO()
     yaml.dump(data, out_stream)  # Dump the reordered data
@@ -5347,6 +4849,513 @@ def run_compile_all(
         logger.info(f"[DRY RUN] Simulation complete. Would have processed {written_files_count} file(s).")
 
     return total_inlined_count
+
+
+# --- Quick self-check / demonstration ---
+if __name__ == "__main__":
+    demo = """
+job:
+  variables: !reference [ .job-one, variables ]
+  script:
+    - ./scripts/hello.sh
+"""
+    from ruamel.yaml import YAML
+
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    inlined, out = inline_gitlab_scripts(
+        demo,
+        scripts_root=Path("."),
+        global_vars={},
+        uncompiled_path=Path("."),
+    )
+    print("--- inlined sections:", inlined)
+    print(out)
+```
+## File: commands\compile_bash_reader.py
+```python
+"""Read a bash script and inline any `source script.sh` patterns."""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from pathlib import Path
+
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.utils import short_path
+
+__all__ = ["read_bash_script"]
+
+# Set up a logger for this module
+logger = logging.getLogger(__name__)
+
+# Regex to match 'source file.sh' or '. file.sh'
+# It ensures the line contains nothing else but the sourcing command, except a comment.
+# - ^\s* - Start of the line with optional whitespace.
+# - (?:source|\.) - Non-capturing group for 'source' or '.'.
+# - \s+         - At least one whitespace character.
+# - (?P<path>[\w./\\-]+) - Captures the file path.
+# - \s*$        - Optional whitespace until the end of the line.
+# SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*$")
+# Handle optional comment.
+SOURCE_COMMAND_REGEX = re.compile(r"^\s*(?:source|\.)\s+(?P<path>[\w./\\-]+)\s*(?:#.*)?$")
+
+# Regex to match pragmas like '# Pragma: do-not-inline'
+# It is case-insensitive to 'Pragma' and captures the command.
+PRAGMA_REGEX = re.compile(
+    r"#\s*Pragma:\s*(?P<command>do-not-inline(?:-next-line)?|start-do-not-inline|end-do-not-inline|allow-outside-root)",
+    re.IGNORECASE,
+)
+
+
+class SourceSecurityError(RuntimeError):
+    pass
+
+
+class PragmaError(ValueError):
+    """Custom exception for pragma parsing errors."""
+
+
+def secure_join(
+    base_dir: Path,
+    user_path: str,
+    allowed_root: Path,
+    *,
+    bypass_security_check: bool = False,
+) -> Path:
+    """
+    Resolve 'user_path' (which may contain ../ and symlinks) against base_dir,
+    then ensure the final real path is inside allowed_root.
+
+    Args:
+        base_dir: The directory of the script doing the sourcing.
+        user_path: The path string from the source command.
+        allowed_root: The root directory that sourced files cannot escape.
+        bypass_security_check: If True, skips the check against allowed_root.
+    """
+    # Normalize separators and strip quotes/whitespace
+    user_path = user_path.strip().strip('"').strip("'").replace("\\", "/")
+
+    # Resolve relative to the including script's directory
+    candidate = (base_dir / user_path).resolve(strict=True)
+
+    # Ensure the real path (after following symlinks) is within allowed_root
+    allowed_root = allowed_root.resolve(strict=True)
+
+    if not os.environ.get("BASH2GITLAB_SKIP_ROOT_CHECKS") and not bypass_security_check:
+        if not is_relative_to(candidate, allowed_root):
+            raise SourceSecurityError(f"Refusing to source '{candidate}': escapes allowed root '{allowed_root}'.")
+    elif bypass_security_check:
+        logger.warning(
+            "Security check explicitly bypassed for path '%s' due to 'allow-outside-root' pragma.",
+            candidate,
+        )
+
+    return candidate
+
+
+def read_bash_script(path: Path) -> str:
+    """
+    Reads a bash script and inlines any sourced files.
+    This is the main entry point.
+    """
+    logger.debug(f"Reading and inlining script from: {path}")
+
+    # Use the recursive inliner to do all the work, including shebang handling.
+    content = inline_bash_source(path)
+
+    if not content.strip():
+        raise ValueError(f"Script is empty or only contains whitespace: {path}")
+
+    # The returned content is now final.
+    return content
+
+
+def inline_bash_source(
+    main_script_path: Path,
+    processed_files: set[Path] | None = None,
+    *,
+    allowed_root: Path | None = None,
+    max_depth: int = 64,
+    _depth: int = 0,
+) -> str:
+    """
+    Reads a bash script and recursively inlines content from sourced files,
+    honoring pragmas to prevent inlining or bypass security.
+
+    This function processes a bash script, identifies any 'source' or '.' commands,
+    and replaces them with the content of the specified script. It handles
+    nested sourcing, prevents infinite loops, and respects the following pragmas:
+    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+    - `# Pragma: end-do-not-inline`: Ends the block.
+    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+
+    Args:
+        main_script_path: The absolute path to the main bash script to process.
+        processed_files: A set used internally to track already processed files.
+        allowed_root: Root to prevent parent traversal.
+        max_depth: Maximum recursion depth for sourcing.
+        _depth: Current recursion depth (used internally).
+
+    Returns:
+        A string containing the script content with all sourced files inlined.
+
+    Raises:
+        FileNotFoundError: If the main_script_path or any sourced script does not exist.
+        PragmaError: If start/end pragmas are mismatched.
+        RecursionError: If max_depth is exceeded.
+    """
+    if processed_files is None:
+        processed_files = set()
+
+    if allowed_root is None:
+        allowed_root = Path.cwd()
+
+    # Normalize and security-check the entry script itself
+    try:
+        main_script_path = secure_join(
+            base_dir=main_script_path.parent if main_script_path.is_absolute() else Path.cwd(),
+            user_path=str(main_script_path),
+            allowed_root=allowed_root,
+        )
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Script not found: {main_script_path}") from None
+
+    if _depth > max_depth:
+        raise RecursionError(f"Max include depth ({max_depth}) exceeded at {main_script_path}")
+
+    if main_script_path in processed_files:
+        logger.warning("Circular source detected and skipped: %s", main_script_path)
+        return ""
+
+    # Check if the script exists before trying to read it
+    if not main_script_path.is_file():
+        raise FileNotFoundError(f"Script not found: {main_script_path}")
+
+    logger.debug(f"Processing script: {main_script_path}")
+    processed_files.add(main_script_path)
+
+    final_content_lines: list[str] = []
+    in_do_not_inline_block = False
+    skip_next_line = False
+
+    try:
+        with main_script_path.open("r", encoding="utf-8") as f:
+            lines = f.readlines()
+
+            # --- (FIX) SHEBANG HANDLING MOVED HERE ---
+            # Only strip the shebang if this is the top-level script (_depth == 0).
+            # This respects pragmas because the logic now happens *before* line-by-line processing.
+            if _depth == 0 and lines and lines[0].startswith("#!"):
+                logger.debug(f"Stripping shebang from main script: {lines[0].strip()}")
+                lines = lines[1:]
+
+            for line_num, line in enumerate(lines, 1):
+                source_match = SOURCE_COMMAND_REGEX.match(line)
+                pragma_match = PRAGMA_REGEX.search(line)
+                pragma_command = pragma_match.group("command").lower() if pragma_match else None
+
+                # --- (FIX) Phase 1: State Management & Strippable Pragmas ---
+                # These pragmas are control directives and should be stripped from the output.
+                if pragma_command == "start-do-not-inline":
+                    if in_do_not_inline_block:
+                        raise PragmaError(f"Cannot nest 'start-do-not-inline' at {main_script_path}:{line_num}")
+                    in_do_not_inline_block = True
+                    continue  # Strip the pragma line itself
+
+                if pragma_command == "end-do-not-inline":
+                    if not in_do_not_inline_block:
+                        raise PragmaError(f"Found 'end-do-not-inline' without 'start' at {main_script_path}:{line_num}")
+                    in_do_not_inline_block = False
+                    continue  # Strip the pragma line itself
+
+                if pragma_command == "do-not-inline-next-line":
+                    skip_next_line = True
+                    continue  # Strip the pragma line itself
+
+                # Any line with a 'do-not-inline' pragma is now stripped.
+                if pragma_command == "do-not-inline":
+                    continue
+
+                # --- (FIX) Phase 2: Content Filtering ---
+                # If we are inside a do-not-inline block, strip this line of content.
+                if in_do_not_inline_block:
+                    continue
+
+                # --- Phase 3: Line-by-line Processing (for lines we intend to keep) ---
+                should_inline = source_match is not None
+                reason_to_skip = ""
+
+                if skip_next_line:
+                    reason_to_skip = "previous line had 'do-not-inline-next-line' pragma"
+                    should_inline = False
+                    skip_next_line = False  # Consume the flag
+                    continue
+                # elif in_do_not_inline_block:
+                #     reason_to_skip = "currently in 'do-not-inline' block"
+                #     should_inline = False
+                elif pragma_command == "do-not-inline":
+                    reason_to_skip = "line contains 'do-not-inline' pragma"
+                    should_inline = False
+                    # Line is kept, just not inlined. Warning for non-sourcing lines.
+                    if not source_match:
+                        logger.warning(
+                            "Pragma 'do-not-inline' on non-sourcing line at %s:%d has no effect.",
+                            main_script_path,
+                            line_num,
+                        )
+
+                if pragma_command == "allow-outside-root" and not source_match:
+                    logger.warning(
+                        "Pragma 'allow-outside-root' on non-sourcing line at %s:%d has no effect.",
+                        main_script_path,
+                        line_num,
+                    )
+
+                # --- Perform Action: Inline or Append ---
+                if should_inline and source_match:
+                    sourced_script_name = source_match.group("path")
+                    bypass_security = pragma_command == "allow-outside-root"
+                    try:
+                        sourced_script_path = secure_join(
+                            base_dir=main_script_path.parent,
+                            user_path=sourced_script_name,
+                            allowed_root=allowed_root,
+                            bypass_security_check=bypass_security,
+                        )
+                    except (FileNotFoundError, SourceSecurityError) as e:
+                        logger.error(
+                            "Blocked/missing source '%s' from '%s': %s", sourced_script_name, main_script_path, e
+                        )
+                        raise
+
+                    logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
+                    inlined = inline_bash_source(
+                        sourced_script_path,
+                        processed_files,
+                        allowed_root=allowed_root,
+                        max_depth=max_depth,
+                        _depth=_depth + 1,
+                    )
+                    final_content_lines.append(inlined)
+                else:
+                    if source_match and reason_to_skip:
+                        logger.info(
+                            "Skipping inline of '%s' at %s:%d because %s.",
+                            source_match.group("path"),
+                            main_script_path,
+                            line_num,
+                            reason_to_skip,
+                        )
+                    final_content_lines.append(line)
+
+        if in_do_not_inline_block:
+            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {main_script_path}")
+
+    except Exception:
+        # Propagate after logging context
+        logger.exception("Failed to read or process %s", main_script_path)
+        raise
+
+    final = "".join(final_content_lines)
+    if not final.endswith("\n"):
+        return final + "\n"
+    return final
+```
+## File: commands\compile_detct_last_change.py
+```python
+# """Example integration of InputChangeDetector with run_compile_all function."""
+#
+# from pathlib import Path
+# import logging
+# from bash2gitlab.commands.input_change_detector import InputChangeDetector, needs_compilation, mark_compilation_complete
+#
+# logger = logging.getLogger(__name__)
+#
+#
+# def run_compile_all(
+#         uncompiled_path: Path,
+#         output_path: Path,
+#         dry_run: bool = False,
+#         parallelism: int | None = None,
+#         force: bool = False,  # New parameter to force compilation
+# ) -> int:
+#     """
+#     Main function to process a directory of uncompiled GitLab CI files.
+#     Now includes input change detection for efficient incremental builds.
+#
+#     Args:
+#         uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
+#         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
+#         dry_run (bool): If True, simulate the process without writing any files.
+#         parallelism (int | None): Maximum number of processes to use for parallel compilation.
+#         force (bool): If True, force compilation even if no input changes detected.
+#
+#     Returns:
+#         The total number of inlined sections across all files.
+#     """
+#
+#     # Check if compilation is needed (unless forced)
+#     if not force:
+#         if not needs_compilation(uncompiled_path):
+#             logger.info("No input changes detected since last compilation. Skipping compilation.")
+#             logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
+#             return 0
+#         else:
+#             logger.info("Input changes detected, proceeding with compilation...")
+#
+#     # ... existing code for strays check ...
+#     strays = report_targets(output_path)
+#     if strays:
+#         print("Stray files in output folder, halting")
+#         for stray in strays:
+#             print(f"  {stray}")
+#         sys.exit(200)
+#
+#     total_inlined_count = 0
+#     written_files_count = 0
+#
+#     if not dry_run:
+#         output_path.mkdir(parents=True, exist_ok=True)
+#
+#     # ... rest of existing compilation logic ...
+#
+#     # Your existing code here for processing files
+#     # global_vars_path = uncompiled_path / "global_variables.sh"
+#     # ... etc ...
+#
+#     # After successful compilation, mark as complete
+#     if not dry_run and (total_inlined_count > 0 or written_files_count > 0):
+#         try:
+#             mark_compilation_complete(uncompiled_path)
+#             logger.debug("Marked compilation as complete - updated input file hashes")
+#         except Exception as e:
+#             logger.warning(f"Failed to update input hashes: {e}")
+#
+#     if written_files_count == 0 and not dry_run:
+#         logger.warning(
+#             "No output files were written. This could be because all files are up-to-date, or due to errors."
+#         )
+#     elif not dry_run:
+#         logger.info(f"Successfully processed files. {written_files_count} file(s) were created or updated.")
+#     elif dry_run:
+#         logger.info(f"[DRY RUN] Simulation complete. Would have processed {written_files_count} file(s).")
+#
+#     return total_inlined_count
+#
+#
+# # Alternative: More granular approach for processing individual files
+# def run_compile_all_granular(
+#         uncompiled_path: Path,
+#         output_path: Path,
+#         dry_run: bool = False,
+#         parallelism: int | None = None,
+#         force: bool = False,
+# ) -> int:
+#     """
+#     Alternative implementation with per-file change detection.
+#     This allows skipping individual files that haven't changed.
+#     """
+#
+#     detector = InputChangeDetector(uncompiled_path)
+#
+#     # Clean up stale hashes first
+#     detector.cleanup_stale_hashes(uncompiled_path)
+#
+#     total_inlined_count = 0
+#     written_files_count = 0
+#
+#     # ... existing setup code ...
+#
+#     if uncompiled_path.is_dir():
+#         template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
+#         if not template_files:
+#             logger.warning(f"No template YAML files found in {uncompiled_path}")
+#
+#         files_to_process = []
+#         skipped_count = 0
+#
+#         for template_path in template_files:
+#             # Check if this specific file (or its dependencies) changed
+#             if force or detector.has_file_changed(template_path):
+#                 relative_path = template_path.relative_to(uncompiled_path)
+#                 output_file = output_path / relative_path
+#                 files_to_process.append((template_path, output_file, {}, "template file"))
+#             else:
+#                 skipped_count += 1
+#                 logger.debug(f"Skipping unchanged file: {template_path}")
+#
+#         if skipped_count > 0:
+#             logger.info(f"Skipped {skipped_count} unchanged file(s)")
+#
+#         if not files_to_process:
+#             logger.info("No files need compilation")
+#             return 0
+#
+#     # Process the files that need compilation
+#     # ... existing processing logic ...
+#
+#     # Mark successfully processed files as compiled
+#     if not dry_run:
+#         for src_path, _, _, _ in files_to_process:
+#             try:
+#                 detector._write_hash(
+#                     detector._get_hash_file_path(src_path),
+#                     detector.compute_content_hash(src_path)
+#                 )
+#             except Exception as e:
+#                 logger.warning(f"Failed to update hash for {src_path}: {e}")
+#
+#     return total_inlined_count
+#
+#
+# # Command line integration example
+# def add_change_detection_args(parser):
+#     """Add change detection arguments to argument parser."""
+#     parser.add_argument(
+#         '--force',
+#         action='store_true',
+#         help='Force compilation even if no input changes detected'
+#     )
+#     parser.add_argument(
+#         '--check-only',
+#         action='store_true',
+#         help='Only check if compilation is needed, do not compile'
+#     )
+#     parser.add_argument(
+#         '--list-changed',
+#         action='store_true',
+#         help='List files that have changed since last compilation'
+#     )
+#
+#
+# def handle_change_detection_commands(args, uncompiled_path: Path) -> bool:
+#     """Handle change detection specific commands. Returns True if command was handled."""
+#
+#     if args.check_only:
+#         if needs_compilation(uncompiled_path):
+#             print("Compilation needed: input files have changed")
+#             return True
+#         else:
+#             print("No compilation needed: no input changes detected")
+#             return True
+#
+#     if args.list_changed:
+#         from bash2gitlab.commands.input_change_detector import get_changed_files
+#         changed = get_changed_files(uncompiled_path)
+#         if changed:
+#             print("Changed files since last compilation:")
+#             for file_path in changed:
+#                 print(f"  {file_path}")
+#         else:
+#             print("No files have changed since last compilation")
+#         return True
+#
+#     return False
 ```
 ## File: commands\compile_not_bash.py
 ```python
@@ -5893,6 +5902,7 @@ def decompile_script_block(
     dry_run: bool = False,
     global_vars_filename: str | None = None,
     job_vars_filename: str | None = None,
+    minimum_lines: int = 1,
 ) -> tuple[str | None, str | None]:
     """Extract a script block into a ``.sh`` file and return (script_path, bash_command).
 
@@ -5906,6 +5916,17 @@ def decompile_script_block(
     script_lines = bashify_script_items(script_content, yaml)
     if not script_lines:
         logger.debug("Skipping empty script block in job '%s' for key '%s'.", job_name, script_key)
+        return None, None
+
+    # Check if the script meets the minimum lines requirement
+    if len(script_lines) < minimum_lines:
+        logger.debug(
+            "Skipping script block in job '%s' for key '%s' - only %d lines (minimum: %d)",
+            job_name,
+            script_key,
+            len(script_lines),
+            minimum_lines,
+        )
         return None, None
 
     script_filename = create_script_filename(job_name, script_key)
@@ -5933,7 +5954,7 @@ def decompile_script_block(
     script_header = "\n".join(header_parts)
     full_script_content = f"{script_header}\n\n" + "\n".join(script_lines) + "\n"
 
-    logger.info("Decompileding script from '%s:%s' to '%s'", job_name, script_key, short_path(script_filepath))
+    logger.info("Decompileded script from '%s:%s' to '%s'", job_name, script_key, short_path(script_filepath))
 
     if not dry_run:
         script_filepath.parent.mkdir(parents=True, exist_ok=True)
@@ -5963,6 +5984,7 @@ def process_decompile_job(
     yaml_dir: Path,
     dry_run: bool = False,
     global_vars_filename: str | None = None,
+    minimum_lines: int = 1,
 ) -> tuple[int, dict[str, str]]:
     """Process a single job definition to decompile its script and variables blocks.
 
@@ -5994,6 +6016,7 @@ def process_decompile_job(
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
                 job_vars_filename=job_vars_filename,
+                minimum_lines=minimum_lines,
             )
             if command:
                 job_data[key] = FoldedScalarString(command.replace("\\", "/"))
@@ -6015,10 +6038,7 @@ def iterate_yaml_files(root: Path) -> Iterable[Path]:
 
 
 def run_decompile_gitlab_file(
-    *,
-    input_yaml_path: Path,
-    output_dir: Path,
-    dry_run: bool = False,
+    *, input_yaml_path: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1
 ) -> tuple[int, int, Path]:
     """Decompile a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
 
@@ -6065,6 +6085,7 @@ def run_decompile_gitlab_file(
                 yaml_dir=yaml_dir,
                 dry_run=dry_run,
                 global_vars_filename=global_vars_filename,
+                minimum_lines=minimum_lines,
             )
             total_files_created += decompiled_count
             if scripts_info:
@@ -6094,10 +6115,7 @@ def run_decompile_gitlab_file(
 
 
 def run_decompile_gitlab_tree(
-    *,
-    input_root: Path,
-    output_dir: Path,
-    dry_run: bool = False,
+    *, input_root: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1
 ) -> tuple[int, int, int]:
     """Decompile *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
 
@@ -6115,7 +6133,9 @@ def run_decompile_gitlab_tree(
     for in_file in iterate_yaml_files(input_root):
         rel_dir = in_file.parent.relative_to(input_root)
         out_subdir = (output_dir / rel_dir).resolve()
-        jobs, created, _ = run_decompile_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run)
+        jobs, created, _ = run_decompile_gitlab_file(
+            input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run, minimum_lines=minimum_lines
+        )
         yaml_files_processed += 1
         total_jobs += jobs
         total_created += created
@@ -6533,7 +6553,7 @@ from graphviz import Source
 from pyvis.network import Network
 from ruamel.yaml.error import YAMLError
 
-from bash2gitlab.bash_reader import SOURCE_COMMAND_REGEX
+from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.temp_env import temporary_env_var
@@ -7056,6 +7076,298 @@ def run_init(directory, force) -> int:
         console.print(f"\n[bold red]An unexpected error occurred:[/bold red] {e}")
         logger.exception("Unexpected error during init.")
         return 1
+```
+## File: commands\input_change_detector.py
+```python
+"""Input change detection for bash2gitlab compilation.
+
+This module provides functionality to detect if input files have changed since
+the last compilation, allowing for efficient incremental builds.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+from pathlib import Path
+
+from bash2gitlab.utils.yaml_factory import get_yaml
+
+logger = logging.getLogger(__name__)
+
+
+def normalize_yaml_content(content: str) -> str:
+    """Normalize YAML content by loading and dumping to remove formatting differences."""
+    try:
+        yaml = get_yaml()
+        data = yaml.load(content)
+        # Use a clean YAML dumper for normalization
+        from ruamel.yaml import YAML
+
+        norm_yaml = YAML()
+        norm_yaml.preserve_quotes = False
+        norm_yaml.default_flow_style = False
+        from io import StringIO
+
+        output = StringIO()
+        norm_yaml.dump(data, output)
+        return output.getvalue()
+    except Exception as e:
+        logger.warning(f"Failed to normalize YAML content: {e}. Using original content.")
+        return content
+
+
+def normalize_text_content(content: str) -> str:
+    """Normalize text content by removing all whitespace."""
+    return "".join(content.split())
+
+
+def compute_content_hash(file_path: Path) -> str:
+    """Compute SHA-256 hash of file content, normalized appropriately."""
+    content = file_path.read_text(encoding="utf-8")
+
+    # Normalize based on file type
+    if file_path.suffix.lower() in {".yml", ".yaml"}:
+        normalized_content = normalize_yaml_content(content)
+    else:
+        normalized_content = normalize_text_content(content)
+
+    return hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
+
+
+class InputChangeDetector:
+    """Detects changes in input files since last compilation."""
+
+    def __init__(self, base_path: Path, hash_dir_name: str = ".bash2gitlab"):
+        """Initialize change detector.
+
+        Args:
+            base_path: Base directory for the project
+            hash_dir_name: Name of directory to store hash files
+        """
+        self.base_path = base_path
+        self.hash_dir = base_path / hash_dir_name / "input_hashes"
+
+    def _get_hash_file_path(self, input_file: Path) -> Path:
+        """Get the hash file path for an input file."""
+        # Create a mirror directory structure in the hash directory
+        try:
+            rel_path = input_file.relative_to(self.base_path)
+        except ValueError:
+            # If input_file is not relative to base_path, use absolute path conversion
+            rel_path = Path(str(input_file).lstrip("/\\").replace(":", "_"))
+
+        hash_file = self.hash_dir / rel_path.with_suffix(rel_path.suffix + ".hash")
+        return hash_file
+
+    def _read_stored_hash(self, hash_file: Path) -> str | None:
+        """Read stored hash from hash file."""
+        try:
+            if hash_file.exists():
+                return hash_file.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            logger.warning(f"Failed to read hash file {hash_file}: {e}")
+        return None
+
+    def _write_hash(self, hash_file: Path, content_hash: str) -> None:
+        """Write hash to hash file."""
+        try:
+            hash_file.parent.mkdir(parents=True, exist_ok=True)
+            hash_file.write_text(content_hash, encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Failed to write hash file {hash_file}: {e}")
+
+    def has_file_changed(self, file_path: Path) -> bool:
+        """Check if a single file has changed since last compilation.
+
+        Args:
+            file_path: Path to the input file to check
+
+        Returns:
+            True if file has changed or no previous hash exists, False otherwise
+        """
+        if not file_path.exists():
+            logger.warning(f"Input file does not exist: {file_path}")
+            return True
+
+        hash_file = self._get_hash_file_path(file_path)
+        stored_hash = self._read_stored_hash(hash_file)
+
+        if stored_hash is None:
+            logger.debug(f"No previous hash for {file_path}, considering changed")
+            return True
+
+        current_hash = compute_content_hash(file_path)
+        changed = current_hash != stored_hash
+
+        if changed:
+            logger.debug(f"File changed: {file_path}")
+        else:
+            logger.debug(f"File unchanged: {file_path}")
+
+        return changed
+
+    def needs_compilation(self, input_dir: Path) -> bool:
+        """Check if any input file in the directory has changed.
+
+        Args:
+            input_dir: Directory containing input files
+
+        Returns:
+            True if any file has changed, False if all files are unchanged
+        """
+        if not input_dir.exists():
+            logger.warning(f"Input directory does not exist: {input_dir}")
+            return True
+
+        # Get all relevant input files
+        input_files: list[Path] = []
+        for pattern in ["*.yml", "*.yaml", "*.sh", "*.py", "*.js", "*.rb", "*.php", "*.fish"]:
+            input_files.extend(input_dir.rglob(pattern))
+
+        if not input_files:
+            logger.info(f"No input files found in {input_dir}")
+            return False
+
+        # Check if any file has changed
+        for file_path in input_files:
+            if self.has_file_changed(file_path):
+                logger.info(f"Compilation needed: {file_path} has changed")
+                return True
+
+        logger.info("No input files have changed, compilation not needed")
+        return False
+
+    def get_changed_files(self, input_dir: Path) -> list[Path]:
+        """Get list of files that have changed since last compilation.
+
+        Args:
+            input_dir: Directory containing input files
+
+        Returns:
+            List of paths to files that have changed
+        """
+        if not input_dir.exists():
+            return []
+
+        changed_files = []
+
+        # Get all relevant input files
+        input_files: list[Path] = []
+        for pattern in ["*.yml", "*.yaml", "*.sh", "*.py", "*.js", "*.rb", "*.php", "*.fish"]:
+            input_files.extend(input_dir.rglob(pattern))
+
+        for file_path in input_files:
+            if self.has_file_changed(file_path):
+                changed_files.append(file_path)
+
+        return changed_files
+
+    def mark_compiled(self, input_dir: Path) -> None:
+        """Mark all input files as compiled by updating their hashes.
+
+        Args:
+            input_dir: Directory containing input files that were compiled
+        """
+        if not input_dir.exists():
+            logger.warning(f"Input directory does not exist: {input_dir}")
+            return
+
+        # Get all relevant input files
+        input_files: list[Path] = []
+        for pattern in ["*.yml", "*.yaml", "*.sh", "*.py", "*.js", "*.rb", "*.php", "*.fish"]:
+            input_files.extend(input_dir.rglob(pattern))
+
+        for file_path in input_files:
+            try:
+                current_hash = compute_content_hash(file_path)
+                hash_file = self._get_hash_file_path(file_path)
+                self._write_hash(hash_file, current_hash)
+                logger.debug(f"Updated hash for {file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to update hash for {file_path}: {e}")
+
+    def cleanup_stale_hashes(self, input_dir: Path) -> None:
+        """Remove hash files for input files that no longer exist.
+
+        Args:
+            input_dir: Directory containing current input files
+        """
+        if not self.hash_dir.exists():
+            return
+
+        # Get current input files
+        current_files: set[Path] = set()
+        if input_dir.exists():
+            for pattern in ["*.yml", "*.yaml", "*.sh", "*.py", "*.js", "*.rb", "*.php", "*.fish"]:
+                current_files.update(input_dir.rglob(pattern))
+
+        # Find and remove stale hash files
+        removed_count = 0
+        for hash_file in self.hash_dir.rglob("*.hash"):
+            # Reconstruct the original file path
+            try:
+                rel_path = hash_file.relative_to(self.hash_dir)
+                original_path = self.base_path / rel_path.with_suffix(rel_path.suffixes[0])  # Remove .hash
+
+                if original_path not in current_files:
+                    hash_file.unlink()
+                    removed_count += 1
+                    logger.debug(f"Removed stale hash file: {hash_file}")
+            except Exception as e:
+                logger.warning(f"Error processing hash file {hash_file}: {e}")
+
+        if removed_count > 0:
+            logger.info(f"Cleaned up {removed_count} stale hash files")
+
+
+# Convenience functions for drop-in replacement
+def needs_compilation(input_dir: Path, base_path: Path | None = None) -> bool:
+    """Check if compilation is needed for input directory.
+
+    Args:
+        input_dir: Directory containing input files
+        base_path: Base path for hash storage (defaults to input_dir)
+
+    Returns:
+        True if compilation is needed, False otherwise
+    """
+    if base_path is None:
+        base_path = input_dir
+
+    detector = InputChangeDetector(base_path)
+    return detector.needs_compilation(input_dir)
+
+
+def mark_compilation_complete(input_dir: Path, base_path: Path | None = None) -> None:
+    """Mark compilation as complete for input directory.
+
+    Args:
+        input_dir: Directory containing input files that were compiled
+        base_path: Base path for hash storage (defaults to input_dir)
+    """
+    if base_path is None:
+        base_path = input_dir
+
+    detector = InputChangeDetector(base_path)
+    detector.mark_compiled(input_dir)
+
+
+def get_changed_files(input_dir: Path, base_path: Path | None = None) -> list[Path]:
+    """Get list of changed files in input directory.
+
+    Args:
+        input_dir: Directory containing input files
+        base_path: Base path for hash storage (defaults to input_dir)
+
+    Returns:
+        List of paths to files that have changed
+    """
+    if base_path is None:
+        base_path = input_dir
+
+    detector = InputChangeDetector(base_path)
+    return detector.get_changed_files(input_dir)
 ```
 ## File: commands\lint_all.py
 ```python
@@ -8178,45 +8490,189 @@ if __name__ == "__main__":
 ```
 ## File: utils\dotenv.py
 ```python
-""".env file support"""
+""".env file support with descriptions"""
 
 from __future__ import annotations
 
 import logging
+import os
 import re
+from pathlib import Path
+from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
 
-def parse_env_file(file_content: str) -> dict[str, str]:
+class EnvVar(TypedDict):
+    """Type definition for environment variable with optional description."""
+
+    value: str
+    description: str | None
+
+
+def parse_env_content_with_descriptions(content: str) -> dict[str, EnvVar]:
     """
-    Parses a .env-style file content into a dictionary.
+    Parses .env-style content string into a dictionary with descriptions.
     Handles lines like 'KEY=VALUE' and 'export KEY=VALUE'.
+    Associates comments immediately preceding variable definitions as descriptions.
 
     Args:
-        file_content (str): The content of the variables file.
+        content: The .env file content as a string.
+
+    Returns:
+        dict[str, EnvVar]: A dictionary mapping variable names to EnvVar objects
+                          containing value and optional description.
+    """
+    variables: dict[str, EnvVar] = {}
+    current_description: str | None = None
+
+    logger.debug("Parsing environment content")
+
+    for line in content.splitlines():
+        stripped_line = line.strip()
+
+        # Skip empty lines
+        if not stripped_line:
+            current_description = None
+            continue
+
+        # Handle comments
+        if stripped_line.startswith("#"):
+            # Extract comment text (remove # and leading/trailing whitespace)
+            comment_text = stripped_line[1:].strip()
+            if comment_text:  # Only use non-empty comments as descriptions
+                current_description = comment_text
+            continue
+
+        # Try to match variable assignment
+        match = re.match(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$", stripped_line)
+        if match:
+            key = match.group("key")
+            value = match.group("value").strip()
+
+            # Remove matching quotes from the value
+            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                value = value[1:-1]
+
+            variables[key] = EnvVar(value=value, description=current_description)
+            logger.debug(
+                f"Found variable: {key} = {value}"
+                + (f" (description: {current_description})" if current_description else "")
+            )
+
+            # Reset description after using it
+            current_description = None
+        else:
+            # If line doesn't match variable pattern, reset description
+            current_description = None
+
+    return variables
+
+
+def parse_env_file_with_descriptions(file_path: Path | str) -> dict[str, EnvVar]:
+    """
+    Parses a .env-style file into a dictionary with descriptions.
+    Handles lines like 'KEY=VALUE' and 'export KEY=VALUE'.
+    Associates comments immediately preceding variable definitions as descriptions.
+
+    Args:
+        file_path: Path to the .env file to parse.
+
+    Returns:
+        dict[str, EnvVar]: A dictionary mapping variable names to EnvVar objects
+                          containing value and optional description.
+    """
+    file_path = Path(file_path)
+
+    if not file_path.exists():
+        logger.warning(f"Environment file {file_path} does not exist")
+        return {}
+
+    content = file_path.read_text(encoding="utf-8")
+    logger.debug(f"Parsing environment file: {file_path}")
+
+    return parse_env_content_with_descriptions(content)
+
+
+def set_environment_variables(env_vars: dict[str, EnvVar]) -> None:
+    """
+    Sets environment variables from the parsed structure.
+
+    Args:
+        env_vars: Dictionary of environment variables with descriptions.
+    """
+    logger.debug("Setting environment variables")
+
+    for key, env_var in env_vars.items():
+        os.environ[key] = env_var["value"]
+        logger.debug(f"Set environment variable: {key} = {env_var['value']}")
+
+
+def write_env_file(env_vars: dict[str, EnvVar], file_path: Path | str, include_export: bool = False) -> None:
+    """
+    Writes environment variables with descriptions to a .env file.
+
+    Args:
+        env_vars: Dictionary of environment variables with descriptions.
+        file_path: Path where to write the .env file.
+        include_export: Whether to prefix variables with 'export'.
+    """
+    file_path = Path(file_path)
+    logger.debug(f"Writing environment file: {file_path}")
+
+    lines: list[str] = []
+
+    for key, env_var in env_vars.items():
+        # Add description as comment if present
+        if env_var["description"]:
+            lines.append(f"# {env_var['description']}")
+
+        # Format the variable assignment
+        prefix = "export " if include_export else ""
+        value = env_var["value"]
+
+        # Quote the value if it contains spaces or special characters
+        if " " in value or any(char in value for char in "\"'$`\\"):
+            value = f'"{value}"'
+
+        lines.append(f"{prefix}{key}={value}")
+        lines.append("")  # Add empty line for readability
+
+    # Remove trailing empty line
+    if lines and lines[-1] == "":
+        lines.pop()
+
+    file_path.write_text("\n".join(lines), encoding="utf-8")
+    logger.debug(f"Successfully wrote {len(env_vars)} variables to {file_path}")
+
+
+def env_vars_to_simple_dict(env_vars: dict[str, EnvVar]) -> dict[str, str]:
+    """
+    Converts the environment variables structure to a simple key-value dictionary.
+
+    Args:
+        env_vars: Dictionary of environment variables with descriptions.
+
+    Returns:
+        dict[str, str]: Simple dictionary mapping variable names to values.
+    """
+    return {key: env_var["value"] for key, env_var in env_vars.items()}
+
+
+# Legacy function for backwards compatibility
+def parse_env_file(file_content: str) -> dict[str, str]:
+    """
+    Legacy function: Parses a .env-style file content into a simple dictionary.
+    This maintains compatibility with existing code by delegating to the new implementation.
+
+    Args:
+        file_content: The content of the variables file.
 
     Returns:
         dict[str, str]: A dictionary of the parsed variables.
     """
-    variables = {}
-    logger.debug("Parsing global variables file.")
-    for line in file_content.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        # Regex to handle 'export KEY=VALUE', 'KEY=VALUE', etc.
-        match = re.match(r"^(?:export\s+)?(?P<key>[A-Za-z_][A-Za-z0-9_]*)=(?P<value>.*)$", line)
-        if match:
-            key = match.group("key")
-            value = match.group("value").strip()
-            # Remove matching quotes from the value
-            if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-                value = value[1:-1]
-            variables[key] = value
-            logger.debug(f"Found global variable: {key}")
-    return variables
+    env_vars = parse_env_content_with_descriptions(file_content)
+    return env_vars_to_simple_dict(env_vars)
 ```
 ## File: utils\logging_config.py
 ```python

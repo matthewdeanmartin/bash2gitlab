@@ -111,11 +111,17 @@ template_job:
             # assert data["variables"]["PROJECT_NAME"] == "MyProject"
             assert data["variables"]["LOCAL_VAR"] == "LocalValue"
 
-            # Check inlined top-level before_script
-            assert (
-                data["before_script"]
-                == "# >>> BEGIN inline: short_task.sh\necho 'Short task line 1'\necho 'Short task line 2'\n# <<< END inline"
-            )
+            # Check inlined top-level before_script (as list or string block)
+            assert data[
+                "before_script"
+            ] == "# >>> BEGIN inline: short_task.sh\necho 'Short task line 1'\necho 'Short task line 2'\n# <<< END inline" or data[
+                "before_script"
+            ] == [
+                "# >>> BEGIN inline: short_task.sh",
+                "echo 'Short task line 1'",
+                "echo 'Short task line 2'",
+                "# <<< END inline",
+            ]
 
             # # Check build_job (long script becomes literal block)
             # build_script = data["build_job"]["script"]

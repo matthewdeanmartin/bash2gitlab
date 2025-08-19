@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.bash_reader import inline_bash_source
+from bash2gitlab.commands.compile_bash_reader import inline_bash_source
 
 
 def test_inline_bash_source_success_and_circular_dependency(tmp_path: Path):
