@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from test.temp_change_dir import chdir_to_file_dir
 
@@ -10,6 +11,8 @@ def test_yaml_it_src_to_out_3():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario3/.src")
         output_root = Path("scenario3/out")
+        shutil.rmtree(str(Path(__file__).parent / "scenario3/out"))
+
         run_compile_all(uncompiled, output_root)
 
         for file in output_root.rglob("*.yml"):

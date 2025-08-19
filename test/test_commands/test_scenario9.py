@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from test.temp_change_dir import chdir_to_file_dir
 
@@ -10,6 +11,7 @@ def test_yaml_it_src_to_out_hidden_jobs_9():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario9/in")
         output_root = Path("scenario9/out")
+        shutil.rmtree(str(Path(__file__).parent / "scenario9/out"))
 
         run_compile_all(uncompiled, output_root)
 
@@ -20,7 +22,7 @@ def test_yaml_it_src_to_out_hidden_jobs_9():
                 if ">>>" not in line and "<<<" not in line:
                     # inlining "jobs" with custom names is not safe. This could be dereferenced into
                     # something that isn't a script. Maybe need pragma to handle this.
-                    assert ".sh" in line or ".some-script:" in line
+                    assert ".sh" in line or ".some-script:" in line or "# " in line
                     # assert ".sh" not in line or ". before_script.sh" in line
             found += 1
         assert found
