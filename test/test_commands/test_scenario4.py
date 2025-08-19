@@ -11,7 +11,7 @@ def test_yaml_it_src_to_out_4():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario4/uncompiled")
         output_root = Path("scenario4/.out")
-        shutil.rmtree(str(Path(__file__).parent / "scenario4/.out"))
+        shutil.rmtree(str(Path(__file__).parent / "scenario4/.out"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

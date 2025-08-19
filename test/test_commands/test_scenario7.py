@@ -11,7 +11,7 @@ def test_yaml_it_src_to_out_7():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario7/in")
         output_root = Path("scenario7/out")
-        shutil.rmtree(str(Path(__file__).parent / "scenario7/out"))
+        shutil.rmtree(str(Path(__file__).parent / "scenario7/out"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

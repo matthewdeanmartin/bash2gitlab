@@ -11,7 +11,7 @@ def test_yaml_must_preserve_references_and_multiscripts():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario10/uncompiled")
         output_root = Path("scenario10/out")
-        shutil.rmtree(str(Path(__file__).parent / "scenario10/out"))
+        shutil.rmtree(str(Path(__file__).parent / "scenario10/out"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

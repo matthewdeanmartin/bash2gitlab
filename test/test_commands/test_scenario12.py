@@ -11,7 +11,7 @@ def test_yaml_it_src_to_out_12_powershell():
     with chdir_to_file_dir(__file__):
         uncompiled = Path("scenario12_ps1/folder")
         output_root = Path("scenario12_ps1/out")
-        shutil.rmtree(str(Path(__file__).parent / "scenario12_ps1/out"))
+        shutil.rmtree(str(Path(__file__).parent / "scenario12_ps1/out"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 
