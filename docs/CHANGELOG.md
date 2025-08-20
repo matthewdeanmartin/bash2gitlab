@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.19] - 2025-08-19
+
+### Fixed
+- Fixed regression where scripts were quoted lists again. Added a lot of unit tests.
+
+### Added
+- Compile will skip if no changes have been made since last compile to any file in the input folder.
+
+## [0.8.18] - 2025-08-19
+
+### Fixed
+- Fix for variable lists turning into a string block/`!reference` turning into a plain list.
+
 ## [0.8.17] - 2025-08-17
 
 ### Fixed
@@ -22,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lint didn't get gitlab_url from config
 - Fix `Pragma` feature
 - Fix tkinter to change tab when command run
+
 
 ## [0.8.16] - 2025-08-17
 

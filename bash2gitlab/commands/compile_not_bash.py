@@ -103,6 +103,7 @@ _INTERPRETER_EXTS: dict[str, tuple[str, ...]] = {
 }
 
 # Match common interpreter invocations. Supports python -m, deno/bun run, and tail args.
+# BUG: might not handle script files with spaces in the name. Maybe use shlex.split().
 _INTERP_LINE = re.compile(
     r"""
     ^\s*

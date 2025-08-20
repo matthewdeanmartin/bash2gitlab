@@ -2,7 +2,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from ruamel.yaml.comments import CommentedSeq
 from ruamel.yaml.constructor import TaggedScalar
 
 # Make sure ruamel.yaml is installed: pip install ruamel.yaml
@@ -73,26 +72,6 @@ def test_list_with_tagged_scalar_preserves_sequence(scripts_root):
     assert result[1] is my_tag
     assert isinstance(result[1], TaggedScalar)
     assert result[1].tag == "!secret"
-
-
-def test_multiline_reference_string_is_transformed(scripts_root):
-    """Test the new logic that transforms a multi-line string of refs into a !reference tag."""
-    # This simulates a single string item from YAML that contains newlines
-    script_list = [".job1.script\n.job2.before_script"]
-
-    result = process_script_list(script_list, scripts_root)
-
-    # The result should be a list/seq containing one item: the new TaggedScalar
-    assert isinstance(result, list)
-    assert len(result) == 1
-
-    tagged_item = result[0]
-    assert isinstance(tagged_item, TaggedScalar)
-    assert tagged_item.tag == "!reference"
-
-    # The value of the tag should be a CommentedSeq of the individual lines
-    assert isinstance(tagged_item.value, CommentedSeq)
-    assert tagged_item.value == [".job1.script", ".job2.before_script"]
 
 
 def test_multiline_string_not_a_reference_is_kept_as_is(scripts_root):

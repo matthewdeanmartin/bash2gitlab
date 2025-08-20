@@ -207,3 +207,4 @@ marimo/_lsp/
 __marimo__/
 .build_history
 .justlogs
+.bash2gitlab

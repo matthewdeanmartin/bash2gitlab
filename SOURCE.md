@@ -3096,6 +3096,7 @@ def compile_handler(args: argparse.Namespace) -> int:
     in_dir = Path(args.input_dir).resolve()
     out_dir = Path(args.output_dir).resolve()
     dry_run = bool(args.dry_run)
+    force = bool(args.force)
     parallelism = args.parallelism
 
     if args.watch:
@@ -3109,10 +3110,7 @@ def compile_handler(args: argparse.Namespace) -> int:
 
     try:
         run_compile_all(
-            uncompiled_path=in_dir,
-            output_path=out_dir,
-            dry_run=dry_run,
-            parallelism=parallelism,
+            uncompiled_path=in_dir, output_path=out_dir, dry_run=dry_run, parallelism=parallelism, force=force
         )
 
         logger.info("✅ GitLab CI processing complete.")
@@ -3337,6 +3335,7 @@ def main() -> int:
         action="store_true",
         help="Watch source directories and auto-recompile on changes.",
     )
+    parser.add_argument("--force", action="store_true", help="Force compilation even if no input changes detected")
     add_common_arguments(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
 
@@ -4184,6 +4183,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.commands.compile_bash_reader import read_bash_script
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
+from bash2gitlab.commands.input_change_detector import mark_compilation_complete, needs_compilation
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
@@ -4349,20 +4349,6 @@ def process_script_list(
             # Preserve any non-string node (e.g., TaggedScalar, Commented* nodes)
             processed_items.append(item)
             continue
-        # --- BEGIN: NEW LOGIC TO HANDLE !reference TRANSFORMATION ---
-        # Check for multi-line strings where each line is a reference (starts with '.')
-        # This is a specific pattern for GitLab's !reference tag.
-        lines = item.splitlines()
-        if len(lines) > 1 and all(line.strip().startswith(".") for line in lines):
-            logger.debug(f"Found multi-line reference block, converting to !reference tag: {lines}")
-            # Create a sequence of the individual reference strings
-            references = CommentedSeq([line.strip() for line in lines])
-            # Create the TaggedScalar object representing !reference [...]
-            tagged_reference = TaggedScalar(value=references, tag="!reference")
-            processed_items.append(tagged_reference)
-            # This item is handled, skip the rest of the loop
-            continue
-        # --- END: NEW LOGIC ---
 
         # Plain string: attempt to detect and inline scripts
         pm = get_pm()
@@ -4771,6 +4757,7 @@ def run_compile_all(
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
+    force: bool = False,
 ) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
@@ -4781,10 +4768,20 @@ def run_compile_all(
         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
         dry_run (bool): If True, simulate the process without writing any files.
         parallelism (int | None): Maximum number of processes to use for parallel compilation.
+        force (bool): If True, compile even if it appears to not be need because nothing changed.
 
     Returns:
         The total number of inlined sections across all files.
     """
+    # Check if compilation is needed (unless forced)
+    if not force:
+        if not needs_compilation(uncompiled_path):
+            logger.info("No input changes detected since last compilation. Skipping compilation.")
+            logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
+            return 0
+        else:
+            logger.info("Input changes detected, proceeding with compilation...")
+
     inferred_cli_command = infer_cli(uncompiled_path, output_path, dry_run, parallelism)
     strays = report_targets(output_path)
     if strays:
@@ -4839,6 +4836,14 @@ def run_compile_all(
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
+
+    # After successful compilation, mark as complete
+    if not dry_run and (total_inlined_count > 0 or written_files_count > 0):
+        try:
+            mark_compilation_complete(uncompiled_path)
+            logger.debug("Marked compilation as complete - updated input file hashes")
+        except Exception as e:
+            logger.warning(f"Failed to update input hashes: {e}")
 
     if written_files_count == 0 and not dry_run:
         logger.warning(
@@ -5154,144 +5159,8 @@ def inline_bash_source(
 # from bash2gitlab.commands.input_change_detector import InputChangeDetector, needs_compilation, mark_compilation_complete
 #
 # logger = logging.getLogger(__name__)
-#
-#
-# def run_compile_all(
-#         uncompiled_path: Path,
-#         output_path: Path,
-#         dry_run: bool = False,
-#         parallelism: int | None = None,
-#         force: bool = False,  # New parameter to force compilation
-# ) -> int:
-#     """
-#     Main function to process a directory of uncompiled GitLab CI files.
-#     Now includes input change detection for efficient incremental builds.
-#
-#     Args:
-#         uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
-#         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
-#         dry_run (bool): If True, simulate the process without writing any files.
-#         parallelism (int | None): Maximum number of processes to use for parallel compilation.
-#         force (bool): If True, force compilation even if no input changes detected.
-#
-#     Returns:
-#         The total number of inlined sections across all files.
-#     """
-#
-#     # Check if compilation is needed (unless forced)
-#     if not force:
-#         if not needs_compilation(uncompiled_path):
-#             logger.info("No input changes detected since last compilation. Skipping compilation.")
-#             logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
-#             return 0
-#         else:
-#             logger.info("Input changes detected, proceeding with compilation...")
-#
-#     # ... existing code for strays check ...
-#     strays = report_targets(output_path)
-#     if strays:
-#         print("Stray files in output folder, halting")
-#         for stray in strays:
-#             print(f"  {stray}")
-#         sys.exit(200)
-#
-#     total_inlined_count = 0
-#     written_files_count = 0
-#
-#     if not dry_run:
-#         output_path.mkdir(parents=True, exist_ok=True)
-#
-#     # ... rest of existing compilation logic ...
-#
-#     # Your existing code here for processing files
-#     # global_vars_path = uncompiled_path / "global_variables.sh"
-#     # ... etc ...
-#
-#     # After successful compilation, mark as complete
-#     if not dry_run and (total_inlined_count > 0 or written_files_count > 0):
-#         try:
-#             mark_compilation_complete(uncompiled_path)
-#             logger.debug("Marked compilation as complete - updated input file hashes")
-#         except Exception as e:
-#             logger.warning(f"Failed to update input hashes: {e}")
-#
-#     if written_files_count == 0 and not dry_run:
-#         logger.warning(
-#             "No output files were written. This could be because all files are up-to-date, or due to errors."
-#         )
-#     elif not dry_run:
-#         logger.info(f"Successfully processed files. {written_files_count} file(s) were created or updated.")
-#     elif dry_run:
-#         logger.info(f"[DRY RUN] Simulation complete. Would have processed {written_files_count} file(s).")
-#
-#     return total_inlined_count
-#
-#
-# # Alternative: More granular approach for processing individual files
-# def run_compile_all_granular(
-#         uncompiled_path: Path,
-#         output_path: Path,
-#         dry_run: bool = False,
-#         parallelism: int | None = None,
-#         force: bool = False,
-# ) -> int:
-#     """
-#     Alternative implementation with per-file change detection.
-#     This allows skipping individual files that haven't changed.
-#     """
-#
-#     detector = InputChangeDetector(uncompiled_path)
-#
-#     # Clean up stale hashes first
-#     detector.cleanup_stale_hashes(uncompiled_path)
-#
-#     total_inlined_count = 0
-#     written_files_count = 0
-#
-#     # ... existing setup code ...
-#
-#     if uncompiled_path.is_dir():
-#         template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
-#         if not template_files:
-#             logger.warning(f"No template YAML files found in {uncompiled_path}")
-#
-#         files_to_process = []
-#         skipped_count = 0
-#
-#         for template_path in template_files:
-#             # Check if this specific file (or its dependencies) changed
-#             if force or detector.has_file_changed(template_path):
-#                 relative_path = template_path.relative_to(uncompiled_path)
-#                 output_file = output_path / relative_path
-#                 files_to_process.append((template_path, output_file, {}, "template file"))
-#             else:
-#                 skipped_count += 1
-#                 logger.debug(f"Skipping unchanged file: {template_path}")
-#
-#         if skipped_count > 0:
-#             logger.info(f"Skipped {skipped_count} unchanged file(s)")
-#
-#         if not files_to_process:
-#             logger.info("No files need compilation")
-#             return 0
-#
-#     # Process the files that need compilation
-#     # ... existing processing logic ...
-#
-#     # Mark successfully processed files as compiled
-#     if not dry_run:
-#         for src_path, _, _, _ in files_to_process:
-#             try:
-#                 detector._write_hash(
-#                     detector._get_hash_file_path(src_path),
-#                     detector.compute_content_hash(src_path)
-#                 )
-#             except Exception as e:
-#                 logger.warning(f"Failed to update hash for {src_path}: {e}")
-#
-#     return total_inlined_count
-#
-#
+
+
 # # Command line integration example
 # def add_change_detection_args(parser):
 #     """Add change detection arguments to argument parser."""
@@ -5443,6 +5312,7 @@ _INTERPRETER_EXTS: dict[str, tuple[str, ...]] = {
 }
 
 # Match common interpreter invocations. Supports python -m, deno/bun run, and tail args.
+# BUG: might not handle script files with spaces in the name. Maybe use shlex.split().
 _INTERP_LINE = re.compile(
     r"""
     ^\s*
@@ -7114,6 +6984,25 @@ def compute_content_hash(file_path: Path) -> str:
     return hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
 
 
+def _read_stored_hash(hash_file: Path) -> str | None:
+    """Read stored hash from hash file."""
+    try:
+        if hash_file.exists():
+            return hash_file.read_text(encoding="utf-8").strip()
+    except Exception as e:
+        logger.warning(f"Failed to read hash file {hash_file}: {e}")
+    return None
+
+
+def _write_hash(hash_file: Path, content_hash: str) -> None:
+    """Write hash to hash file."""
+    try:
+        hash_file.parent.mkdir(parents=True, exist_ok=True)
+        hash_file.write_text(content_hash, encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Failed to write hash file {hash_file}: {e}")
+
+
 class InputChangeDetector:
     """Detects changes in input files since last compilation."""
 
@@ -7139,23 +7028,6 @@ class InputChangeDetector:
         hash_file = self.hash_dir / rel_path.with_suffix(rel_path.suffix + ".hash")
         return hash_file
 
-    def _read_stored_hash(self, hash_file: Path) -> str | None:
-        """Read stored hash from hash file."""
-        try:
-            if hash_file.exists():
-                return hash_file.read_text(encoding="utf-8").strip()
-        except Exception as e:
-            logger.warning(f"Failed to read hash file {hash_file}: {e}")
-        return None
-
-    def _write_hash(self, hash_file: Path, content_hash: str) -> None:
-        """Write hash to hash file."""
-        try:
-            hash_file.parent.mkdir(parents=True, exist_ok=True)
-            hash_file.write_text(content_hash, encoding="utf-8")
-        except Exception as e:
-            logger.warning(f"Failed to write hash file {hash_file}: {e}")
-
     def has_file_changed(self, file_path: Path) -> bool:
         """Check if a single file has changed since last compilation.
 
@@ -7170,7 +7042,7 @@ class InputChangeDetector:
             return True
 
         hash_file = self._get_hash_file_path(file_path)
-        stored_hash = self._read_stored_hash(hash_file)
+        stored_hash = _read_stored_hash(hash_file)
 
         if stored_hash is None:
             logger.debug(f"No previous hash for {file_path}, considering changed")
@@ -7261,7 +7133,7 @@ class InputChangeDetector:
             try:
                 current_hash = compute_content_hash(file_path)
                 hash_file = self._get_hash_file_path(file_path)
-                self._write_hash(hash_file, current_hash)
+                _write_hash(hash_file, current_hash)
                 logger.debug(f"Updated hash for {file_path}")
             except Exception as e:
                 logger.warning(f"Failed to update hash for {file_path}: {e}")

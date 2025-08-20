@@ -12,6 +12,7 @@ def test_yaml_it_src_to_out_17_list_confusion():
         uncompiled = Path("scenario17_list_confusion/src")
         output_root = Path("scenario17_list_confusion/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario17_list_confusion/out"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario17_list_confusion/src/.bash2gitlab"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

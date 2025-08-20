@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed regression where scripts were quoted lists again. Added a lot of unit tests.
 
+### Added
+- Compile will skip if no changes have been made since last compile to any file in the input folder.
+
 ## [0.8.18] - 2025-08-19
 
 ### Fixed

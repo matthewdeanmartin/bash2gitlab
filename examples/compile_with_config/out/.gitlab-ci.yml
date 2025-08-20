@@ -3,30 +3,30 @@
 # Recompile instead of editing this file.
 #
 # Compiled with the command: 
-#     bash2gitlab\.venv\Scripts\bash2gitlab.exe compile
+#     bash2gitlab compile --in C:\github\bash2gitlab\examples\compile_with_config\src --out C:\github\bash2gitlab\examples\compile_with_config\out
 
 # .gitlab-ci.yml for a GnuCOBOL Payroll Tax Calculation Program
 
 # Define the stages of the CI/CD pipeline
-stages:
-- build
-- test
+"stages":
+- |-
+  build
+  test
+"default":
+  "image": "hurriedreformist/gnucobol:latest"
 
-# Use a Docker image that has GnuCOBOL pre-installed. Z
-# You can find various images on Docker Hub or create your own.
-default:
-  image: hurriedreformist/gnucobol:latest
-
-variables:
-  A: 1
-  b: 2
+"variables":
+  "A": !!int "1"
+  "b": !!int "2"
 
 # --- Build Stage ---
 # This job compiles the GnuCOBOL source code into an executable file.
-build_cobol_program:
-  stage: build
-  script: |-
+"build_cobol_program":
+  "stage": "build"
+  "script":
+  - |-
     # >>> BEGIN inline: build.sh
+    #
     # The -x flag creates an executable.
     # The -o flag specifies the output name for the executable.
     if [[ "${CI:-}" == "" ]]; then
@@ -35,23 +35,24 @@ build_cobol_program:
     # Define a variable for the program name to easily reuse it
     export PROGRAM_NAME=payroll_tax
     # Define the name for the compiled artifact
-    export EXECUTABLE_NAME=payroll_tax_calculatorfi
+    export EXECUTABLE_NAME=payroll_tax_calculator
+    fi
     cobc -x -o "${EXECUTABLE_NAME}" "${PROGRAM_NAME}".cbl
     echo "Compilation successful. Executable created."
     # <<< END inline
-  artifacts:
+  "artifacts":
     # Pass the compiled executable to the next stage (test).
     # The artifact will be available in subsequent jobs.
-    paths:
-    - ${EXECUTABLE_NAME}
+    "paths":
+    - "${EXECUTABLE_NAME}"
     # Set an expiration for the artifact to keep the system clean.
-    expire_in: 1 week
+    "expire_in": "1 week"
 
 # --- Test Stage ---
 # This job runs the compiled program with some test data to verify its output.
-test_payroll_calculation:
-  stage: test
-  script: |-
+"test_payroll_calculation":
+  "stage": "test"
+  "script": |-
     # >>> BEGIN inline: test.sh
     if [[ "${CI:-}" == "" ]]; then
       # shellcheck disable=SC1091
@@ -59,7 +60,8 @@ test_payroll_calculation:
     # Define a variable for the program name to easily reuse it
     export PROGRAM_NAME=payroll_tax
     # Define the name for the compiled artifact
-    export EXECUTABLE_NAME=payroll_tax_calculatorfi
+    export EXECUTABLE_NAME=payroll_tax_calculator
+    fi
     # Make the artifact from the build stage executable
     chmod +x "${EXECUTABLE_NAME}"
     # Create a dummy test file with sample input data
@@ -73,6 +75,6 @@ test_payroll_calculation:
     ./"$EXECUTABLE_NAME" < test_input.dat | grep "Calculated Tax: 150.00"
     echo "Test passed: The calculated tax is correct."
     # <<< END inline
-  dependencies:
+  "dependencies":
     # This job depends on the successful completion of the 'build_cobol_program' job.
-  - build_cobol_program
+  - "build_cobol_program"

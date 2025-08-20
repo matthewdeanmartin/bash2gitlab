@@ -12,6 +12,7 @@ def test_yaml_must_preserve_references_and_multiscripts():
         uncompiled = Path("scenario11/uncompiled")
         output_root = Path("scenario11/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario11/out"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario11/uncompiled/.bash2gitlab"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

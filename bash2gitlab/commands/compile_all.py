@@ -19,6 +19,7 @@ from ruamel.yaml.scalarstring import LiteralScalarString
 from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.commands.compile_bash_reader import read_bash_script
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
+from bash2gitlab.commands.input_change_detector import mark_compilation_complete, needs_compilation
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
@@ -184,20 +185,6 @@ def process_script_list(
             # Preserve any non-string node (e.g., TaggedScalar, Commented* nodes)
             processed_items.append(item)
             continue
-        # --- BEGIN: NEW LOGIC TO HANDLE !reference TRANSFORMATION ---
-        # Check for multi-line strings where each line is a reference (starts with '.')
-        # This is a specific pattern for GitLab's !reference tag.
-        lines = item.splitlines()
-        if len(lines) > 1 and all(line.strip().startswith(".") for line in lines):
-            logger.debug(f"Found multi-line reference block, converting to !reference tag: {lines}")
-            # Create a sequence of the individual reference strings
-            references = CommentedSeq([line.strip() for line in lines])
-            # Create the TaggedScalar object representing !reference [...]
-            tagged_reference = TaggedScalar(value=references, tag="!reference")
-            processed_items.append(tagged_reference)
-            # This item is handled, skip the rest of the loop
-            continue
-        # --- END: NEW LOGIC ---
 
         # Plain string: attempt to detect and inline scripts
         pm = get_pm()
@@ -606,6 +593,7 @@ def run_compile_all(
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
+    force: bool = False,
 ) -> int:
     """
     Main function to process a directory of uncompiled GitLab CI files.
@@ -616,10 +604,20 @@ def run_compile_all(
         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
         dry_run (bool): If True, simulate the process without writing any files.
         parallelism (int | None): Maximum number of processes to use for parallel compilation.
+        force (bool): If True, compile even if it appears to not be need because nothing changed.
 
     Returns:
         The total number of inlined sections across all files.
     """
+    # Check if compilation is needed (unless forced)
+    if not force:
+        if not needs_compilation(uncompiled_path):
+            logger.info("No input changes detected since last compilation. Skipping compilation.")
+            logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
+            return 0
+        else:
+            logger.info("Input changes detected, proceeding with compilation...")
+
     inferred_cli_command = infer_cli(uncompiled_path, output_path, dry_run, parallelism)
     strays = report_targets(output_path)
     if strays:
@@ -674,6 +672,14 @@ def run_compile_all(
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
+
+    # After successful compilation, mark as complete
+    if not dry_run and (total_inlined_count > 0 or written_files_count > 0):
+        try:
+            mark_compilation_complete(uncompiled_path)
+            logger.debug("Marked compilation as complete - updated input file hashes")
+        except Exception as e:
+            logger.warning(f"Failed to update input hashes: {e}")
 
     if written_files_count == 0 and not dry_run:
         logger.warning(

@@ -159,6 +159,7 @@ def compile_handler(args: argparse.Namespace) -> int:
     in_dir = Path(args.input_dir).resolve()
     out_dir = Path(args.output_dir).resolve()
     dry_run = bool(args.dry_run)
+    force = bool(args.force)
     parallelism = args.parallelism
 
     if args.watch:
@@ -172,10 +173,7 @@ def compile_handler(args: argparse.Namespace) -> int:
 
     try:
         run_compile_all(
-            uncompiled_path=in_dir,
-            output_path=out_dir,
-            dry_run=dry_run,
-            parallelism=parallelism,
+            uncompiled_path=in_dir, output_path=out_dir, dry_run=dry_run, parallelism=parallelism, force=force
         )
 
         logger.info("✅ GitLab CI processing complete.")
@@ -400,6 +398,7 @@ def main() -> int:
         action="store_true",
         help="Watch source directories and auto-recompile on changes.",
     )
+    parser.add_argument("--force", action="store_true", help="Force compilation even if no input changes detected")
     add_common_arguments(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
 

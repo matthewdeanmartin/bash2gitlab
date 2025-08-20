@@ -90,7 +90,29 @@ together to get the same semantics.
   - B: 2
 ```
 
+The tool does not perform variable expansion. If a script path is defined with a variable
+(e.g., `script: ./.scripts/$CI_JOB_STAGE/deploy.sh`), the extract_script_path function will fail to find a real file on
+the filesystem, as it will look for a path containing the literal string `"$CI_JOB_STAGE"`.
 
+`!Reference` is not understood by ruamel yaml and has to be left as-is.
+
+Bash line continuations, e.g. `\` are not valid in yaml e.g. 
+
+Not good
+```script:
+- "echo \"
+- "&& echo"
+```
+
+Fine
+```script:
+- |
+    echo \
+    && echo
+```
+
+So until a new way of splitting "statements" in bash file instead of lines is found, the code tries to inline
+to string blocks and not lists of strings.
 
 -----
 
@@ -250,7 +272,8 @@ bash2gitlab lint --out compiled \
   --project-id 1234
 ```
 
-If a `.env` file with the BASH2GITLAB_LINT_TOKEN variables is set, that will be used. Storing the token in pyproject.toml
+If a `.env` file with the BASH2GITLAB_LINT_TOKEN variables is set, that will be used. Storing the token in
+pyproject.toml
 is not supported because of the likelihood that it would be checked into source control by accident.
 
 ### Configuration (`bash2gitlab.toml` or `pyproject.toml`)

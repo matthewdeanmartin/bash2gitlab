@@ -12,6 +12,7 @@ def test_yaml_it_src_to_out_5():
         uncompiled = Path("scenario5/folder")
         output_root = Path("scenario5/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario5/out"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario5/folder/.bash2gitlab"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

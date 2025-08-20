@@ -54,6 +54,25 @@ def compute_content_hash(file_path: Path) -> str:
     return hashlib.sha256(normalized_content.encode("utf-8")).hexdigest()
 
 
+def _read_stored_hash(hash_file: Path) -> str | None:
+    """Read stored hash from hash file."""
+    try:
+        if hash_file.exists():
+            return hash_file.read_text(encoding="utf-8").strip()
+    except Exception as e:
+        logger.warning(f"Failed to read hash file {hash_file}: {e}")
+    return None
+
+
+def _write_hash(hash_file: Path, content_hash: str) -> None:
+    """Write hash to hash file."""
+    try:
+        hash_file.parent.mkdir(parents=True, exist_ok=True)
+        hash_file.write_text(content_hash, encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Failed to write hash file {hash_file}: {e}")
+
+
 class InputChangeDetector:
     """Detects changes in input files since last compilation."""
 
@@ -79,23 +98,6 @@ class InputChangeDetector:
         hash_file = self.hash_dir / rel_path.with_suffix(rel_path.suffix + ".hash")
         return hash_file
 
-    def _read_stored_hash(self, hash_file: Path) -> str | None:
-        """Read stored hash from hash file."""
-        try:
-            if hash_file.exists():
-                return hash_file.read_text(encoding="utf-8").strip()
-        except Exception as e:
-            logger.warning(f"Failed to read hash file {hash_file}: {e}")
-        return None
-
-    def _write_hash(self, hash_file: Path, content_hash: str) -> None:
-        """Write hash to hash file."""
-        try:
-            hash_file.parent.mkdir(parents=True, exist_ok=True)
-            hash_file.write_text(content_hash, encoding="utf-8")
-        except Exception as e:
-            logger.warning(f"Failed to write hash file {hash_file}: {e}")
-
     def has_file_changed(self, file_path: Path) -> bool:
         """Check if a single file has changed since last compilation.
 
@@ -110,7 +112,7 @@ class InputChangeDetector:
             return True
 
         hash_file = self._get_hash_file_path(file_path)
-        stored_hash = self._read_stored_hash(hash_file)
+        stored_hash = _read_stored_hash(hash_file)
 
         if stored_hash is None:
             logger.debug(f"No previous hash for {file_path}, considering changed")
@@ -201,7 +203,7 @@ class InputChangeDetector:
             try:
                 current_hash = compute_content_hash(file_path)
                 hash_file = self._get_hash_file_path(file_path)
-                self._write_hash(hash_file, current_hash)
+                _write_hash(hash_file, current_hash)
                 logger.debug(f"Updated hash for {file_path}")
             except Exception as e:
                 logger.warning(f"Failed to update hash for {file_path}: {e}")

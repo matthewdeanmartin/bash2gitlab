@@ -12,6 +12,7 @@ def test_yaml_it_src_to_out_hidden_jobs_9():
         uncompiled = Path("scenario9/in")
         output_root = Path("scenario9/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario9/out"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario9/in/.bash2gitlab"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

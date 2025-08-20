@@ -12,6 +12,7 @@ def test_yaml_it_src_to_out_16_str_not_list():
         uncompiled = Path("scenario16_strings_not_lists/src")
         output_root = Path("scenario16_strings_not_lists/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario16_strings_not_lists/out"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario16_strings_not_lists/src/.bash2gitlab"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 
