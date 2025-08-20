@@ -1,5 +1,7 @@
 """Utility functions with no strong link to the domain of the overall application."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 

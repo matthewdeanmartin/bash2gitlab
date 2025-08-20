@@ -117,6 +117,7 @@ def inline_bash_source(
     - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
     - `# Pragma: end-do-not-inline`: Ends the block.
     - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+    - `# Pragma: must-inline`: Force an inline in an anchored "job"
 
     Args:
         main_script_path: The absolute path to the main bash script to process.

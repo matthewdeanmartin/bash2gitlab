@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.20] - 2025-08-20
+
+### Fixed
+- Fixed regression where stages were turned into string blocks.
+
+### Added 
+- Now validates yaml against Gitlab's Json Schema. No flag to ignore validation results.
+
 ## [0.8.19] - 2025-08-19
 
 ### Fixed

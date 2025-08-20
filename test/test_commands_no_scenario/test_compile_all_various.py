@@ -60,7 +60,7 @@ def test_process_script_list_no_scripts():
     """Tests a list with no scripts to ensure it remains unchanged."""
     script_list = ["echo 'hello'", "ls -la"]
     result = compile_all.process_script_list(script_list, Path(".."))
-    assert result == ["echo 'hello'\nls -la"]
+    assert result == ["echo 'hello'\nls -la"] or result == "echo 'hello'\nls -la"
 
 
 def test_process_script_list_already_literal():

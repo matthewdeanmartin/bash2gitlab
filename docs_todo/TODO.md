@@ -1,5 +1,12 @@
 # TODO
 
+## Pragma
+
+```yaml
+.some-script: &some-anchor
+  - ./script1.sh  # Pragma: must-inline
+```
+
 ## Compile
 
 - config option to only inline if `.` or `source`?

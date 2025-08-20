@@ -25,6 +25,8 @@
 ├── interactive.py
 ├── plugins.py
 ├── py.typed
+├── schemas/
+│   └── gitlab_ci_schema.json
 ├── tui.py
 ├── utils/
 │   ├── cli_suggestions.py
@@ -37,6 +39,8 @@
 │   ├── terminal_colors.py
 │   ├── update_checker.py
 │   ├── utils.py
+│   ├── valid2.py
+│   ├── validate_pipeline.py
 │   ├── yaml_factory.py
 │   └── yaml_file_same.py
 ├── watch_files.py
@@ -64,7 +68,7 @@ class Defaults:
         return _extract(line)
 
     @hookimpl(tryfirst=True)  # firstresult=True
-    def inline_command(self, line: str, scripts_root: Path) -> list[str] | None:
+    def inline_command(self, line: str, scripts_root: Path) -> tuple[list[str], Path] | tuple[None, None]:
         return maybe_inline_interpreter_command(line, scripts_root)
 ```
 ## File: config.py
@@ -2925,7 +2929,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.19"
+__version__ = "0.8.20"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -4189,6 +4193,7 @@ from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
+from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
 from bash2gitlab.utils.yaml_factory import get_yaml
 from bash2gitlab.utils.yaml_file_same import normalize_for_compare, yaml_is_same
 
@@ -4203,7 +4208,7 @@ def infer_cli(
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> str:
-    command = f"bash2gitlab compile --in {uncompiled_path} --out {output_path}"
+    command = "bash2gitlab compile " f"--in {short_path(uncompiled_path)} " f"--out {short_path(output_path)}"
     if dry_run:
         command += " --dry-run"
     if parallelism:
@@ -4311,8 +4316,7 @@ def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any
 
 
 def process_script_list(
-    script_list: list[TaggedScalar | str] | CommentedSeq | str,
-    scripts_root: Path,
+    script_list: list[TaggedScalar | str] | CommentedSeq | str, scripts_root: Path, collapse_lists: bool = True
 ) -> list[Any] | CommentedSeq | LiteralScalarString:
     """Process a script list, inlining shell files while preserving YAML features.
 
@@ -4326,6 +4330,7 @@ def process_script_list(
     Args:
         script_list (list[TaggedScalar | str] | CommentedSeq | str): YAML script lines.
         scripts_root (Path): Root directory used to resolve script paths for inlining.
+        collapse_lists (bool): Turn lists into string block. Safe if it is indeed a script.
 
     Returns:
         list[Any] | CommentedSeq | LiteralScalarString: Processed script block. Returns a
@@ -4338,6 +4343,7 @@ def process_script_list(
     contains_tagged_scalar = False
     contains_anchors_or_tags = False
 
+    scripts_found = []
     for item in items:
         # Non-plain strings: preserve and mark that YAML features exist
         if not isinstance(item, str):
@@ -4356,6 +4362,9 @@ def process_script_list(
         if script_path_str is None:
             # try existing extract_script_path fallback
             script_path_str = extract_script_path(item)
+            scripts_found.append(script_path_str)
+        else:
+            scripts_found.append(script_path_str)
 
         if script_path_str:
             if script_path_str.strip().startswith("./") or script_path_str.strip().startswith("\\."):
@@ -4382,14 +4391,20 @@ def process_script_list(
 
         else:
             # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
-            alt = pm.hook.inline_command(line=item, scripts_root=scripts_root) or None
-            if alt:
-                processed_items.extend(alt)
+            interp_inline, script_path_str_other = pm.hook.inline_command(line=item, scripts_root=scripts_root) or (
+                None,
+                None,
+            )
+            if interp_inline:
+                scripts_found.append(script_path_str_other)
+                processed_items.extend(interp_inline)
             else:
-                interp_inline = maybe_inline_interpreter_command(item, scripts_root)
-                if interp_inline and isinstance(interp_inline, list):
+                interp_inline, script_path_str_other = maybe_inline_interpreter_command(item, scripts_root)
+                if interp_inline and isinstance(interp_inline, list) and script_path_str_other:
+                    scripts_found.append(str(script_path_str_other))
                     processed_items.extend(interp_inline)
-                elif interp_inline and isinstance(interp_inline, str):
+                elif interp_inline and isinstance(interp_inline, str) and script_path_str_other:
+                    scripts_found.append(str(script_path_str_other))
                     processed_items.append(interp_inline)
                 else:
                     processed_items.append(item)
@@ -4401,7 +4416,7 @@ def process_script_list(
     )
 
     # Collapse to literal block only when no YAML features and sufficiently long
-    if not has_yaml_features and only_plain_strings and len(processed_items) > 2:
+    if not has_yaml_features and only_plain_strings and len(processed_items) > 1 and collapse_lists and scripts_found:
 
         final_script_block = "\n".join(processed_items)
 
@@ -4410,7 +4425,10 @@ def process_script_list(
 
     # Preserve sequence shape; if input was a CommentedSeq, return one
     # Case 2: Keep sequence shape but compact adjacent plain strings into a single literal
-    compact_items = compact_runs_to_literal(processed_items, min_lines=2)
+    if collapse_lists and scripts_found:
+        compact_items = compact_runs_to_literal(processed_items, min_lines=2)
+    else:
+        compact_items = processed_items
 
     # Preserve sequence style (CommentedSeq vs list) to match input
     return rebuild_seq_like(compact_items, was_commented_seq, original_seq)
@@ -4426,6 +4444,27 @@ def process_job(job_data: dict, scripts_root: Path) -> int:
                 job_data[script_key] = result
                 found += 1
     return found
+
+
+def has_must_inline_pragma(job_data: dict | str) -> bool:
+    if isinstance(job_data, list):
+        for item_id, _item in enumerate(job_data):
+            comment = job_data.ca.items.get(item_id)
+            if comment:
+                comment_value = comment[0].value
+                if "pragma" in comment_value.lower() and "must-inline" in comment_value.lower():
+                    return True
+        for item in job_data:
+            if "pragma" in item.lower() and "must-inline" in item.lower():
+                return True
+    if isinstance(job_data, str):
+        if "pragma" in job_data.lower() and "must-inline" in job_data.lower():
+            return True
+    elif isinstance(job_data, dict):
+        for _key, value in job_data.items():
+            if "pragma" in str(value).lower() and "must-inline" in str(value).lower():
+                return True
+    return False
 
 
 def inline_gitlab_scripts(
@@ -4476,12 +4515,30 @@ def inline_gitlab_scripts(
 
     # Process all jobs and top-level script lists (which are often used for anchors)
     for job_name, job_data in data.items():
+        if job_name in [
+            "stages",
+            "variables",
+            "include",
+            "rules",
+            "image",
+            "services",
+            "cache",
+            "true",
+            "false",
+            "nil",
+        ]:
+            # that's not a job.
+            continue
         if hasattr(job_data, "tag") and job_data.tag.value:
             # Can't deal with !reference tagged jobs at all
             continue
         if hasattr(job_data, "anchor") and job_data.anchor.value:
+
             # Can't deal with &anchor tagged jobs at all
-            continue
+            # Okay, more exactly, we can inline, but we can't collapse lists because you can't tell if it is
+            # going into a script or some other block.
+            if not has_must_inline_pragma(job_data):
+                continue
 
         # Handle top-level keys that are lists of scripts. This pattern is commonly
         # used to create reusable script blocks with YAML anchors, e.g.:
@@ -4489,7 +4546,7 @@ def inline_gitlab_scripts(
         #   - ./scripts/my-script.sh
         if isinstance(job_data, list):
             logger.debug(f"Processing top-level list key '{job_name}', potentially a script anchor.")
-            result = process_script_list(job_data, scripts_root)
+            result = process_script_list(job_data, scripts_root, collapse_lists=False)
             if result != job_data:
                 data[job_name] = result
                 inlined_count += 1
@@ -4550,6 +4607,10 @@ def write_yaml_and_hash(
 
     new_content = remove_leading_blank_lines(new_content)
 
+    validator = GitLabCIValidator()
+    ok, problems = validator.validate_ci_config(new_content)
+    if not ok:
+        raise Exception(problems)
     output_file.write_text(new_content, encoding="utf-8")
 
     # Store a base64 encoded copy of the exact content we just wrote.
@@ -4977,6 +5038,7 @@ def inline_bash_source(
     - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
     - `# Pragma: end-do-not-inline`: Ends the block.
     - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+    - `# Pragma: must-inline`: Force an inline in an anchored "job"
 
     Args:
         main_script_path: The absolute path to the main bash script to process.
@@ -5411,13 +5473,13 @@ def build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | N
     return f"{interp} {flag} {quoted}{r}"
 
 
-def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
+def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> tuple[list[str], Path] | tuple[None, None]:
     """If *line* looks like an interpreter execution we can inline, return:
     [BEGIN_MARK, <interpreter -flag 'code'>, END_MARK]. Otherwise, return None.
     """
     m = _INTERP_LINE.match(line)
     if not m:
-        return None
+        return None, None
 
     interp_raw = m.group("interp")
     interp = normalize_interp(interp_raw)
@@ -5429,19 +5491,19 @@ def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str]
         target_file, shown = resolve_interpreter_target(interp_raw, module, path_str, scripts_root)
     except ValueError as e:
         logger.debug("Interpreter inline skip: %s", e)
-        return None
+        return None, None
 
     if not target_file.is_file():
         logger.warning("Could not inline %s: file not found at %s; preserving original.", shown, target_file)
-        return None
+        return None, None
 
     if not is_reasonable_ext(interp, target_file):
         logger.debug("Interpreter inline skip: extension %s not expected for %s", target_file.suffix, interp)
-        return None
+        return None, None
 
     code = read_script_bytes(target_file)
     if code is None:
-        return None
+        return None, None
 
     quoted = shell_single_quote(code)
 
@@ -5453,21 +5515,21 @@ def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str]
             len(quoted),
             MAX_INLINE_LEN,
         )
-        return None
+        return None, None
 
     flag = _INTERPRETER_FLAGS.get(interp)
     if flag is None:
         logger.debug("Interpreter inline skip: no eval flag known for %s", interp)
-        return None
+        return None, None
 
     inlined_cmd = build_eval_command(interp, flag, quoted, rest)
     if inlined_cmd is None:
-        return None
+        return None, None
 
     begin_marker = f"# >>> BEGIN inline: {shown}"
     end_marker = "# <<< END inline"
     logger.debug("Inlining interpreter command '%s' (%d chars).", shown, len(code))
-    return [begin_marker, inlined_cmd, end_marker]
+    return [begin_marker, inlined_cmd, end_marker], target_file
 ```
 ## File: commands\decompile_all.py
 ```python
@@ -8302,8 +8364,3088 @@ def run_show_config() -> int:
 
     return 0
 ```
+## File: schemas\gitlab_ci_schema.json
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://gitlab.com/.gitlab-ci.yml",
+  "markdownDescription": "GitLab has a built-in solution for doing CI called GitLab CI. It is configured by supplying a file called `.gitlab-ci.yml`, which will list all the jobs that are going to run for the project. A full list of all options can be found [here](https://docs.gitlab.com/ci/yaml/). [Learn More](https://docs.gitlab.com/ci/).",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "spec": {
+      "type": "object",
+      "markdownDescription": "Specification for pipeline configuration. Must be declared at the top of a configuration file, in a header section separated from the rest of the configuration with `---`. [Learn More](https://docs.gitlab.com/ci/yaml/#spec).",
+      "properties": {
+        "inputs": {
+          "$ref": "#/definitions/inputParameters"
+        }
+      },
+      "additionalProperties": false
+    },
+    "image": {
+      "$ref": "#/definitions/image",
+      "markdownDescription": "Defining `image` globally is deprecated. Use [`default`](https://docs.gitlab.com/ci/yaml/#default) instead. [Learn more](https://docs.gitlab.com/ci/yaml/#globally-defined-image-services-cache-before_script-after_script)."
+    },
+    "services": {
+      "$ref": "#/definitions/services",
+      "markdownDescription": "Defining `services` globally is deprecated. Use [`default`](https://docs.gitlab.com/ci/yaml/#default) instead. [Learn more](https://docs.gitlab.com/ci/yaml/#globally-defined-image-services-cache-before_script-after_script)."
+    },
+    "before_script": {
+      "$ref": "#/definitions/before_script",
+      "markdownDescription": "Defining `before_script` globally is deprecated. Use [`default`](https://docs.gitlab.com/ci/yaml/#default) instead. [Learn more](https://docs.gitlab.com/ci/yaml/#globally-defined-image-services-cache-before_script-after_script)."
+    },
+    "after_script": {
+      "$ref": "#/definitions/after_script",
+      "markdownDescription": "Defining `after_script` globally is deprecated. Use [`default`](https://docs.gitlab.com/ci/yaml/#default) instead. [Learn more](https://docs.gitlab.com/ci/yaml/#globally-defined-image-services-cache-before_script-after_script)."
+    },
+    "variables": {
+      "$ref": "#/definitions/globalVariables"
+    },
+    "cache": {
+      "$ref": "#/definitions/cache",
+      "markdownDescription": "Defining `cache` globally is deprecated. Use [`default`](https://docs.gitlab.com/ci/yaml/#default) instead. [Learn more](https://docs.gitlab.com/ci/yaml/#globally-defined-image-services-cache-before_script-after_script)."
+    },
+    "!reference": {
+      "$ref": "#/definitions/!reference"
+    },
+    "default": {
+      "type": "object",
+      "properties": {
+        "after_script": {
+          "$ref": "#/definitions/after_script"
+        },
+        "artifacts": {
+          "$ref": "#/definitions/artifacts"
+        },
+        "before_script": {
+          "$ref": "#/definitions/before_script"
+        },
+        "hooks": {
+          "$ref": "#/definitions/hooks"
+        },
+        "cache": {
+          "$ref": "#/definitions/cache"
+        },
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "interruptible": {
+          "$ref": "#/definitions/interruptible"
+        },
+        "id_tokens": {
+          "$ref": "#/definitions/id_tokens"
+        },
+        "identity": {
+          "$ref": "#/definitions/identity"
+        },
+        "retry": {
+          "$ref": "#/definitions/retry"
+        },
+        "services": {
+          "$ref": "#/definitions/services"
+        },
+        "tags": {
+          "$ref": "#/definitions/tags"
+        },
+        "timeout": {
+          "$ref": "#/definitions/timeout"
+        },
+        "!reference": {
+          "$ref": "#/definitions/!reference"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stages": {
+      "type": "array",
+      "markdownDescription": "Groups jobs into stages. All jobs in one stage must complete before next stage is executed. Defaults to ['build', 'test', 'deploy']. [Learn More](https://docs.gitlab.com/ci/yaml/#stages).",
+      "default": [
+        "build",
+        "test",
+        "deploy"
+      ],
+      "items": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 1
+    },
+    "include": {
+      "markdownDescription": "Can be `IncludeItem` or `IncludeItem[]`. Each `IncludeItem` will be a string, or an object with properties for the method if including external YAML file. The external content will be fetched, included and evaluated along the `.gitlab-ci.yml`. [Learn More](https://docs.gitlab.com/ci/yaml/#include).",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/include_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/include_item"
+          }
+        }
+      ]
+    },
+    "pages": {
+      "$ref": "#/definitions/job",
+      "markdownDescription": "A special job used to upload static sites to GitLab pages. Requires a `public/` directory with `artifacts.path` pointing to it. [Learn More](https://docs.gitlab.com/ci/yaml/#pages)."
+    },
+    "workflow": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/definitions/workflowName"
+        },
+        "auto_cancel": {
+          "$ref": "#/definitions/workflowAutoCancel"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              }
+            ],
+            "properties": {
+              "if": {
+                "$ref": "#/definitions/if"
+              },
+              "changes": {
+                "$ref": "#/definitions/changes"
+              },
+              "exists": {
+                "$ref": "#/definitions/exists"
+              },
+              "variables": {
+                "$ref": "#/definitions/rulesVariables"
+              },
+              "when": {
+                "type": "string",
+                "enum": [
+                  "always",
+                  "never"
+                ]
+              },
+              "auto_cancel": {
+                "$ref": "#/definitions/workflowAutoCancel"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
+  },
+  "patternProperties": {
+    "^[.]": {
+      "description": "Hidden keys.",
+      "anyOf": [
+        {
+          "$ref": "#/definitions/job_template"
+        },
+        {
+          "description": "Arbitrary YAML anchor."
+        }
+      ]
+    }
+  },
+  "additionalProperties": {
+    "$ref": "#/definitions/job"
+  },
+  "definitions": {
+    "artifacts": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "markdownDescription": "Used to specify a list of files and directories that should be attached to the job if it succeeds. Artifacts are sent to GitLab where they can be downloaded. [Learn More](https://docs.gitlab.com/ci/yaml/#artifacts).",
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "type": "array",
+          "markdownDescription": "A list of paths to files/folders that should be included in the artifact. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactspaths).",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "exclude": {
+          "type": "array",
+          "markdownDescription": "A list of paths to files/folders that should be excluded in the artifact. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactsexclude).",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "expose_as": {
+          "type": "string",
+          "markdownDescription": "Can be used to expose job artifacts in the merge request UI. GitLab will add a link <expose_as> to the relevant merge request that points to the artifact. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactsexpose_as)."
+        },
+        "name": {
+          "type": "string",
+          "markdownDescription": "Name for the archive created on job success. Can use variables in the name, e.g. '$CI_JOB_NAME' [Learn More](https://docs.gitlab.com/ci/yaml/#artifactsname)."
+        },
+        "untracked": {
+          "type": "boolean",
+          "markdownDescription": "Whether to add all untracked files (along with 'artifacts.paths') to the artifact. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactsuntracked).",
+          "default": false
+        },
+        "when": {
+          "markdownDescription": "Configure when artifacts are uploaded depended on job status. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactswhen).",
+          "default": "on_success",
+          "type": "string",
+          "enum": [
+            "on_success",
+            "on_failure",
+            "always"
+          ]
+        },
+        "access": {
+          "markdownDescription": "Configure who can access the artifacts. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactsaccess).",
+          "default": "all",
+          "type": "string",
+          "enum": [
+            "none",
+            "developer",
+            "all"
+          ]
+        },
+        "expire_in": {
+          "type": "string",
+          "markdownDescription": "How long artifacts should be kept. They are saved 30 days by default. Artifacts that have expired are removed periodically via cron job. Supports a wide variety of formats, e.g. '1 week', '3 mins 4 sec', '2 hrs 20 min', '2h20min', '6 mos 1 day', '47 yrs 6 mos and 4d', '3 weeks and 2 days'. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactsexpire_in).",
+          "default": "30 days"
+        },
+        "reports": {
+          "type": "object",
+          "markdownDescription": "Reports will be uploaded as artifacts, and often displayed in the GitLab UI, such as in merge requests. [Learn More](https://docs.gitlab.com/ci/yaml/#artifactsreports).",
+          "additionalProperties": false,
+          "properties": {
+            "accessibility": {
+              "type": "string",
+              "description": "Path to JSON file with accessibility report."
+            },
+            "annotations": {
+              "type": "string",
+              "description": "Path to JSON file with annotations report."
+            },
+            "junit": {
+              "description": "Path for file(s) that should be parsed as JUnit XML result",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "Path to a single XML file"
+                },
+                {
+                  "type": "array",
+                  "description": "A list of paths to XML files that will automatically be concatenated into a single file",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                }
+              ]
+            },
+            "browser_performance": {
+              "type": "string",
+              "description": "Path to a single file with browser performance metric report(s)."
+            },
+            "coverage_report": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Used to collect coverage reports from the job.",
+              "properties": {
+                "coverage_format": {
+                  "description": "Code coverage format used by the test framework.",
+                  "enum": [
+                    "cobertura",
+                    "jacoco"
+                  ]
+                },
+                "path": {
+                  "description": "Path to the coverage report file that should be parsed.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "codequality": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with code quality report(s) (such as Code Climate)."
+            },
+            "dotenv": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files containing runtime-created variables for this job."
+            },
+            "lsif": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files containing code intelligence (Language Server Index Format)."
+            },
+            "sast": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with SAST vulnerabilities report(s)."
+            },
+            "dependency_scanning": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with Dependency scanning vulnerabilities report(s)."
+            },
+            "container_scanning": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with Container scanning vulnerabilities report(s)."
+            },
+            "dast": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with DAST vulnerabilities report(s)."
+            },
+            "license_management": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Deprecated in 12.8: Path to file or list of files with license report(s)."
+            },
+            "license_scanning": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with license report(s)."
+            },
+            "requirements": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with requirements report(s)."
+            },
+            "secret_detection": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with secret detection report(s)."
+            },
+            "metrics": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with custom metrics report(s)."
+            },
+            "terraform": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with terraform plan(s)."
+            },
+            "cyclonedx": {
+              "$ref": "#/definitions/string_file_list",
+              "markdownDescription": "Path to file or list of files with cyclonedx report(s). [Learn More](https://docs.gitlab.com/ci/yaml/artifacts_reports/#artifactsreportscyclonedx)."
+            },
+            "load_performance": {
+              "$ref": "#/definitions/string_file_list",
+              "markdownDescription": "Path to file or list of files with load performance testing report(s). [Learn More](https://docs.gitlab.com/ci/yaml/artifacts_reports/#artifactsreportsload_performance)."
+            },
+            "repository_xray": {
+              "$ref": "#/definitions/string_file_list",
+              "description": "Path to file or list of files with Repository X-Ray report(s)."
+            }
+          }
+        }
+      }
+    },
+    "string_file_list": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "inputParameters": {
+      "type": "object",
+      "markdownDescription": "Define parameters that can be populated in reusable CI/CD configuration files when added to a pipeline. [Learn More](https://docs.gitlab.com/ci/inputs/).",
+      "patternProperties": {
+        ".*": {
+          "markdownDescription": "**Input Configuration**\n\nAvailable properties:\n- `type`: string (default), array, boolean, or number\n- `description`: Human-readable explanation of the parameter (supports Markdown)\n- `options`: List of allowed values\n- `default`: Value to use when not specified (makes input optional)\n- `regex`: Pattern that string values must match",
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "markdownDescription": "Force a specific input type. Defaults to 'string' when not specified. [Learn More](https://docs.gitlab.com/ci/inputs/#input-types).",
+                  "enum": [
+                    "array",
+                    "boolean",
+                    "number",
+                    "string"
+                  ],
+                  "default": "string"
+                },
+                "description": {
+                  "type": "string",
+                  "markdownDescription": "Give a description to a specific input. The description does not affect the input, but can help people understand the input details or expected values. Supports markdown.",
+                  "maxLength": 1024
+                },
+                "options": {
+                  "type": "array",
+                  "markdownDescription": "Specify a list of allowed values for an input.",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "regex": {
+                  "type": "string",
+                  "markdownDescription": "Specify a regular expression that the input must match. Only impacts inputs with a `type` of `string`."
+                },
+                "default": {
+                  "markdownDescription": "Define default values for inputs when not specified. When you specify a default, the inputs are no longer mandatory."
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "string"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "default": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "number"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "default": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "boolean"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "default": {
+                        "type": [
+                          "boolean",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "type": {
+                        "enum": [
+                          "array"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "default": {
+                        "oneOf": [
+                          {
+                            "type": "array"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "include_item": {
+      "oneOf": [
+        {
+          "description": "Will infer the method based on the value. E.g. `https://...` strings will be of type `include:remote`, and `/templates/...` or `templates/...` will be of type `include:local`.",
+          "type": "string",
+          "format": "uri-reference",
+          "pattern": "\\w\\.ya?ml$",
+          "anyOf": [
+            {
+              "pattern": "^https?://"
+            },
+            {
+              "not": {
+                "pattern": "^\\w+://"
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "local": {
+              "description": "Relative path from local repository root (`/`) to the `yaml`/`yml` file template. The file must be on the same branch, and does not work across git submodules.",
+              "type": "string",
+              "format": "uri-reference",
+              "pattern": "\\.ya?ml$"
+            },
+            "rules": {
+              "$ref": "#/definitions/includeRules"
+            },
+            "inputs": {
+              "$ref": "#/definitions/inputs"
+            }
+          },
+          "required": [
+            "local"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "description": "Path to the project, e.g. `group/project`, or `group/sub-group/project` [Learn more](https://docs.gitlab.com/ci/yaml/#includeproject).",
+              "type": "string",
+              "pattern": "(?:\\S/\\S|\\$\\S+)"
+            },
+            "ref": {
+              "description": "Branch/Tag/Commit-hash for the target project.",
+              "type": "string"
+            },
+            "file": {
+              "oneOf": [
+                {
+                  "description": "Relative path from project root (`/`) to the `yaml`/`yml` file template.",
+                  "type": "string",
+                  "pattern": "\\.ya?ml$"
+                },
+                {
+                  "description": "List of files by relative path from project root (`/`) to the `yaml`/`yml` file template.",
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "\\.ya?ml$"
+                  }
+                }
+              ]
+            },
+            "rules": {
+              "$ref": "#/definitions/includeRules"
+            },
+            "inputs": {
+              "$ref": "#/definitions/inputs"
+            }
+          },
+          "required": [
+            "project",
+            "file"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "template": {
+              "description": "Use a `.gitlab-ci.yml` template as a base, e.g. `Nodejs.gitlab-ci.yml`.",
+              "type": "string",
+              "format": "uri-reference",
+              "pattern": "\\.ya?ml$"
+            },
+            "rules": {
+              "$ref": "#/definitions/includeRules"
+            },
+            "inputs": {
+              "$ref": "#/definitions/inputs"
+            }
+          },
+          "required": [
+            "template"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "component": {
+              "description": "Local path to component directory or full path to external component directory.",
+              "type": "string",
+              "format": "uri-reference"
+            },
+            "rules": {
+              "$ref": "#/definitions/includeRules"
+            },
+            "inputs": {
+              "$ref": "#/definitions/inputs"
+            }
+          },
+          "required": [
+            "component"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "remote": {
+              "description": "URL to a `yaml`/`yml` template file using HTTP/HTTPS.",
+              "type": "string",
+              "format": "uri-reference",
+              "pattern": "^https?://.+\\.ya?ml$"
+            },
+            "integrity": {
+              "description": "SHA256 integrity hash of the remote file content.",
+              "type": "string",
+              "pattern": "^sha256-[A-Za-z0-9+/]{43}=$"
+            },
+            "rules": {
+              "$ref": "#/definitions/includeRules"
+            },
+            "inputs": {
+              "$ref": "#/definitions/inputs"
+            }
+          },
+          "required": [
+            "remote"
+          ]
+        }
+      ]
+    },
+    "!reference": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "image": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "description": "Full name of the image that should be used. It should contain the Registry part if needed."
+        },
+        {
+          "type": "object",
+          "description": "Specifies the docker image to use for the job or globally for all jobs. Job configuration takes precedence over global setting. Requires a certain kind of GitLab runner executor.",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Full name of the image that should be used. It should contain the Registry part if needed."
+            },
+            "entrypoint": {
+              "type": "array",
+              "description": "Command or script that should be executed as the container's entrypoint. It will be translated to Docker's --entrypoint option while creating the container. The syntax is similar to Dockerfile's ENTRYPOINT directive, where each shell token is a separate string in the array.",
+              "minItems": 1
+            },
+            "docker": {
+              "type": "object",
+              "markdownDescription": "Options to pass to Runners Docker Executor. [Learn More](https://docs.gitlab.com/ci/yaml/#imagedocker)",
+              "additionalProperties": false,
+              "properties": {
+                "platform": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Image architecture to pull."
+                },
+                "user": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Username or UID to use for the container."
+                }
+              }
+            },
+            "kubernetes": {
+              "type": "object",
+              "markdownDescription": "Options to pass to Runners Kubernetes Executor. [Learn More](https://docs.gitlab.com/ci/yaml/#imagekubernetes)",
+              "additionalProperties": false,
+              "properties": {
+                "user": {
+                  "type": [
+                    "string",
+                    "integer"
+                  ],
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Username or UID to use for the container. It also supports the UID:GID format."
+                }
+              }
+            },
+            "pull_policy": {
+              "markdownDescription": "Specifies how to pull the image in Runner. It can be one of `always`, `never` or `if-not-present`. The default value is `always`. [Learn more](https://docs.gitlab.com/ci/yaml/#imagepull_policy).",
+              "default": "always",
+              "oneOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "always",
+                    "never",
+                    "if-not-present"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "always",
+                      "never",
+                      "if-not-present"
+                    ]
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              ]
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      ],
+      "markdownDescription": "Specifies the docker image to use for the job or globally for all jobs. Job configuration takes precedence over global setting. Requires a certain kind of GitLab runner executor. [Learn More](https://docs.gitlab.com/ci/yaml/#image)."
+    },
+    "services": {
+      "type": "array",
+      "markdownDescription": "Similar to `image` property, but will link the specified services to the `image` container. [Learn More](https://docs.gitlab.com/ci/yaml/#services).",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full name of the image that should be used. It should contain the Registry part if needed."
+          },
+          {
+            "type": "object",
+            "description": "",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Full name of the image that should be used. It should contain the Registry part if needed.",
+                "minLength": 1
+              },
+              "entrypoint": {
+                "type": "array",
+                "markdownDescription": "Command or script that should be executed as the container's entrypoint. It will be translated to Docker's --entrypoint option while creating the container. The syntax is similar to Dockerfile's ENTRYPOINT directive, where each shell token is a separate string in the array. [Learn More](https://docs.gitlab.com/ci/services/#available-settings-for-services)",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "docker": {
+                "type": "object",
+                "markdownDescription": "Options to pass to Runners Docker Executor. [Learn More](https://docs.gitlab.com/ci/yaml/#servicesdocker)",
+                "additionalProperties": false,
+                "properties": {
+                  "platform": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Image architecture to pull."
+                  },
+                  "user": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Username or UID to use for the container."
+                  }
+                }
+              },
+              "kubernetes": {
+                "type": "object",
+                "markdownDescription": "Options to pass to Runners Kubernetes Executor. [Learn More](https://docs.gitlab.com/ci/yaml/#imagekubernetes)",
+                "additionalProperties": false,
+                "properties": {
+                  "user": {
+                    "type": [
+                      "string",
+                      "integer"
+                    ],
+                    "minLength": 1,
+                    "maxLength": 255,
+                    "description": "Username or UID to use for the container. It also supports the UID:GID format."
+                  }
+                }
+              },
+              "pull_policy": {
+                "markdownDescription": "Specifies how to pull the image in Runner. It can be one of `always`, `never` or `if-not-present`. The default value is `always`. [Learn more](https://docs.gitlab.com/ci/yaml/#servicespull_policy).",
+                "default": "always",
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "always",
+                      "never",
+                      "if-not-present"
+                    ]
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "always",
+                        "never",
+                        "if-not-present"
+                      ]
+                    },
+                    "minItems": 1,
+                    "uniqueItems": true
+                  }
+                ]
+              },
+              "command": {
+                "type": "array",
+                "markdownDescription": "Command or script that should be used as the container's command. It will be translated to arguments passed to Docker after the image's name. The syntax is similar to Dockerfile's CMD directive, where each shell token is a separate string in the array. [Learn More](https://docs.gitlab.com/ci/services/#available-settings-for-services)",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "alias": {
+                "type": "string",
+                "markdownDescription": "Additional alias that can be used to access the service from the job's container. Read Accessing the services for more information. [Learn More](https://docs.gitlab.com/ci/services/#available-settings-for-services)",
+                "minLength": 1
+              },
+              "variables": {
+                "$ref": "#/definitions/jobVariables",
+                "markdownDescription": "Additional environment variables that are passed exclusively to the service. Service variables cannot reference themselves. [Learn More](https://docs.gitlab.com/ci/services/#available-settings-for-services)"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        ]
+      }
+    },
+    "id_tokens": {
+      "type": "object",
+      "markdownDescription": "Defines JWTs to be injected as environment variables.",
+      "patternProperties": {
+        ".*": {
+          "type": "object",
+          "properties": {
+            "aud": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true
+                }
+              ]
+            }
+          },
+          "required": [
+            "aud"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "identity": {
+      "type": "string",
+      "markdownDescription": "Sets a workload identity (experimental), allowing automatic authentication with the external system. [Learn More](https://docs.gitlab.com/ci/yaml/#identity).",
+      "enum": [
+        "google_cloud"
+      ]
+    },
+    "secrets": {
+      "type": "object",
+      "markdownDescription": "Defines secrets to be injected as environment variables. [Learn More](https://docs.gitlab.com/ci/yaml/#secrets).",
+      "patternProperties": {
+        ".*": {
+          "type": "object",
+          "properties": {
+            "vault": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "markdownDescription": "The secret to be fetched from Vault (e.g. 'production/db/password@ops' translates to secret 'ops/data/production/db', field `password`). [Learn More](https://docs.gitlab.com/ci/yaml/#secretsvault)"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "engine": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "path"
+                      ]
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "engine",
+                    "path",
+                    "field"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "gcp_secret_manager": {
+              "type": "object",
+              "markdownDescription": "Defines the secret version to be fetched from GCP Secret Manager. Name refers to the secret name in GCP secret manager. Version refers to the desired secret version (defaults to 'latest').",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ],
+                  "default": "version"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            "azure_key_vault": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            },
+            "aws_secrets_manager": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "description": "The ARN or name of the secret to retrieve. To retrieve a secret from another account, you must use an ARN."
+                },
+                {
+                  "type": "object",
+                  "markdownDescription": "Defines the secret to be fetched from AWS Secrets Manager. The secret_id refers to the ARN or name of the secret in AWS Secrets Manager. Version_id and version_stage are optional parameters that can be used to specify a specific version of the secret, else AWSCURRENT version will be returned.",
+                  "properties": {
+                    "secret_id": {
+                      "type": "string",
+                      "description": "The ARN or name of the secret to retrieve. To retrieve a secret from another account, you must use an ARN."
+                    },
+                    "version_id": {
+                      "type": "string",
+                      "description": "The unique identifier of the version of the secret to retrieve. If you include both this parameter and VersionStage, the two parameters must refer to the same secret version. If you don't specify either a VersionStage or VersionId, Secrets Manager returns the AWSCURRENT version."
+                    },
+                    "version_stage": {
+                      "type": "string",
+                      "description": "The staging label of the version of the secret to retrieve. If you include both this parameter and VersionStage, the two parameters must refer to the same secret version. If you don't specify either a VersionStage or VersionId, Secrets Manager returns the AWSCURRENT version."
+                    },
+                    "region": {
+                      "type": "string",
+                      "description": "The AWS region where the secret is stored. Use this to override the region for a specific secret. Defaults to AWS_REGION variable."
+                    },
+                    "role_arn": {
+                      "type": "string",
+                      "description": "The ARN of the IAM role to assume before retrieving the secret. Use this to override the ARN. Defaults to AWS_ROLE_ARN variable."
+                    },
+                    "role_session_name": {
+                      "type": "string",
+                      "description": "The name of the session to use when assuming the role. Use this to override the session name. Defaults to AWS_ROLE_SESSION_NAME variable."
+                    },
+                    "field": {
+                      "type": "string",
+                      "description": "The name of the field to retrieve from the secret. If not specified, the entire secret is retrieved."
+                    }
+                  },
+                  "required": [
+                    "secret_id"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "file": {
+              "type": "boolean",
+              "default": true,
+              "markdownDescription": "Configures the secret to be stored as either a file or variable type CI/CD variable. [Learn More](https://docs.gitlab.com/ci/yaml/#secretsfile)"
+            },
+            "token": {
+              "type": "string",
+              "description": "Specifies the JWT variable that should be used to authenticate with the secret provider."
+            }
+          },
+          "anyOf": [
+            {
+              "required": [
+                "vault"
+              ]
+            },
+            {
+              "required": [
+                "azure_key_vault"
+              ]
+            },
+            {
+              "required": [
+                "gcp_secret_manager"
+              ]
+            },
+            {
+              "required": [
+                "aws_secrets_manager"
+              ]
+            }
+          ],
+          "dependencies": {
+            "gcp_secret_manager": [
+              "token"
+            ]
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "script": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          },
+          "minItems": 1
+        }
+      ]
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/step"
+      }
+    },
+    "optional_script": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "before_script": {
+      "$ref": "#/definitions/optional_script",
+      "markdownDescription": "Defines scripts that should run *before* the job. Can be set globally or per job. [Learn More](https://docs.gitlab.com/ci/yaml/#before_script)."
+    },
+    "after_script": {
+      "$ref": "#/definitions/optional_script",
+      "markdownDescription": "Defines scripts that should run *after* the job. Can be set globally or per job. [Learn More](https://docs.gitlab.com/ci/yaml/#after_script)."
+    },
+    "rules": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "markdownDescription": "Rules allows for an array of individual rule objects to be evaluated in order, until one matches and dynamically provides attributes to the job. [Learn More](https://docs.gitlab.com/ci/yaml/#rules).",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "if": {
+                "$ref": "#/definitions/if"
+              },
+              "changes": {
+                "$ref": "#/definitions/changes"
+              },
+              "exists": {
+                "$ref": "#/definitions/exists"
+              },
+              "variables": {
+                "$ref": "#/definitions/rulesVariables"
+              },
+              "when": {
+                "$ref": "#/definitions/when"
+              },
+              "start_in": {
+                "$ref": "#/definitions/start_in"
+              },
+              "allow_failure": {
+                "$ref": "#/definitions/allow_failure"
+              },
+              "needs": {
+                "$ref": "#/definitions/rulesNeeds"
+              },
+              "interruptible": {
+                "$ref": "#/definitions/interruptible"
+              }
+            }
+          },
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "includeRules": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "markdownDescription": "You can use rules to conditionally include other configuration files. [Learn More](https://docs.gitlab.com/ci/yaml/includes/#use-rules-with-include).",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "if": {
+                "$ref": "#/definitions/if"
+              },
+              "changes": {
+                "$ref": "#/definitions/changes"
+              },
+              "exists": {
+                "$ref": "#/definitions/exists"
+              },
+              "when": {
+                "markdownDescription": "Use `when: never` to exclude the configuration file if the condition matches. [Learn More](https://docs.gitlab.com/ci/yaml/includes/#include-with-rulesif).",
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "never",
+                      "always"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "workflowName": {
+      "type": "string",
+      "markdownDescription": "Defines the pipeline name. [Learn More](https://docs.gitlab.com/ci/yaml/#workflowname).",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "workflowAutoCancel": {
+      "type": "object",
+      "description": "Define the rules for when pipeline should be automatically cancelled.",
+      "additionalProperties": false,
+      "properties": {
+        "on_job_failure": {
+          "markdownDescription": "Define which jobs to stop after a job fails.",
+          "default": "none",
+          "type": "string",
+          "enum": [
+            "none",
+            "all"
+          ]
+        },
+        "on_new_commit": {
+          "markdownDescription": "Configure the behavior of the auto-cancel redundant pipelines feature. [Learn More](https://docs.gitlab.com/ci/yaml/#workflowauto_cancelon_new_commit)",
+          "type": "string",
+          "enum": [
+            "conservative",
+            "interruptible",
+            "none"
+          ]
+        }
+      }
+    },
+    "globalVariables": {
+      "markdownDescription": "Defines default variables for all jobs. Job level property overrides global variables. [Learn More](https://docs.gitlab.com/ci/yaml/#variables).",
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "oneOf": [
+            {
+              "type": [
+                "boolean",
+                "number",
+                "string"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "markdownDescription": "Default value of the variable. If used with `options`, `value` must be included in the array. [Learn More](https://docs.gitlab.com/ci/yaml/#variablesvalue)"
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "markdownDescription": "A list of predefined values that users can select from in the **Run pipeline** page when running a pipeline manually. [Learn More](https://docs.gitlab.com/ci/yaml/#variablesoptions)"
+                },
+                "description": {
+                  "type": "string",
+                  "markdownDescription": "Explains what the variable is used for, what the acceptable values are. Variables with `description` are prefilled when running a pipeline manually. [Learn More](https://docs.gitlab.com/ci/yaml/#variablesdescription)."
+                },
+                "expand": {
+                  "type": "boolean",
+                  "markdownDescription": "If the variable is expandable or not. [Learn More](https://docs.gitlab.com/ci/yaml/#variablesexpand)."
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "jobVariables": {
+      "markdownDescription": "Defines variables for a job. [Learn More](https://docs.gitlab.com/ci/yaml/#variables).",
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "oneOf": [
+            {
+              "type": [
+                "boolean",
+                "number",
+                "string"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "expand": {
+                  "type": "boolean",
+                  "markdownDescription": "Defines if the variable is expandable or not. [Learn More](https://docs.gitlab.com/ci/yaml/#variablesexpand)."
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
+      }
+    },
+    "rulesVariables": {
+      "markdownDescription": "Defines variables for a rule result. [Learn More](https://docs.gitlab.com/ci/yaml/#rulesvariables).",
+      "type": "object",
+      "patternProperties": {
+        ".*": {
+          "type": [
+            "boolean",
+            "number",
+            "string"
+          ]
+        }
+      }
+    },
+    "if": {
+      "type": "string",
+      "markdownDescription": "Expression to evaluate whether additional attributes should be provided to the job. [Learn More](https://docs.gitlab.com/ci/yaml/#rulesif)."
+    },
+    "changes": {
+      "markdownDescription": "Additional attributes will be provided to job if any of the provided paths matches a modified file. [Learn More](https://docs.gitlab.com/ci/yaml/#ruleschanges).",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "paths"
+          ],
+          "properties": {
+            "paths": {
+              "type": "array",
+              "description": "List of file paths.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "compare_to": {
+              "type": "string",
+              "description": "Ref for comparing changes."
+            }
+          }
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "exists": {
+      "markdownDescription": "Additional attributes will be provided to job if any of the provided paths matches an existing file in the repository. [Learn More](https://docs.gitlab.com/ci/yaml/#rulesexists).",
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "paths"
+          ],
+          "properties": {
+            "paths": {
+              "type": "array",
+              "description": "List of file paths.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "project": {
+              "type": "string",
+              "description": "Path of the project to search in."
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "paths",
+            "project"
+          ],
+          "properties": {
+            "paths": {
+              "type": "array",
+              "description": "List of file paths.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "project": {
+              "type": "string",
+              "description": "Path of the project to search in."
+            },
+            "ref": {
+              "type": "string",
+              "description": "Ref of the project to search in."
+            }
+          }
+        }
+      ]
+    },
+    "timeout": {
+      "type": "string",
+      "markdownDescription": "Allows you to configure a timeout for a specific job (e.g. `1 minute`, `1h 30m 12s`). [Learn More](https://docs.gitlab.com/ci/yaml/#timeout).",
+      "minLength": 1
+    },
+    "start_in": {
+      "type": "string",
+      "markdownDescription": "Used in conjunction with 'when: delayed' to set how long to delay before starting a job. e.g. '5', 5 seconds, 30 minutes, 1 week, etc. [Learn More](https://docs.gitlab.com/ci/jobs/job_control/#run-a-job-after-a-delay).",
+      "minLength": 1
+    },
+    "rulesNeeds": {
+      "markdownDescription": "Use needs in rules to update job needs for specific conditions. When a condition matches a rule, the job's needs configuration is completely replaced with the needs in the rule. [Learn More](https://docs.gitlab.com/ci/yaml/#rulesneeds).",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "job": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Name of a job that is defined in the pipeline."
+              },
+              "artifacts": {
+                "type": "boolean",
+                "description": "Download artifacts of the job in needs."
+              },
+              "optional": {
+                "type": "boolean",
+                "description": "Whether the job needs to be present in the pipeline to run ahead of the current job."
+              }
+            },
+            "required": [
+              "job"
+            ]
+          }
+        ]
+      }
+    },
+    "allow_failure": {
+      "markdownDescription": "Allow job to fail. A failed job does not cause the pipeline to fail. [Learn More](https://docs.gitlab.com/ci/yaml/#allow_failure).",
+      "oneOf": [
+        {
+          "description": "Setting this option to true will allow the job to fail while still letting the pipeline pass.",
+          "type": "boolean",
+          "default": false
+        },
+        {
+          "description": "Exit code that are not considered failure. The job fails for any other exit code.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "exit_codes"
+          ],
+          "properties": {
+            "exit_codes": {
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "description": "You can list which exit codes are not considered failures. The job fails for any other exit code.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "exit_codes"
+          ],
+          "properties": {
+            "exit_codes": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "parallel": {
+      "description": "Splits up a single job into multiple that run in parallel. Provides `CI_NODE_INDEX` and `CI_NODE_TOTAL` environment variables to the jobs.",
+      "oneOf": [
+        {
+          "type": "integer",
+          "description": "Creates N instances of the job that run in parallel.",
+          "default": 0,
+          "minimum": 1,
+          "maximum": 200
+        },
+        {
+          "type": "object",
+          "properties": {
+            "matrix": {
+              "type": "array",
+              "description": "Defines different variables for jobs that are running in parallel.",
+              "items": {
+                "type": "object",
+                "description": "Defines the variables for a specific job.",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "array"
+                  ]
+                }
+              },
+              "maxItems": 200
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "matrix"
+          ]
+        }
+      ]
+    },
+    "parallel_matrix": {
+      "description": "Use the `needs:parallel:matrix` keyword to specify parallelized jobs needed to be completed for the job to run. [Learn More](https://docs.gitlab.com/ci/yaml/#needsparallelmatrix)",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "matrix": {
+              "type": "array",
+              "description": "Defines different variables for jobs that are running in parallel.",
+              "items": {
+                "type": "object",
+                "description": "Defines the variables for a specific job.",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "array"
+                  ]
+                }
+              },
+              "maxItems": 200
+            }
+          },
+          "additionalProperties": false,
+          "required": [
+            "matrix"
+          ]
+        }
+      ]
+    },
+    "when": {
+      "markdownDescription": "Describes the conditions for when to run the job. Defaults to 'on_success'. [Learn More](https://docs.gitlab.com/ci/yaml/#when).",
+      "default": "on_success",
+      "type": "string",
+      "enum": [
+        "on_success",
+        "on_failure",
+        "always",
+        "never",
+        "manual",
+        "delayed"
+      ]
+    },
+    "cache": {
+      "markdownDescription": "Use `cache` to specify a list of files and directories to cache between jobs. You can only use paths that are in the local working copy. [Learn More](https://docs.gitlab.com/ci/yaml/#cache)",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/cache_item"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/cache_item"
+          }
+        }
+      ]
+    },
+    "cache_item": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "markdownDescription": "Use the `cache:key` keyword to give each cache a unique identifying key. All jobs that use the same cache key use the same cache, including in different pipelines. Must be used with `cache:path`, or nothing is cached. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekey).",
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[^/]*[^./][^/]*$"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "files": {
+                  "markdownDescription": "Use the `cache:key:files` keyword to generate a new key when one or two specific files change. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekeyfiles)",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "maxItems": 2
+                },
+                "prefix": {
+                  "markdownDescription": "Use `cache:key:prefix` to combine a prefix with the SHA computed for `cache:key:files`. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekeyprefix)",
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        "paths": {
+          "type": "array",
+          "markdownDescription": "Use the `cache:paths` keyword to choose which files or directories to cache. [Learn More](https://docs.gitlab.com/ci/yaml/#cachepaths)",
+          "items": {
+            "type": "string"
+          }
+        },
+        "policy": {
+          "type": "string",
+          "markdownDescription": "Determines the strategy for downloading and updating the cache. [Learn More](https://docs.gitlab.com/ci/yaml/#cachepolicy)",
+          "default": "pull-push",
+          "pattern": "pull-push|pull|push|\\$\\w{1,255}"
+        },
+        "unprotect": {
+          "type": "boolean",
+          "markdownDescription": "Use `unprotect: true` to set a cache to be shared between protected and unprotected branches.",
+          "default": false
+        },
+        "untracked": {
+          "type": "boolean",
+          "markdownDescription": "Use `untracked: true` to cache all files that are untracked in your Git repository. [Learn More](https://docs.gitlab.com/ci/yaml/#cacheuntracked)",
+          "default": false
+        },
+        "when": {
+          "type": "string",
+          "markdownDescription": "Defines when to save the cache, based on the status of the job. [Learn More](https://docs.gitlab.com/ci/yaml/#cachewhen).",
+          "default": "on_success",
+          "enum": [
+            "on_success",
+            "on_failure",
+            "always"
+          ]
+        },
+        "fallback_keys": {
+          "type": "array",
+          "markdownDescription": "List of keys to download cache from if no cache hit occurred for key",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5
+        }
+      }
+    },
+    "filter_refs": {
+      "type": "array",
+      "description": "Filter job by different keywords that determine origin or state, or by supplying string/regex to check against branch/tag names.",
+      "items": {
+        "anyOf": [
+          {
+            "oneOf": [
+              {
+                "enum": [
+                  "branches"
+                ],
+                "description": "When a branch is pushed."
+              },
+              {
+                "enum": [
+                  "tags"
+                ],
+                "description": "When a tag is pushed."
+              },
+              {
+                "enum": [
+                  "api"
+                ],
+                "description": "When a pipeline has been triggered by a second pipelines API (not triggers API)."
+              },
+              {
+                "enum": [
+                  "external"
+                ],
+                "description": "When using CI services other than GitLab"
+              },
+              {
+                "enum": [
+                  "pipelines"
+                ],
+                "description": "For multi-project triggers, created using the API with 'CI_JOB_TOKEN'."
+              },
+              {
+                "enum": [
+                  "pushes"
+                ],
+                "description": "Pipeline is triggered by a `git push` by the user"
+              },
+              {
+                "enum": [
+                  "schedules"
+                ],
+                "description": "For scheduled pipelines."
+              },
+              {
+                "enum": [
+                  "triggers"
+                ],
+                "description": "For pipelines created using a trigger token."
+              },
+              {
+                "enum": [
+                  "web"
+                ],
+                "description": "For pipelines created using *Run pipeline* button in GitLab UI (under your project's *Pipelines*)."
+              }
+            ]
+          },
+          {
+            "type": "string",
+            "description": "String or regular expression to match against tag or branch names."
+          }
+        ]
+      }
+    },
+    "filter": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/definitions/filter_refs"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "refs": {
+              "$ref": "#/definitions/filter_refs"
+            },
+            "kubernetes": {
+              "enum": [
+                "active"
+              ],
+              "description": "Filter job based on if Kubernetes integration is active."
+            },
+            "variables": {
+              "type": "array",
+              "markdownDescription": "Filter job by checking comparing values of CI/CD variables. [Learn More](https://docs.gitlab.com/ci/jobs/job_control/#cicd-variable-expressions).",
+              "items": {
+                "type": "string"
+              }
+            },
+            "changes": {
+              "type": "array",
+              "description": "Filter job creation based on files that were modified in a git push.",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "retry": {
+      "markdownDescription": "Retry a job if it fails. Can be a simple integer or object definition. [Learn More](https://docs.gitlab.com/ci/yaml/#retry).",
+      "oneOf": [
+        {
+          "$ref": "#/definitions/retry_max"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max": {
+              "$ref": "#/definitions/retry_max"
+            },
+            "when": {
+              "markdownDescription": "Either a single or array of error types to trigger job retry. [Learn More](https://docs.gitlab.com/ci/yaml/#retrywhen).",
+              "oneOf": [
+                {
+                  "$ref": "#/definitions/retry_errors"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/retry_errors"
+                  }
+                }
+              ]
+            },
+            "exit_codes": {
+              "markdownDescription": "Either a single or array of exit codes to trigger job retry on. [Learn More](https://docs.gitlab.com/ci/yaml/#retryexit_codes).",
+              "oneOf": [
+                {
+                  "description": "Retry when the job exit code is included in the array's values.",
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "integer"
+                  }
+                },
+                {
+                  "description": "Retry when the job exit code is equal to.",
+                  "type": "integer"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "retry_max": {
+      "type": "integer",
+      "description": "The number of times the job will be retried if it fails. Defaults to 0 and can max be retried 2 times (3 times total).",
+      "default": 0,
+      "minimum": 0,
+      "maximum": 2
+    },
+    "retry_errors": {
+      "oneOf": [
+        {
+          "const": "always",
+          "description": "Retry on any failure (default)."
+        },
+        {
+          "const": "unknown_failure",
+          "description": "Retry when the failure reason is unknown."
+        },
+        {
+          "const": "script_failure",
+          "description": "Retry when the script failed."
+        },
+        {
+          "const": "api_failure",
+          "description": "Retry on API failure."
+        },
+        {
+          "const": "stuck_or_timeout_failure",
+          "description": "Retry when the job got stuck or timed out."
+        },
+        {
+          "const": "runner_system_failure",
+          "description": "Retry if there is a runner system failure (for example, job setup failed)."
+        },
+        {
+          "const": "runner_unsupported",
+          "description": "Retry if the runner is unsupported."
+        },
+        {
+          "const": "stale_schedule",
+          "description": "Retry if a delayed job could not be executed."
+        },
+        {
+          "const": "job_execution_timeout",
+          "description": "Retry if the script exceeded the maximum execution time set for the job."
+        },
+        {
+          "const": "archived_failure",
+          "description": "Retry if the job is archived and can’t be run."
+        },
+        {
+          "const": "unmet_prerequisites",
+          "description": "Retry if the job failed to complete prerequisite tasks."
+        },
+        {
+          "const": "scheduler_failure",
+          "description": "Retry if the scheduler failed to assign the job to a runner."
+        },
+        {
+          "const": "data_integrity_failure",
+          "description": "Retry if there is an unknown job problem."
+        }
+      ]
+    },
+    "interruptible": {
+      "type": "boolean",
+      "markdownDescription": "Interruptible is used to indicate that a job should be canceled if made redundant by a newer pipeline run. [Learn More](https://docs.gitlab.com/ci/yaml/#interruptible).",
+      "default": false
+    },
+    "inputs": {
+      "markdownDescription": "Used to pass input values to included templates, components, downstream pipelines, or child pipelines. [Learn More](https://docs.gitlab.com/ci/inputs/).",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9_-]+$": {
+          "description": "Input parameter value that matches parameter names defined in spec:inputs of the included configuration.",
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 1024
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "array",
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "additionalProperties": true
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": true
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "job": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/job_template"
+        }
+      ]
+    },
+    "job_template": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "image": {
+          "$ref": "#/definitions/image"
+        },
+        "services": {
+          "$ref": "#/definitions/services"
+        },
+        "before_script": {
+          "$ref": "#/definitions/before_script"
+        },
+        "after_script": {
+          "$ref": "#/definitions/after_script"
+        },
+        "hooks": {
+          "$ref": "#/definitions/hooks"
+        },
+        "rules": {
+          "$ref": "#/definitions/rules"
+        },
+        "variables": {
+          "$ref": "#/definitions/jobVariables"
+        },
+        "cache": {
+          "$ref": "#/definitions/cache"
+        },
+        "id_tokens": {
+          "$ref": "#/definitions/id_tokens"
+        },
+        "identity": {
+          "$ref": "#/definitions/identity"
+        },
+        "secrets": {
+          "$ref": "#/definitions/secrets"
+        },
+        "script": {
+          "$ref": "#/definitions/script",
+          "markdownDescription": "Shell scripts executed by the Runner. The only required property of jobs. Be careful with special characters (e.g. `:`, `{`, `}`, `&`) and use single or double quotes to avoid issues. [Learn More](https://docs.gitlab.com/ci/yaml/#script)"
+        },
+        "run": {
+          "$ref": "#/definitions/steps",
+          "markdownDescription": "Specifies a list of steps to execute in the job. The `run` keyword is an alternative to `script` and allows for more advanced job configuration. Each step is an object that defines a single task or command. Use either `run` or `script` in a job, but not both, otherwise the pipeline will error out."
+        },
+        "stage": {
+          "description": "Define what stage the job will run in.",
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "only": {
+          "$ref": "#/definitions/filter",
+          "description": "Job will run *only* when these filtering options match."
+        },
+        "extends": {
+          "description": "The name of one or more jobs to inherit configuration from.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "needs": {
+          "description": "The list of jobs in previous stages whose sole completion is needed to start the current job.",
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "job": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "boolean"
+                  },
+                  "optional": {
+                    "type": "boolean"
+                  },
+                  "parallel": {
+                    "$ref": "#/definitions/parallel_matrix"
+                  }
+                },
+                "required": [
+                  "job"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "pipeline": {
+                    "type": "string"
+                  },
+                  "job": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "boolean"
+                  },
+                  "parallel": {
+                    "$ref": "#/definitions/parallel_matrix"
+                  }
+                },
+                "required": [
+                  "job",
+                  "pipeline"
+                ]
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "job": {
+                    "type": "string"
+                  },
+                  "project": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "artifacts": {
+                    "type": "boolean"
+                  },
+                  "parallel": {
+                    "$ref": "#/definitions/parallel_matrix"
+                  }
+                },
+                "required": [
+                  "job",
+                  "project",
+                  "ref"
+                ]
+              },
+              {
+                "$ref": "#/definitions/!reference"
+              }
+            ]
+          }
+        },
+        "except": {
+          "$ref": "#/definitions/filter",
+          "description": "Job will run *except* for when these filtering options match."
+        },
+        "tags": {
+          "$ref": "#/definitions/tags"
+        },
+        "allow_failure": {
+          "$ref": "#/definitions/allow_failure"
+        },
+        "timeout": {
+          "$ref": "#/definitions/timeout"
+        },
+        "when": {
+          "$ref": "#/definitions/when"
+        },
+        "start_in": {
+          "$ref": "#/definitions/start_in"
+        },
+        "manual_confirmation": {
+          "markdownDescription": "Describes the Custom confirmation message for a manual job [Learn More](https://docs.gitlab.com/ci/yaml/#when).",
+          "type": "string"
+        },
+        "dependencies": {
+          "type": "array",
+          "description": "Specify a list of job names from earlier stages from which artifacts should be loaded. By default, all previous artifacts are passed. Use an empty array to skip downloading artifacts.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "artifacts": {
+          "$ref": "#/definitions/artifacts"
+        },
+        "environment": {
+          "description": "Used to associate environment metadata with a deploy. Environment can have a name and URL attached to it, and will be displayed under /environments under the project.",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The name of the environment, e.g. 'qa', 'staging', 'production'.",
+                  "minLength": 1
+                },
+                "url": {
+                  "type": "string",
+                  "description": "When set, this will expose buttons in various places for the current environment in GitLab, that will take you to the defined URL.",
+                  "format": "uri",
+                  "pattern": "^(https?://.+|\\$[A-Za-z]+)"
+                },
+                "on_stop": {
+                  "type": "string",
+                  "description": "The name of a job to execute when the environment is about to be stopped."
+                },
+                "action": {
+                  "enum": [
+                    "start",
+                    "prepare",
+                    "stop",
+                    "verify",
+                    "access"
+                  ],
+                  "description": "Specifies what this job will do. 'start' (default) indicates the job will start the deployment. 'prepare'/'verify'/'access' indicates this will not affect the deployment. 'stop' indicates this will stop the deployment.",
+                  "default": "start"
+                },
+                "auto_stop_in": {
+                  "type": "string",
+                  "description": "The amount of time it should take before GitLab will automatically stop the environment. Supports a wide variety of formats, e.g. '1 week', '3 mins 4 sec', '2 hrs 20 min', '2h20min', '6 mos 1 day', '47 yrs 6 mos and 4d', '3 weeks and 2 days'."
+                },
+                "kubernetes": {
+                  "type": "object",
+                  "description": "Used to configure the kubernetes deployment for this environment. This is currently not supported for kubernetes clusters that are managed by GitLab.",
+                  "properties": {
+                    "namespace": {
+                      "type": "string",
+                      "description": "The kubernetes namespace where this environment should be deployed to.",
+                      "minLength": 1
+                    },
+                    "agent": {
+                      "type": "string",
+                      "description": "Specifies the GitLab Agent for Kubernetes. The format is `path/to/agent/project:agent-name`."
+                    },
+                    "flux_resource_path": {
+                      "type": "string",
+                      "description": "The Flux resource path to associate with this environment. This must be the full resource path. For example, 'helm.toolkit.fluxcd.io/v2/namespaces/gitlab-agent/helmreleases/gitlab-agent'."
+                    }
+                  }
+                },
+                "deployment_tier": {
+                  "type": "string",
+                  "description": "Explicitly specifies the tier of the deployment environment if non-standard environment name is used.",
+                  "enum": [
+                    "production",
+                    "staging",
+                    "testing",
+                    "development",
+                    "other"
+                  ]
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          ]
+        },
+        "release": {
+          "type": "object",
+          "description": "Indicates that the job creates a Release.",
+          "additionalProperties": false,
+          "properties": {
+            "tag_name": {
+              "type": "string",
+              "description": "The tag_name must be specified. It can refer to an existing Git tag or can be specified by the user.",
+              "minLength": 1
+            },
+            "tag_message": {
+              "type": "string",
+              "description": "Message to use if creating a new annotated tag."
+            },
+            "description": {
+              "type": "string",
+              "description": "Specifies the longer description of the Release.",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "description": "The Release name. If omitted, it is populated with the value of release: tag_name."
+            },
+            "ref": {
+              "type": "string",
+              "description": "If the release: tag_name doesn’t exist yet, the release is created from ref. ref can be a commit SHA, another tag name, or a branch name."
+            },
+            "milestones": {
+              "type": "array",
+              "description": "The title of each milestone the release is associated with.",
+              "items": {
+                "type": "string"
+              }
+            },
+            "released_at": {
+              "type": "string",
+              "description": "The date and time when the release is ready. Defaults to the current date and time if not defined. Should be enclosed in quotes and expressed in ISO 8601 format.",
+              "format": "date-time",
+              "pattern": "^(?:[1-9]\\d{3}-(?:(?:0[1-9]|1[0-2])-(?:0[1-9]|1\\d|2[0-8])|(?:0[13-9]|1[0-2])-(?:29|30)|(?:0[13578]|1[02])-31)|(?:[1-9]\\d(?:0[48]|[2468][048]|[13579][26])|(?:[2468][048]|[13579][26])00)-02-29)T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:Z|[+-][01]\\d:[0-5]\\d)$"
+            },
+            "assets": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "links": {
+                  "type": "array",
+                  "description": "Include asset links in the release.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "description": "The name of the link.",
+                        "minLength": 1
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "The URL to download a file.",
+                        "minLength": 1
+                      },
+                      "filepath": {
+                        "type": "string",
+                        "description": "The redirect link to the url."
+                      },
+                      "link_type": {
+                        "type": "string",
+                        "description": "The content kind of what users can download via url.",
+                        "enum": [
+                          "runbook",
+                          "package",
+                          "image",
+                          "other"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "url"
+                    ]
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "links"
+              ]
+            }
+          },
+          "required": [
+            "tag_name",
+            "description"
+          ]
+        },
+        "coverage": {
+          "type": "string",
+          "description": "Must be a regular expression, optionally but recommended to be quoted, and must be surrounded with '/'. Example: '/Code coverage: \\d+\\.\\d+/'",
+          "format": "regex",
+          "pattern": "^/.+/$"
+        },
+        "retry": {
+          "$ref": "#/definitions/retry"
+        },
+        "parallel": {
+          "$ref": "#/definitions/parallel"
+        },
+        "interruptible": {
+          "$ref": "#/definitions/interruptible"
+        },
+        "resource_group": {
+          "type": "string",
+          "description": "Limit job concurrency. Can be used to ensure that the Runner will not run certain jobs simultaneously."
+        },
+        "trigger": {
+          "markdownDescription": "Trigger allows you to define downstream pipeline trigger. When a job created from trigger definition is started by GitLab, a downstream pipeline gets created. [Learn More](https://docs.gitlab.com/ci/yaml/#trigger).",
+          "oneOf": [
+            {
+              "type": "object",
+              "markdownDescription": "Trigger a multi-project pipeline. [Learn More](https://docs.gitlab.com/ci/pipelines/downstream_pipelines/#multi-project-pipelines).",
+              "additionalProperties": false,
+              "properties": {
+                "project": {
+                  "description": "Path to the project, e.g. `group/project`, or `group/sub-group/project`.",
+                  "type": "string",
+                  "pattern": "(?:\\S/\\S|\\$\\S+)"
+                },
+                "branch": {
+                  "description": "The branch name that a downstream pipeline will use",
+                  "type": "string"
+                },
+                "strategy": {
+                  "description": "You can mirror or depend on the pipeline status from the triggered pipeline to the source bridge job by using strategy: `depend` or `mirror`",
+                  "type": "string",
+                  "enum": [
+                    "depend",
+                    "mirror"
+                  ]
+                },
+                "inputs": {
+                  "$ref": "#/definitions/inputs"
+                },
+                "forward": {
+                  "description": "Specify what to forward to the downstream pipeline.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "yaml_variables": {
+                      "type": "boolean",
+                      "description": "Variables defined in the trigger job are passed to downstream pipelines.",
+                      "default": true
+                    },
+                    "pipeline_variables": {
+                      "type": "boolean",
+                      "description": "Variables added for manual pipeline runs and scheduled pipelines are passed to downstream pipelines.",
+                      "default": false
+                    }
+                  }
+                }
+              },
+              "required": [
+                "project"
+              ],
+              "dependencies": {
+                "branch": [
+                  "project"
+                ]
+              }
+            },
+            {
+              "type": "object",
+              "description": "Trigger a child pipeline. [Learn More](https://docs.gitlab.com/ci/pipelines/downstream_pipelines/#parent-child-pipelines).",
+              "additionalProperties": false,
+              "properties": {
+                "include": {
+                  "oneOf": [
+                    {
+                      "description": "Relative path from local repository root (`/`) to the local YAML file to define the pipeline configuration.",
+                      "type": "string",
+                      "format": "uri-reference",
+                      "pattern": "\\.ya?ml$"
+                    },
+                    {
+                      "type": "array",
+                      "description": "References a local file or an artifact from another job to define the pipeline configuration.",
+                      "maxItems": 3,
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "local": {
+                                "description": "Relative path from local repository root (`/`) to the local YAML file to define the pipeline configuration.",
+                                "type": "string",
+                                "format": "uri-reference",
+                                "pattern": "\\.ya?ml$"
+                              },
+                              "inputs": {
+                                "$ref": "#/definitions/inputs"
+                              }
+                            },
+                            "required": [
+                              "local"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "template": {
+                                "description": "Name of the template YAML file to use in the pipeline configuration.",
+                                "type": "string",
+                                "format": "uri-reference",
+                                "pattern": "\\.ya?ml$"
+                              },
+                              "inputs": {
+                                "$ref": "#/definitions/inputs"
+                              }
+                            },
+                            "required": [
+                              "template"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "artifact": {
+                                "description": "Relative path to the generated YAML file which is extracted from the artifacts and used as the configuration for triggering the child pipeline.",
+                                "type": "string",
+                                "format": "uri-reference",
+                                "pattern": "\\.ya?ml$"
+                              },
+                              "job": {
+                                "description": "Job name which generates the artifact",
+                                "type": "string"
+                              },
+                              "inputs": {
+                                "$ref": "#/definitions/inputs"
+                              }
+                            },
+                            "required": [
+                              "artifact",
+                              "job"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "project": {
+                                "description": "Path to another private project under the same GitLab instance, like `group/project` or `group/sub-group/project`.",
+                                "type": "string",
+                                "pattern": "(?:\\S/\\S|\\$\\S+)"
+                              },
+                              "ref": {
+                                "description": "Branch/Tag/Commit hash for the target project.",
+                                "minLength": 1,
+                                "type": "string"
+                              },
+                              "file": {
+                                "description": "Relative path from repository root (`/`) to the pipeline configuration YAML file.",
+                                "type": "string",
+                                "format": "uri-reference",
+                                "pattern": "\\.ya?ml$"
+                              },
+                              "inputs": {
+                                "$ref": "#/definitions/inputs"
+                              }
+                            },
+                            "required": [
+                              "project",
+                              "file"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "component": {
+                                "description": "Local path to component directory or full path to external component directory.",
+                                "type": "string",
+                                "format": "uri-reference"
+                              },
+                              "inputs": {
+                                "$ref": "#/definitions/inputs"
+                              }
+                            },
+                            "required": [
+                              "component"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "remote": {
+                                "description": "URL to a `yaml`/`yml` template file using HTTP/HTTPS.",
+                                "type": "string",
+                                "format": "uri-reference",
+                                "pattern": "^https?://.+\\.ya?ml$"
+                              },
+                              "inputs": {
+                                "$ref": "#/definitions/inputs"
+                              }
+                            },
+                            "required": [
+                              "remote"
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "strategy": {
+                  "description": "You can mirror or depend on the pipeline status from the triggered pipeline to the source bridge job by using strategy: `depend` or `mirror`",
+                  "type": "string",
+                  "enum": [
+                    "depend",
+                    "mirror"
+                  ]
+                },
+                "forward": {
+                  "description": "Specify what to forward to the downstream pipeline.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "yaml_variables": {
+                      "type": "boolean",
+                      "description": "Variables defined in the trigger job are passed to downstream pipelines.",
+                      "default": true
+                    },
+                    "pipeline_variables": {
+                      "type": "boolean",
+                      "description": "Variables added for manual pipeline runs and scheduled pipelines are passed to downstream pipelines.",
+                      "default": false
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "markdownDescription": "Path to the project, e.g. `group/project`, or `group/sub-group/project`. [Learn More](https://docs.gitlab.com/ci/yaml/#trigger).",
+              "type": "string",
+              "pattern": "(?:\\S/\\S|\\$\\S+)"
+            }
+          ]
+        },
+        "inherit": {
+          "type": "object",
+          "markdownDescription": "Controls inheritance of globally-defined defaults and variables. Boolean values control inheritance of all default: or variables: keywords. To inherit only a subset of default: or variables: keywords, specify what you wish to inherit. Anything not listed is not inherited. [Learn More](https://docs.gitlab.com/ci/yaml/#inherit).",
+          "properties": {
+            "default": {
+              "markdownDescription": "Whether to inherit all globally-defined defaults or not. Or subset of inherited defaults. [Learn more](https://docs.gitlab.com/ci/yaml/#inheritdefault).",
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "after_script",
+                      "artifacts",
+                      "before_script",
+                      "cache",
+                      "image",
+                      "interruptible",
+                      "retry",
+                      "services",
+                      "tags",
+                      "timeout"
+                    ]
+                  }
+                }
+              ]
+            },
+            "variables": {
+              "markdownDescription": "Whether to inherit all globally-defined variables or not. Or subset of inherited variables. [Learn More](https://docs.gitlab.com/ci/yaml/#inheritvariables).",
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "publish": {
+          "description": "Deprecated. Use `pages.publish` instead. A path to a directory that contains the files to be published with Pages.",
+          "type": "string"
+        },
+        "pages": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path_prefix": {
+                  "type": "string",
+                  "markdownDescription": "The GitLab Pages URL path prefix used in this version of pages. The given value is converted to lowercase, shortened to 63 bytes, and everything except alphanumeric characters is replaced with a hyphen. Leading and trailing hyphens are not permitted."
+                },
+                "expire_in": {
+                  "type": "string",
+                  "markdownDescription": "How long the deployment should be active. Deployments that have expired are no longer available on the web. Supports a wide variety of formats, e.g. '1 week', '3 mins 4 sec', '2 hrs 20 min', '2h20min', '6 mos 1 day', '47 yrs 6 mos and 4d', '3 weeks and 2 days'. Set to 'never' to prevent extra deployments from expiring. [Learn More](https://docs.gitlab.com/ci/yaml/#pagesexpire_in)."
+                },
+                "publish": {
+                  "type": "string",
+                  "markdownDescription": "A path to a directory that contains the files to be published with Pages."
+                }
+              }
+            },
+            {
+              "type": "boolean",
+              "markdownDescription": "Whether this job should trigger a Pages deploy (Replaces the need to name the job `pages`)",
+              "default": false
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "when": {
+              "enum": [
+                "delayed"
+              ]
+            }
+          },
+          "required": [
+            "when",
+            "start_in"
+          ]
+        },
+        {
+          "properties": {
+            "when": {
+              "not": {
+                "enum": [
+                  "delayed"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "markdownDescription": "Used to select runners from the list of available runners. A runner must have all tags listed here to run the job. [Learn More](https://docs.gitlab.com/ci/yaml/#tags).",
+      "items": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "markdownDescription": "Specifies lists of commands to execute on the runner at certain stages of job execution. [Learn More](https://docs.gitlab.com/ci/yaml/#hooks).",
+      "properties": {
+        "pre_get_sources_script": {
+          "$ref": "#/definitions/optional_script",
+          "markdownDescription": "Specifies a list of commands to execute on the runner before updating the Git repository and any submodules. [Learn More](https://docs.gitlab.com/ci/yaml/#hookspre_get_sources_script)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "step": {
+      "description": "Any of these step use cases are valid.",
+      "oneOf": [
+        {
+          "description": "Run a referenced step.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "step"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/definitions/stepName"
+            },
+            "env": {
+              "$ref": "#/definitions/stepNamedStrings"
+            },
+            "inputs": {
+              "$ref": "#/definitions/stepNamedValues"
+            },
+            "step": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/definitions/stepGitReference"
+                },
+                {
+                  "$ref": "#/definitions/stepOciReference"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "description": "Run a sequence of steps.",
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "run"
+              ],
+              "properties": {
+                "env": {
+                  "$ref": "#/definitions/stepNamedStrings"
+                },
+                "run": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/definitions/step"
+                  }
+                },
+                "outputs": {
+                  "$ref": "#/definitions/stepNamedValues"
+                },
+                "delegate": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "description": "Run an action.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "action"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/definitions/stepName"
+            },
+            "env": {
+              "$ref": "#/definitions/stepNamedStrings"
+            },
+            "inputs": {
+              "$ref": "#/definitions/stepNamedValues"
+            },
+            "action": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "description": "Run a script.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "script"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/definitions/stepName"
+            },
+            "env": {
+              "$ref": "#/definitions/stepNamedStrings"
+            },
+            "script": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "description": "Exec a binary.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "exec"
+          ],
+          "properties": {
+            "env": {
+              "$ref": "#/definitions/stepNamedStrings"
+            },
+            "exec": {
+              "description": "Exec is a command to run.",
+              "$ref": "#/definitions/stepExec"
+            }
+          }
+        }
+      ]
+    },
+    "stepName": {
+      "type": "string",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+    },
+    "stepNamedStrings": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "stepNamedValues": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+          "type": [
+            "string",
+            "number",
+            "boolean",
+            "null",
+            "array",
+            "object"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "stepGitReference": {
+      "type": "object",
+      "description": "GitReference is a reference to a step in a Git repository.",
+      "additionalProperties": false,
+      "required": [
+        "git"
+      ],
+      "properties": {
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "url",
+            "rev"
+          ],
+          "properties": {
+            "url": {
+              "type": "string"
+            },
+            "dir": {
+              "type": "string"
+            },
+            "rev": {
+              "type": "string"
+            },
+            "file": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "stepOciReference": {
+      "type": "object",
+      "description": "OCIReference is a reference to a step hosted in an OCI repository.",
+      "additionalProperties": false,
+      "required": [
+        "oci"
+      ],
+      "properties": {
+        "oci": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "registry",
+            "repository",
+            "tag"
+          ],
+          "properties": {
+            "registry": {
+              "type": "string",
+              "description": "The <host>[:<port>] of the container registry server.",
+              "examples": [
+                "registry.gitlab.com"
+              ]
+            },
+            "repository": {
+              "type": "string",
+              "description": "A path within the registry containing related OCI images. Typically the namespace, project, and image name.",
+              "examples": [
+                "my_group/my_project/image"
+              ]
+            },
+            "tag": {
+              "type": "string",
+              "description": "A pointer to the image manifest hosted in the OCI repository.",
+              "examples": [
+                "latest",
+                "1",
+                "1.5",
+                "1.5.0"
+              ]
+            },
+            "dir": {
+              "type": "string",
+              "description": "A directory inside the OCI image where the step can be found.",
+              "examples": [
+                "/my_steps/hello_world"
+              ]
+            },
+            "file": {
+              "type": "string",
+              "description": "The name of the file that defines the step, defaults to step.yml.",
+              "examples": [
+                "step.yml"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "stepExec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "array",
+          "description": "Command are the parameters to the system exec API. It does not invoke a shell.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "work_dir": {
+          "type": "string",
+          "description": "WorkDir is the working directly in which `command` will be exec'ed."
+        }
+      }
+    }
+  }
+}
+```
 ## File: utils\cli_suggestions.py
 ```python
+from __future__ import annotations
+
 import argparse
 import sys
 
@@ -8761,6 +11903,8 @@ def to_posix(tok: str) -> str:
 ```
 ## File: utils\pathlib_polyfills.py
 ```python
+from __future__ import annotations
+
 import os
 from pathlib import Path, PurePath
 
@@ -9346,6 +12490,8 @@ def check_for_updates(
 ```python
 """Utility functions with no strong link to the domain of the overall application."""
 
+from __future__ import annotations
+
 from pathlib import Path
 
 
@@ -9377,6 +12523,480 @@ def short_path(path: Path) -> str:
     except ValueError:
         return str(path.resolve())
 ```
+## File: utils\valid2.py
+```python
+import json
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+# Import compatibility for Python 3.8+
+if sys.version_info >= (3, 9):
+    from importlib.resources import files
+else:
+    try:
+        from importlib_resources import files
+    except ImportError:
+        files = None
+
+import jsonschema
+import ruamel.yaml
+
+
+class GitLabCIValidator:
+    """Validates GitLab CI YAML files against the official schema."""
+
+    def __init__(self, cache_dir: Optional[str] = None):
+        """
+        Initialize the validator.
+
+        Args:
+            cache_dir: Directory to cache the schema file. If None, uses system temp directory.
+        """
+        self.schema_url = (
+            "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json"
+        )
+        self.cache_dir = Path(cache_dir) if cache_dir else Path(tempfile.gettempdir())
+        self.cache_file = self.cache_dir / "gitlab_ci_schema.json"
+        self.fallback_schema_path = "schemas/gitlab_ci_schema.json"  # Package resource path
+        self.yaml = ruamel.yaml.YAML(typ="safe")
+
+    def _fetch_schema_from_url(self) -> Optional[Dict[str, Any]]:
+        """
+        Fetch the schema from GitLab's repository.
+
+        Returns:
+            Schema dictionary if successful, None otherwise.
+        """
+        try:
+            with urllib.request.urlopen(self.schema_url, timeout=5) as response:  # nosec
+                schema_data = response.read().decode("utf-8")
+                return json.loads(schema_data)
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError) as e:
+            print(f"Failed to fetch schema from URL: {e}")
+            return None
+
+    def _load_schema_from_cache(self) -> Optional[Dict[str, Any]]:
+        """
+        Load the schema from cache file.
+
+        Returns:
+            Schema dictionary if successful, None otherwise.
+        """
+        try:
+            if self.cache_file.exists():
+                with open(self.cache_file, encoding="utf-8") as f:
+                    return json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Failed to load schema from cache: {e}")
+        return None
+
+    def _save_schema_to_cache(self, schema: Dict[str, Any]) -> None:
+        """
+        Save the schema to cache file.
+
+        Args:
+            schema: Schema dictionary to cache.
+        """
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.cache_file, "w", encoding="utf-8") as f:
+                json.dump(schema, f, indent=2)
+        except OSError as e:
+            print(f"Failed to save schema to cache: {e}")
+
+    def _load_fallback_schema(self) -> Optional[Dict[str, Any]]:
+        """
+        Load the fallback schema from package resources.
+
+        Returns:
+            Schema dictionary if successful, None otherwise.
+        """
+        try:
+            # Try modern importlib.resources approach (Python 3.9+) or importlib_resources backport
+            if files is not None:
+                try:
+                    package_files = files(__package__ or __name__.split(".")[0])
+                    schema_file = package_files / self.fallback_schema_path
+                    if schema_file.is_file():
+                        schema_data = schema_file.read_text(encoding="utf-8")
+                        return json.loads(schema_data)
+                except (FileNotFoundError, AttributeError, TypeError):
+                    pass
+
+            # Fallback: try to load from relative path
+            try:
+                current_dir = Path(__file__).parent if "__file__" in globals() else Path.cwd()
+                fallback_file = current_dir / self.fallback_schema_path
+                if fallback_file.exists():
+                    with open(fallback_file, encoding="utf-8") as f:
+                        return json.load(f)
+            except (OSError, FileNotFoundError):
+                pass
+
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"Failed to load fallback schema: {e}")
+
+        return None
+
+    def get_schema(self) -> Dict[str, Any]:
+        """
+        Get the GitLab CI schema, trying URL first, then cache, then fallback.
+
+        Returns:
+            Schema dictionary.
+
+        Raises:
+            RuntimeError: If no schema could be loaded from any source.
+        """
+        # Try to fetch from URL first
+        schema = self._fetch_schema_from_url()
+        if schema:
+            self._save_schema_to_cache(schema)
+            return schema
+
+        # Fall back to cache
+        schema = self._load_schema_from_cache()
+        if schema:
+            print("Using cached schema (could not fetch from URL)")
+            return schema
+
+        # Fall back to package resource
+        schema = self._load_fallback_schema()
+        if schema:
+            print("Using fallback schema from package (could not fetch from URL or cache)")
+            return schema
+
+        raise RuntimeError("Could not load schema from URL, cache, or fallback resource")
+
+    def yaml_to_json(self, yaml_content: str) -> Dict[str, Any]:
+        """
+        Convert YAML content to JSON-compatible dictionary.
+
+        Args:
+            yaml_content: YAML string content.
+
+        Returns:
+            Dictionary representation of the YAML.
+
+        Raises:
+            ruamel.yaml.YAMLError: If YAML parsing fails.
+        """
+        return self.yaml.load(yaml_content)
+
+    def validate_ci_config(self, yaml_content: str) -> Tuple[bool, List[str]]:
+        """
+        Validate GitLab CI YAML configuration against the schema.
+
+        Args:
+            yaml_content: YAML configuration as string.
+
+        Returns:
+            Tuple of (is_valid, list_of_error_messages).
+        """
+        try:
+            # Convert YAML to JSON-compatible dict
+            config_dict = self.yaml_to_json(yaml_content)
+
+            # Get the schema
+            schema = self.get_schema()
+
+            # Validate against schema
+            validator = jsonschema.Draft7Validator(schema)
+            errors = []
+
+            for error in validator.iter_errors(config_dict):
+                error_path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "root"
+                error_msg = f"Path '{error_path}': {error.message}"
+                errors.append(error_msg)
+
+            is_valid = len(errors) == 0
+            return is_valid, errors
+
+        except ruamel.yaml.YAMLError as e:
+            return False, [f"YAML parsing error: {str(e)}"]
+        except Exception as e:
+            return False, [f"Validation error: {str(e)}"]
+
+
+def validate_gitlab_ci_yaml(yaml_content: str, cache_dir: Optional[str] = None) -> Tuple[bool, List[str]]:
+    """
+    Convenience function to validate GitLab CI YAML configuration.
+
+    Args:
+        yaml_content: YAML configuration as string.
+        cache_dir: Optional directory for caching schema.
+
+    Returns:
+        Tuple of (is_valid, list_of_error_messages).
+    """
+    validator = GitLabCIValidator(cache_dir=cache_dir)
+    return validator.validate_ci_config(yaml_content)
+
+
+# Example usage
+if __name__ == "__main__":
+    # Example GitLab CI YAML
+    sample_yaml = """
+    stages:
+      - build
+      - test
+      - deploy
+
+    build_job:
+      stage: build
+      script:
+        - echo "Building the project"
+        - make build
+      artifacts:
+        paths:
+          - build/
+
+    test_job:
+      stage: test
+      script:
+        - echo "Running tests"
+        - make test
+      dependencies:
+        - build_job
+
+    deploy_job:
+      stage: deploy
+      script:
+        - echo "Deploying application"
+        - make deploy
+      only:
+        - main
+    """
+
+    # Validate the YAML
+    is_valid, errors = validate_gitlab_ci_yaml(sample_yaml)
+
+    if is_valid:
+        print("✅ GitLab CI configuration is valid!")
+    else:
+        print("❌ GitLab CI configuration has validation errors:")
+        for error in errors:
+            print(f"  - {error}")
+```
+## File: utils\validate_pipeline.py
+```python
+from __future__ import annotations
+
+import json
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+import jsonschema
+import ruamel.yaml
+
+# Import compatibility for Python 3.8+
+if sys.version_info >= (3, 9):
+    from importlib.resources import files
+else:
+    try:
+        from importlib_resources import files
+    except ImportError:
+        files = None
+
+
+class GitLabCIValidator:
+    """Validates GitLab CI YAML files against the official schema."""
+
+    def __init__(self, cache_dir: str | None = None):
+        """
+        Initialize the validator.
+
+        Args:
+            cache_dir: Directory to cache the schema file. If None, uses system temp directory.
+        """
+        self.schema_url = (
+            "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json"
+        )
+        self.cache_dir = Path(cache_dir) if cache_dir else Path(tempfile.gettempdir())
+        self.cache_file = self.cache_dir / "gitlab_ci_schema.json"
+        self.fallback_schema_path = "schemas/gitlab_ci_schema.json"  # Package resource path
+        self.yaml = ruamel.yaml.YAML(typ="rt")
+
+    def _fetch_schema_from_url(self) -> dict[str, Any] | None:
+        """
+        Fetch the schema from GitLab's repository.
+
+        Returns:
+            Schema dictionary if successful, None otherwise.
+        """
+        try:
+            with urllib.request.urlopen(self.schema_url, timeout=5) as response:  # nosec
+                schema_data = response.read().decode("utf-8")
+                return json.loads(schema_data)
+        except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError) as e:
+            print(f"Failed to fetch schema from URL: {e}")
+            return None
+
+    def _load_schema_from_cache(self) -> dict[str, Any] | None:
+        """
+        Load the schema from cache file.
+
+        Returns:
+            Schema dictionary if successful, None otherwise.
+        """
+        try:
+            if self.cache_file.exists():
+                with open(self.cache_file, encoding="utf-8") as f:
+                    return json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"Failed to load schema from cache: {e}")
+        return None
+
+    def _save_schema_to_cache(self, schema: dict[str, Any]) -> None:
+        """
+        Save the schema to cache file.
+
+        Args:
+            schema: Schema dictionary to cache.
+        """
+        try:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            with open(self.cache_file, "w", encoding="utf-8") as f:
+                json.dump(schema, f, indent=2)
+        except OSError as e:
+            print(f"Failed to save schema to cache: {e}")
+
+    def _load_fallback_schema(self) -> dict[str, Any] | None:
+        """
+        Load the fallback schema from package resources.
+
+        Returns:
+            Schema dictionary if successful, None otherwise.
+        """
+        try:
+            # Try modern importlib.resources approach (Python 3.9+) or importlib_resources backport
+            if files is not None:
+                try:
+                    package_files = files(__package__ or __name__.split(".")[0])
+                    schema_file = package_files / self.fallback_schema_path
+                    if schema_file.is_file():
+                        schema_data = schema_file.read_text(encoding="utf-8")
+                        return json.loads(schema_data)
+                except (FileNotFoundError, AttributeError, TypeError):
+                    pass
+
+            # Fallback: try to load from relative path
+            try:
+                current_dir = Path(__file__).parent if "__file__" in globals() else Path.cwd()
+                fallback_file = current_dir / self.fallback_schema_path
+                if fallback_file.exists():
+                    with open(fallback_file, encoding="utf-8") as f:
+                        return json.load(f)
+            except (OSError, FileNotFoundError):
+                pass
+
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"Failed to load fallback schema: {e}")
+
+        return None
+
+    def get_schema(self) -> dict[str, Any]:
+        """
+        Get the GitLab CI schema, trying URL first, then cache, then fallback.
+
+        Returns:
+            Schema dictionary.
+
+        Raises:
+            RuntimeError: If no schema could be loaded from any source.
+        """
+        # Try to fetch from URL first
+        schema = self._fetch_schema_from_url()
+        if schema:
+            self._save_schema_to_cache(schema)
+            return schema
+
+        # Fall back to cache
+        schema = self._load_schema_from_cache()
+        if schema:
+            print("Using cached schema (could not fetch from URL)")
+            return schema
+
+        # Fall back to package resource
+        schema = self._load_fallback_schema()
+        if schema:
+            print("Using fallback schema from package (could not fetch from URL or cache)")
+            return schema
+
+        raise RuntimeError("Could not load schema from URL, cache, or fallback resource")
+
+    def yaml_to_json(self, yaml_content: str) -> dict[str, Any]:
+        """
+        Convert YAML content to JSON-compatible dictionary.
+
+        Args:
+            yaml_content: YAML string content.
+
+        Returns:
+            Dictionary representation of the YAML.
+
+        Raises:
+            ruamel.yaml.YAMLError: If YAML parsing fails.
+        """
+        return self.yaml.load(yaml_content)
+
+    def validate_ci_config(self, yaml_content: str) -> tuple[bool, list[str]]:
+        """
+        Validate GitLab CI YAML configuration against the schema.
+
+        Args:
+            yaml_content: YAML configuration as string.
+
+        Returns:
+            tuple of (is_valid, list_of_error_messages).
+        """
+        try:
+            # Convert YAML to JSON-compatible dict
+            config_dict = self.yaml_to_json(yaml_content)
+
+            # Get the schema
+            schema = self.get_schema()
+
+            # Validate against schema
+            validator = jsonschema.Draft7Validator(schema)
+            errors = []
+
+            for error in validator.iter_errors(config_dict):
+                error_path = " -> ".join(str(p) for p in error.absolute_path) if error.absolute_path else "root"
+                error_msg = f"Path '{error_path}': {error.message}"
+                errors.append(error_msg)
+
+            is_valid = len(errors) == 0
+            return is_valid, errors
+
+        except ruamel.yaml.YAMLError as e:
+            return False, [f"YAML parsing error: {str(e)}"]
+        except Exception as e:
+            return False, [f"Validation error: {str(e)}"]
+
+
+def validate_gitlab_ci_yaml(yaml_content: str, cache_dir: str | None = None) -> tuple[bool, list[str]]:
+    """
+    Convenience function to validate GitLab CI YAML configuration.
+
+    Args:
+        yaml_content: YAML configuration as string.
+        cache_dir: Optional directory for caching schema.
+
+    Returns:
+        tuple of (is_valid, list_of_error_messages).
+    """
+    validator = GitLabCIValidator(cache_dir=cache_dir)
+    return validator.validate_ci_config(yaml_content)
+```
 ## File: utils\yaml_factory.py
 ```python
 """Cache and centralize the YAML object"""
@@ -9393,7 +13013,7 @@ def get_yaml() -> YAML:
     y.width = 4096
     y.preserve_quotes = True  # Want to minimize quotes, but "1.0" -> 1.0 is a type change.
     # maximize quotes
-    y.default_style = '"'  # type: ignore[assignment]
+    # y.default_style = '"'  # type: ignore[assignment]
     y.explicit_start = False  # no '---'
     y.explicit_end = False  # no '...'
     return y
@@ -9425,6 +13045,8 @@ def get_yaml() -> YAML:
 ```
 ## File: utils\yaml_file_same.py
 ```python
+from __future__ import annotations
+
 import re
 
 from ruamel.yaml.error import YAMLError

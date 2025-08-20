@@ -202,13 +202,13 @@ def build_eval_command(interp: str, flag: str | None, quoted: str, rest: str | N
     return f"{interp} {flag} {quoted}{r}"
 
 
-def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str] | None:
+def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> tuple[list[str], Path] | tuple[None, None]:
     """If *line* looks like an interpreter execution we can inline, return:
     [BEGIN_MARK, <interpreter -flag 'code'>, END_MARK]. Otherwise, return None.
     """
     m = _INTERP_LINE.match(line)
     if not m:
-        return None
+        return None, None
 
     interp_raw = m.group("interp")
     interp = normalize_interp(interp_raw)
@@ -220,19 +220,19 @@ def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str]
         target_file, shown = resolve_interpreter_target(interp_raw, module, path_str, scripts_root)
     except ValueError as e:
         logger.debug("Interpreter inline skip: %s", e)
-        return None
+        return None, None
 
     if not target_file.is_file():
         logger.warning("Could not inline %s: file not found at %s; preserving original.", shown, target_file)
-        return None
+        return None, None
 
     if not is_reasonable_ext(interp, target_file):
         logger.debug("Interpreter inline skip: extension %s not expected for %s", target_file.suffix, interp)
-        return None
+        return None, None
 
     code = read_script_bytes(target_file)
     if code is None:
-        return None
+        return None, None
 
     quoted = shell_single_quote(code)
 
@@ -244,18 +244,18 @@ def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> list[str]
             len(quoted),
             MAX_INLINE_LEN,
         )
-        return None
+        return None, None
 
     flag = _INTERPRETER_FLAGS.get(interp)
     if flag is None:
         logger.debug("Interpreter inline skip: no eval flag known for %s", interp)
-        return None
+        return None, None
 
     inlined_cmd = build_eval_command(interp, flag, quoted, rest)
     if inlined_cmd is None:
-        return None
+        return None, None
 
     begin_marker = f"# >>> BEGIN inline: {shown}"
     end_marker = "# <<< END inline"
     logger.debug("Inlining interpreter command '%s' (%d chars).", shown, len(code))
-    return [begin_marker, inlined_cmd, end_marker]
+    return [begin_marker, inlined_cmd, end_marker], target_file

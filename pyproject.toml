@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.8.19"
+version = "0.8.20"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -10,28 +10,26 @@ requires-python = ">=3.8"
 dependencies = [
     # Core
     "ruamel.yaml",
-    "watchdog>=3.0.0",
+    "watchdog>=3.0.0", # could be optional
+    "jsonschema",
     # Extensibility
     "pluggy",
     # CLI
-    "argcomplete",
+    "argcomplete", # could be optional
     # UI
-    "textual",
-    "colorlog",
-    "rich",
-    "tomlkit",
+    "textual", # could be optional
+    "colorlog", # could be optional
+    "rich", # could be optional
     # graphing
-    "pyvis",
-    "graphviz",
-    "matplotlib",
+    "pyvis", # could be optional
+    "graphviz", # could be optional
+    "matplotlib", # could be optional
     # update checker
     "packaging",
     # Config, backwards compatibility
     "toml",
-    # yamlfix
-    # "pydantic>=2.12.0a1; python_version >= '3.14'"
-#    "importlib-resources; python_version < '3.9'",
-#    "typing_extensions ; python_version < '3.8'",
+    "tomlkit", # right now only used by init
+    "importlib_resources"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -57,13 +55,6 @@ homepage = "https://github.com/matthewdeanmartin/bash2gitlab"
 issues = "https://github.com/matthewdeanmartin/bash2gitlab/issues/"
 # support – e.g. chat or forum - TODO
 
-[tool.hatch.build.targets.sdist]
-include = ["/README.md", "LICENSE", "/bash2gitlab", "/tests"]
-
-[tool.hatch.build.targets.wheel]
-packages = [
-    "bash2gitlab",
-]
 
 #[project.optional-dependencies]
 #chat = ["bash2gitlab-chat"]
@@ -76,20 +67,15 @@ dev = [
     "git2md; python_version >= '3.10'",
     "pyclean; python_version >= '3.12'",
     "strip-docs>=1.0; python_version >= '3.12'",
-
     "gha-update; python_version >= '3.12'",
     "mkdocstrings[python]",
     "mkdocs; python_version >= '3.12'",
     "mdformat",
-
-
     # plugin finder
     "packaging; python_version >= '3.8'",
-
     # mpy
     "mypy; python_version >= '3.8'",
     "types-toml; python_version >= '3.8'",
-
     # reports
 
     # build
@@ -100,7 +86,6 @@ dev = [
     "pylint; python_version >= '3.8'",
     "bandit; python_version >= '3.8'",
     "pre-commit; python_version >= '3.8'",
-
     # testing tools
     "pytest; python_version >= '3.8'",
     "pytest-cov; python_version >= '3.8'",
@@ -112,7 +97,6 @@ dev = [
     "hypothesis[cli]; python_version >= '3.8'",
     "detect-test-pollution",
     "pytest-timeout>=2.4.0",
-
     # docs
     "interrogate>=1.5.0; python_version >= '3.8'",
     "pydoctest==0.2.1; python_version >= '3.8'",
@@ -156,9 +140,23 @@ b2gl-interactive = "bash2gitlab.interactive:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
-#
-# contract
-# griffe = ">=0.38.1"
+
+
+[tool.hatch.build.targets.wheel.sources]
+"schemas" = "bash2gitlab/schemas"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bash2gitlab"]
+include = [
+    "bash2gitlab/**/*.py",
+    "bash2gitlab/schemas/**/*.json",
+    "bash2gitlab/py.typed",
+    "/README.md", "LICENSE",
+    "/tests"
+]
+
+[tool.hatch.build.targets.sdist]
+include = ["/README.md", "LICENSE", "/bash2gitlab", "/tests"]
 
 
 [tool.black]

@@ -16,5 +16,5 @@ class Defaults:
         return _extract(line)
 
     @hookimpl(tryfirst=True)  # firstresult=True
-    def inline_command(self, line: str, scripts_root: Path) -> list[str] | None:
+    def inline_command(self, line: str, scripts_root: Path) -> tuple[list[str], Path] | tuple[None, None]:
         return maybe_inline_interpreter_command(line, scripts_root)

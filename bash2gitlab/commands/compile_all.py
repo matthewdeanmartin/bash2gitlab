@@ -25,6 +25,7 @@ from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
+from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
 from bash2gitlab.utils.yaml_factory import get_yaml
 from bash2gitlab.utils.yaml_file_same import normalize_for_compare, yaml_is_same
 
@@ -39,7 +40,7 @@ def infer_cli(
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> str:
-    command = f"bash2gitlab compile --in {uncompiled_path} --out {output_path}"
+    command = "bash2gitlab compile " f"--in {short_path(uncompiled_path)} " f"--out {short_path(output_path)}"
     if dry_run:
         command += " --dry-run"
     if parallelism:
@@ -147,8 +148,7 @@ def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any
 
 
 def process_script_list(
-    script_list: list[TaggedScalar | str] | CommentedSeq | str,
-    scripts_root: Path,
+    script_list: list[TaggedScalar | str] | CommentedSeq | str, scripts_root: Path, collapse_lists: bool = True
 ) -> list[Any] | CommentedSeq | LiteralScalarString:
     """Process a script list, inlining shell files while preserving YAML features.
 
@@ -162,6 +162,7 @@ def process_script_list(
     Args:
         script_list (list[TaggedScalar | str] | CommentedSeq | str): YAML script lines.
         scripts_root (Path): Root directory used to resolve script paths for inlining.
+        collapse_lists (bool): Turn lists into string block. Safe if it is indeed a script.
 
     Returns:
         list[Any] | CommentedSeq | LiteralScalarString: Processed script block. Returns a
@@ -174,6 +175,7 @@ def process_script_list(
     contains_tagged_scalar = False
     contains_anchors_or_tags = False
 
+    scripts_found = []
     for item in items:
         # Non-plain strings: preserve and mark that YAML features exist
         if not isinstance(item, str):
@@ -192,6 +194,9 @@ def process_script_list(
         if script_path_str is None:
             # try existing extract_script_path fallback
             script_path_str = extract_script_path(item)
+            scripts_found.append(script_path_str)
+        else:
+            scripts_found.append(script_path_str)
 
         if script_path_str:
             if script_path_str.strip().startswith("./") or script_path_str.strip().startswith("\\."):
@@ -218,14 +223,20 @@ def process_script_list(
 
         else:
             # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
-            alt = pm.hook.inline_command(line=item, scripts_root=scripts_root) or None
-            if alt:
-                processed_items.extend(alt)
+            interp_inline, script_path_str_other = pm.hook.inline_command(line=item, scripts_root=scripts_root) or (
+                None,
+                None,
+            )
+            if interp_inline:
+                scripts_found.append(script_path_str_other)
+                processed_items.extend(interp_inline)
             else:
-                interp_inline = maybe_inline_interpreter_command(item, scripts_root)
-                if interp_inline and isinstance(interp_inline, list):
+                interp_inline, script_path_str_other = maybe_inline_interpreter_command(item, scripts_root)
+                if interp_inline and isinstance(interp_inline, list) and script_path_str_other:
+                    scripts_found.append(str(script_path_str_other))
                     processed_items.extend(interp_inline)
-                elif interp_inline and isinstance(interp_inline, str):
+                elif interp_inline and isinstance(interp_inline, str) and script_path_str_other:
+                    scripts_found.append(str(script_path_str_other))
                     processed_items.append(interp_inline)
                 else:
                     processed_items.append(item)
@@ -237,7 +248,7 @@ def process_script_list(
     )
 
     # Collapse to literal block only when no YAML features and sufficiently long
-    if not has_yaml_features and only_plain_strings and len(processed_items) > 2:
+    if not has_yaml_features and only_plain_strings and len(processed_items) > 1 and collapse_lists and scripts_found:
 
         final_script_block = "\n".join(processed_items)
 
@@ -246,7 +257,10 @@ def process_script_list(
 
     # Preserve sequence shape; if input was a CommentedSeq, return one
     # Case 2: Keep sequence shape but compact adjacent plain strings into a single literal
-    compact_items = compact_runs_to_literal(processed_items, min_lines=2)
+    if collapse_lists and scripts_found:
+        compact_items = compact_runs_to_literal(processed_items, min_lines=2)
+    else:
+        compact_items = processed_items
 
     # Preserve sequence style (CommentedSeq vs list) to match input
     return rebuild_seq_like(compact_items, was_commented_seq, original_seq)
@@ -262,6 +276,27 @@ def process_job(job_data: dict, scripts_root: Path) -> int:
                 job_data[script_key] = result
                 found += 1
     return found
+
+
+def has_must_inline_pragma(job_data: dict | str) -> bool:
+    if isinstance(job_data, list):
+        for item_id, _item in enumerate(job_data):
+            comment = job_data.ca.items.get(item_id)
+            if comment:
+                comment_value = comment[0].value
+                if "pragma" in comment_value.lower() and "must-inline" in comment_value.lower():
+                    return True
+        for item in job_data:
+            if "pragma" in item.lower() and "must-inline" in item.lower():
+                return True
+    if isinstance(job_data, str):
+        if "pragma" in job_data.lower() and "must-inline" in job_data.lower():
+            return True
+    elif isinstance(job_data, dict):
+        for _key, value in job_data.items():
+            if "pragma" in str(value).lower() and "must-inline" in str(value).lower():
+                return True
+    return False
 
 
 def inline_gitlab_scripts(
@@ -312,15 +347,30 @@ def inline_gitlab_scripts(
 
     # Process all jobs and top-level script lists (which are often used for anchors)
     for job_name, job_data in data.items():
-        if job_name in ["stages", "variables","include","rules","image","services","cache","true","false","nil"]:
+        if job_name in [
+            "stages",
+            "variables",
+            "include",
+            "rules",
+            "image",
+            "services",
+            "cache",
+            "true",
+            "false",
+            "nil",
+        ]:
             # that's not a job.
             continue
         if hasattr(job_data, "tag") and job_data.tag.value:
             # Can't deal with !reference tagged jobs at all
             continue
         if hasattr(job_data, "anchor") and job_data.anchor.value:
+
             # Can't deal with &anchor tagged jobs at all
-            continue
+            # Okay, more exactly, we can inline, but we can't collapse lists because you can't tell if it is
+            # going into a script or some other block.
+            if not has_must_inline_pragma(job_data):
+                continue
 
         # Handle top-level keys that are lists of scripts. This pattern is commonly
         # used to create reusable script blocks with YAML anchors, e.g.:
@@ -328,7 +378,7 @@ def inline_gitlab_scripts(
         #   - ./scripts/my-script.sh
         if isinstance(job_data, list):
             logger.debug(f"Processing top-level list key '{job_name}', potentially a script anchor.")
-            result = process_script_list(job_data, scripts_root)
+            result = process_script_list(job_data, scripts_root, collapse_lists=False)
             if result != job_data:
                 data[job_name] = result
                 inlined_count += 1
@@ -389,6 +439,10 @@ def write_yaml_and_hash(
 
     new_content = remove_leading_blank_lines(new_content)
 
+    validator = GitLabCIValidator()
+    ok, problems = validator.validate_ci_config(new_content)
+    if not ok:
+        raise Exception(problems)
     output_file.write_text(new_content, encoding="utf-8")
 
     # Store a base64 encoded copy of the exact content we just wrote.
