@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.21] - 2025-08-20
+
+### Added
+- `# Pragma: do-not-validate-schema` for `!reference` code. Gitlab merges all templates before json validation.
+
+
 ## [0.8.20] - 2025-08-20
 
 ### Fixed

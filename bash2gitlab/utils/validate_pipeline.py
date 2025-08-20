@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 import tempfile
 import urllib.error
@@ -10,6 +11,8 @@ from typing import Any
 
 import jsonschema
 import ruamel.yaml
+
+logger = logging.getLogger(__name__)
 
 # Import compatibility for Python 3.8+
 if sys.version_info >= (3, 9):  # noqa: UP036
@@ -172,6 +175,10 @@ class GitLabCIValidator:
         Returns:
             tuple of (is_valid, list_of_error_messages).
         """
+        if "pragma" in yaml_content.lower() and "do-not-validate-schema" in yaml_content.lower():
+            logger.debug("Skipping validation found do-not-validate-schema Pragma")
+            return True, []
+
         try:
             # Convert YAML to JSON-compatible dict
             config_dict = self.yaml_to_json(yaml_content)
