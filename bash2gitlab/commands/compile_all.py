@@ -312,6 +312,9 @@ def inline_gitlab_scripts(
 
     # Process all jobs and top-level script lists (which are often used for anchors)
     for job_name, job_data in data.items():
+        if job_name in ["stages", "variables","include","rules","image","services","cache","true","false","nil"]:
+            # that's not a job.
+            continue
         if hasattr(job_data, "tag") and job_data.tag.value:
             # Can't deal with !reference tagged jobs at all
             continue

@@ -1,0 +1,157 @@
+# Demonstration of YAML features + GitLab CI features
+
+# Global defaults
+default:
+  image: python:3.12
+  tags: [ docker ]
+  before_script:
+    - ./default_before.sh
+
+# Workflow rules
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+    - when: never  # default fallback
+
+# Stages
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+  - cleanup
+
+# Anchors, aliases, and YAML merge
+.base_job: &base_job
+  retry: 2
+  interruptible: true
+  allow_failure: false
+  timeout: 15m
+  artifacts:
+    expire_in: 1 week
+    paths: [ logs/ ]
+
+# Include external configs (remote, local, template)
+include:
+  - local: .gitlab-ci-templates.yml
+  - remote: "https://gitlab.com/example/ci-templates/-/raw/main/python.yml"
+  - template: Code-Quality.gitlab-ci.yml
+
+# Job with rules, needs, variables, and services
+lint:
+  <<: *base_job
+  stage: lint
+  script:
+    - ./lint.sh
+  rules:
+    - if: '$CI_COMMIT_MESSAGE =~ /skip-lint/'
+      when: never
+    - when: on_success
+
+test:py38:
+  <<: *base_job
+  stage: test
+  image: python:3.8
+  services:
+    - name: postgres:15
+      alias: db
+  variables:
+    POSTGRES_DB: testdb
+    POSTGRES_USER: user
+    POSTGRES_PASSWORD: pass
+  script:
+    - . test.sh
+  needs: [ lint ]
+  artifacts:
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+test:py312:
+  <<: *base_job
+  stage: test
+  image: python:3.12
+  parallel: 3   # parallel matrix
+  script:
+    - ./test12.sh
+  needs: [ lint ]
+
+build:docker:
+  <<: *base_job
+  stage: build
+  image: docker:24
+  services:
+    - docker:dind
+  script:
+    - ./docker.sh
+  only:
+    - branches
+
+deploy:staging:
+  <<: *base_job
+  stage: deploy
+  environment:
+    name: staging
+    url: https://staging.example.com
+    on_stop: stop:staging
+  script:
+    - echo "Deploying to staging..."
+  only:
+    - merge_requests
+    - /^release\/.*$/
+
+stop:staging:
+  stage: cleanup
+  script:
+    - echo "Stopping staging..."
+  when: manual
+  environment:
+    name: staging
+    action: stop
+
+deploy:production:
+  <<: *base_job
+  stage: deploy
+  environment:
+    name: production
+    url: https://prod.example.com
+  script:
+    - echo "Deploying to production..."
+  only:
+    - main
+  when: manual
+
+cleanup:
+  stage: cleanup
+  script:
+    - echo "Cleaning up temp files"
+  when: always
+
+# Dynamic child pipeline
+generate-child-pipeline:
+  stage: build
+  trigger:
+    include: child-pipeline.yml
+    strategy: depend
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "feature/*"'
+
+# YAML features: multiline strings, folded style, and comments
+notes:
+  stage: lint
+  script:
+    - |
+      echo """
+      Multiline literal block example.
+      This job doesn’t actually do work,
+      but demonstrates YAML features.
+      """
+    - >
+      echo "Folded block: This is a single
+      line despite being written across
+      multiple lines in YAML"
