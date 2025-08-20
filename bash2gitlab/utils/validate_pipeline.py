@@ -12,7 +12,7 @@ import jsonschema
 import ruamel.yaml
 
 # Import compatibility for Python 3.8+
-if sys.version_info >= (3, 9):
+if sys.version_info >= (3, 9):  # noqa: UP036
     from importlib.resources import files
 else:
     try:
