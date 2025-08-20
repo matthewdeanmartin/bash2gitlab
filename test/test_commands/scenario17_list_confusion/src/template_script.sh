@@ -1,0 +1,1 @@
+echo 'From a template'

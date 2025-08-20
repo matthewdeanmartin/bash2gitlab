@@ -1,14 +1,4 @@
-"""Command to inline bash or powershell into gitlab pipeline yaml.
-
-Patch notes (key changes):
-- Preserve YAML sequence tags (e.g. `!reference`) on CommentedSeq values.
-- Treat any tagged sequence as a *YAML feature* and never collapse it into a
-  literal scalar or modify its element shape.
-- Skip processing of top-level list-valued keys that are known non-script
-  fields (e.g. `variables`, `rules`) or any list with a YAML tag.
-- Copy over both `ca` (comment association) *and* the YAML tag when rebuilding
-  ruamel sequences.
-"""
+"""Command to inline bash or powershell into gitlab pipeline yaml."""
 
 from __future__ import annotations
 
@@ -42,15 +32,21 @@ logger = logging.getLogger(__name__)
 __all__ = ["run_compile_all"]
 
 
-def remove_excess(command: str) -> str:
-    if "bash2gitlab" in command:
-        return command[command.index("bash2gitlab") :]
-    if "b2gl" in command:
-        return command[command.index("b2gl") :]
+def infer_cli(
+    uncompiled_path: Path,
+    output_path: Path,
+    dry_run: bool = False,
+    parallelism: int | None = None,
+) -> str:
+    command = f"bash2gitlab compile --in {uncompiled_path} --out {output_path}"
+    if dry_run:
+        command += " --dry-run"
+    if parallelism:
+        command += f" --parallelism {parallelism}"
     return command
 
 
-def get_banner() -> str:
+def get_banner(inferred_cli_command: str) -> str:
     if config.custom_header:
         return config.custom_header + "\n"
 
@@ -60,14 +56,14 @@ def get_banner() -> str:
 # Recompile instead of editing this file.
 #
 # Compiled with the command: 
-#     {remove_excess(' '.join(sys.argv))}
+#     {inferred_cli_command}
 
 """
 
 
 def as_items(
     seq_or_list: list[TaggedScalar | str] | CommentedSeq | str,
-) -> tuple[list[Any], bool, CommentedSeq | None, bool]:
+) -> tuple[list[Any], bool, CommentedSeq | None]:
     """Normalize input to a Python list of items.
 
     Args:
@@ -80,11 +76,12 @@ def as_items(
             - the original CommentedSeq (if any) for potential metadata reuse.
     """
     if isinstance(seq_or_list, str):
-        return [seq_or_list], False, None, False
+        return [seq_or_list], False, None
     if isinstance(seq_or_list, CommentedSeq):
-        has_tag = bool(getattr(seq_or_list, "tag", None))
-        return list(seq_or_list), True, seq_or_list, has_tag
-    return list(seq_or_list), False, None, False
+        # Make a shallow list copy to manipulate while preserving the original node
+        return list(seq_or_list), True, seq_or_list
+    # Already a Python list (possibly containing ruamel nodes)
+    return list(seq_or_list), False, None
 
 
 def rebuild_seq_like(
@@ -108,14 +105,9 @@ def rebuild_seq_like(
     new_seq = CommentedSeq(processed)
     # Best-effort carry over comment association metadata to reduce churn.
     try:
-        if original_seq is not None:
-            # Preserve comments/anchors
-            if hasattr(original_seq, "ca"):
-                new_seq.ca = original_seq.ca  # type: ignore[misc]
-            # Preserve YAML tag (e.g., !reference)
-            if getattr(original_seq, "tag", None):
-                new_seq.yaml_set_tag(original_seq.tag.value)  # type: ignore[attr-defined]
-    # best-effort only
+        if original_seq is not None and hasattr(original_seq, "ca"):
+            new_seq.ca = original_seq.ca  # type: ignore[misc]
+    # metadata copy is best-effort
     except Exception:  # nosec
         pass
     return new_seq
@@ -153,14 +145,6 @@ def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any
     return out
 
 
-SCRIPTY_KEYS = {"script", "before_script", "after_script", "pre_get_sources_script"}
-NON_SCRIPT_TOPLEVEL_LIST_KEYS = {"variables", "rules", "stages", "services", "needs", "tags"}
-
-
-def _list_has_yaml_tag(seq: Any) -> bool:
-    return isinstance(seq, CommentedSeq) and bool(getattr(seq, "tag", None))
-
-
 def process_script_list(
     script_list: list[TaggedScalar | str] | CommentedSeq | str,
     scripts_root: Path,
@@ -174,9 +158,6 @@ def process_script_list(
     literal scalar string (``|``). If any YAML features such as anchors, tags, or
     ``TaggedScalar`` nodes are present, it preserves list form to avoid losing semantics.
 
-    Key safety rule: If the *sequence itself* has a YAML tag (e.g. ``!reference``),
-    **do not** collapse it or alter its element layout.
-
     Args:
         script_list (list[TaggedScalar | str] | CommentedSeq | str): YAML script lines.
         scripts_root (Path): Root directory used to resolve script paths for inlining.
@@ -186,8 +167,7 @@ def process_script_list(
         ``LiteralScalarString`` when safe to collapse; otherwise returns a list or
         ``CommentedSeq`` (matching the input style) to preserve YAML features.
     """
-    items, was_commented_seq, original_seq, has_sequence_tag = as_items(script_list)
-    #    items, was_commented_seq, original_seq = as_items(script_list)
+    items, was_commented_seq, original_seq = as_items(script_list)
 
     processed_items: list[Any] = []
     contains_tagged_scalar = False
@@ -204,6 +184,20 @@ def process_script_list(
             # Preserve any non-string node (e.g., TaggedScalar, Commented* nodes)
             processed_items.append(item)
             continue
+        # --- BEGIN: NEW LOGIC TO HANDLE !reference TRANSFORMATION ---
+        # Check for multi-line strings where each line is a reference (starts with '.')
+        # This is a specific pattern for GitLab's !reference tag.
+        lines = item.splitlines()
+        if len(lines) > 1 and all(line.strip().startswith(".") for line in lines):
+            logger.debug(f"Found multi-line reference block, converting to !reference tag: {lines}")
+            # Create a sequence of the individual reference strings
+            references = CommentedSeq([line.strip() for line in lines])
+            # Create the TaggedScalar object representing !reference [...]
+            tagged_reference = TaggedScalar(value=references, tag="!reference")
+            processed_items.append(tagged_reference)
+            # This item is handled, skip the rest of the loop
+            continue
+        # --- END: NEW LOGIC ---
 
         # Plain string: attempt to detect and inline scripts
         pm = get_pm()
@@ -252,16 +246,14 @@ def process_script_list(
     # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)
     has_yaml_features = (
-        contains_tagged_scalar or contains_anchors_or_tags or was_commented_seq and not only_plain_strings
+        contains_tagged_scalar or contains_anchors_or_tags or was_commented_seq or not only_plain_strings
     )
-
-    # NEW: If the original node had a YAML tag (e.g. !reference), do not collapse/compact.
-    if has_sequence_tag:
-        return rebuild_seq_like(processed_items, was_commented_seq, original_seq)
 
     # Collapse to literal block only when no YAML features and sufficiently long
     if not has_yaml_features and only_plain_strings and len(processed_items) > 2:
+
         final_script_block = "\n".join(processed_items)
+
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
         return LiteralScalarString(final_script_block)
 
@@ -276,10 +268,10 @@ def process_script_list(
 def process_job(job_data: dict, scripts_root: Path) -> int:
     """Processes a single job definition to inline scripts."""
     found = 0
-    for script_key in SCRIPTY_KEYS:
+    for script_key in ["script", "before_script", "after_script", "pre_get_sources_script"]:
         if script_key in job_data:
             result = process_script_list(job_data[script_key], scripts_root)
-            if result is not job_data[script_key]:
+            if result != job_data[script_key]:
                 job_data[script_key] = result
                 found += 1
     return found
@@ -331,59 +323,64 @@ def inline_gitlab_scripts(
                 data[name] = result
                 inlined_count += 1
 
-    # Process jobs and *only* safe top-level list anchors
-    for key, value in list(data.items()):
-        # Skip known non-script list keys entirely
-        if key in NON_SCRIPT_TOPLEVEL_LIST_KEYS:
+    # Process all jobs and top-level script lists (which are often used for anchors)
+    for job_name, job_data in data.items():
+        if hasattr(job_data, "tag") and job_data.tag.value:
+            # Can't deal with !reference tagged jobs at all
             continue
-        # Only treat plain list/CommentedSeq without YAML tags as potential script anchors
-        if isinstance(value, (list, CommentedSeq)):
-            if _list_has_yaml_tag(value):
-                # e.g., variables: !reference [...]  -> do NOT touch
-                logger.debug("Skipping tagged top-level list '%s' (YAML tag detected).", key)
-                continue
-            # Heuristic: consider this a script anchor only if items look like commands/paths
-            looks_scripty = all(isinstance(it, str) and ("/" in it or it.startswith("./") or " " in it) for it in value)
-            if looks_scripty:
-                logger.debug("Processing top-level list key '%s' as potential script anchor.", key)
-                result = process_script_list(value, scripts_root)
-                if result is not value:
-                    data[key] = result
-                    inlined_count += 1
+        if hasattr(job_data, "anchor") and job_data.anchor.value:
+            # Can't deal with &anchor tagged jobs at all
+            continue
 
-        elif isinstance(value, dict):
-            safe_job_name = key.replace(":", "_")
+        # Handle top-level keys that are lists of scripts. This pattern is commonly
+        # used to create reusable script blocks with YAML anchors, e.g.:
+        # .my-script-template: &my-script-anchor
+        #   - ./scripts/my-script.sh
+        if isinstance(job_data, list):
+            logger.debug(f"Processing top-level list key '{job_name}', potentially a script anchor.")
+            result = process_script_list(job_data, scripts_root)
+            if result != job_data:
+                data[job_name] = result
+                inlined_count += 1
+        elif isinstance(job_data, dict):
+            # Look for and process job-specific variables file
+            safe_job_name = job_name.replace(":", "_")
             job_vars_filename = f"{safe_job_name}_variables.sh"
             job_vars_path = uncompiled_path / job_vars_filename
 
             if job_vars_path.is_file():
-                logger.debug(f"Found and loading job-specific variables for '{safe_job_name}' from {job_vars_path}")
+                logger.debug(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
                 content = job_vars_path.read_text(encoding="utf-8")
                 job_specific_vars = parse_env_file(content)
 
                 if job_specific_vars:
-                    existing_job_vars = value.get("variables", CommentedMap())
+                    existing_job_vars = job_data.get("variables", CommentedMap())
+                    # Start with variables from the .sh file
                     merged_job_vars = CommentedMap(job_specific_vars.items())
                     # Update with variables from the YAML, so they take precedence
                     merged_job_vars.update(existing_job_vars)
-                    value["variables"] = merged_job_vars
+                    job_data["variables"] = merged_job_vars
                     inlined_count += 1
 
-            # Only process known script-like keys inside jobs
-            if any(k in value for k in SCRIPTY_KEYS) or "hooks" in value or "run" in value:
-                logger.debug(f"Processing job: {key}")
-                inlined_count += process_job(value, scripts_root)
-
-            if "hooks" in value and isinstance(value["hooks"], dict):
-                if "pre_get_sources_script" in value["hooks"]:
-                    logger.debug(f"Processing pre_get_sources_script: {key}")
-                    inlined_count += process_job(value["hooks"], scripts_root)
-
-            if "run" in value and isinstance(value["run"], list):
-                for item in value["run"]:
-                    if isinstance(item, dict) and "script" in item:
-                        logger.debug(f"Processing run/script: {key}")
-                        inlined_count += process_job(item, scripts_root)
+            # A simple heuristic for a "job" is a dictionary with a 'script' key.
+            if (
+                "script" in job_data
+                or "before_script" in job_data
+                or "after_script" in job_data
+                or "pre_get_sources_script" in job_data
+            ):
+                logger.debug(f"Processing job: {job_name}")
+                inlined_count += process_job(job_data, scripts_root)
+            if "hooks" in job_data:
+                if isinstance(job_data["hooks"], dict) and "pre_get_sources_script" in job_data["hooks"]:
+                    logger.debug(f"Processing pre_get_sources_script: {job_name}")
+                    inlined_count += process_job(job_data["hooks"], scripts_root)
+            if "run" in job_data:
+                if isinstance(job_data["run"], list):
+                    for item in job_data["run"]:
+                        if isinstance(item, dict) and "script" in item:
+                            logger.debug(f"Processing run/script: {job_name}")
+                            inlined_count += process_job(item, scripts_root)
 
     out_stream = io.StringIO()
     yaml.dump(data, out_stream)  # Dump the reordered data
@@ -411,7 +408,10 @@ def write_yaml_and_hash(
 
 
 def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
-    """Return a unified diff between *old* and *new* content with filenames."""
+    """Return a unified diff between *old* and *new* content with filenames.
+
+    keepends=True preserves newline structure for line-accurate diffs in logs.
+    """
     return "".join(
         difflib.unified_diff(
             old.splitlines(keepends=True),
@@ -587,16 +587,16 @@ def compile_single_file(
     variables: dict[str, str],
     uncompiled_path: Path,
     dry_run: bool,
-    label: str,
+    inferred_cli_command: str,
 ) -> tuple[int, int]:
     """Compile a single YAML file and write the result.
 
     Returns a tuple of the number of inlined sections and whether a file was written (0 or 1).
     """
-    logger.debug(f"Processing {label}: {short_path(source_path)}")
+    logger.debug(f"Processing template: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
     inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
-    final_content = (get_banner() + compiled_text) if inlined_for_file > 0 else raw_text
+    final_content = (get_banner(inferred_cli_command) + compiled_text) if inlined_for_file > 0 else raw_text
     written = write_compiled_file(output_file, final_content, dry_run)
     return inlined_for_file, int(written)
 
@@ -620,6 +620,7 @@ def run_compile_all(
     Returns:
         The total number of inlined sections across all files.
     """
+    inferred_cli_command = infer_cli(uncompiled_path, output_path, dry_run, parallelism)
     strays = report_targets(output_path)
     if strays:
         print("Stray files in output folder, halting")
@@ -640,7 +641,7 @@ def run_compile_all(
         parse_env_file(content)
         total_inlined_count += 1
 
-    files_to_process: list[tuple[Path, Path, dict[str, str], str]] = []
+    files_to_process: list[tuple[Path, Path, dict[str, str]]] = []
 
     if uncompiled_path.is_dir():
         template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
@@ -650,7 +651,7 @@ def run_compile_all(
         for template_path in template_files:
             relative_path = template_path.relative_to(uncompiled_path)
             output_file = output_path / relative_path
-            files_to_process.append((template_path, output_file, {}, "template file"))
+            files_to_process.append((template_path, output_file, {}))
 
     total_files = len(files_to_process)
     max_workers = multiprocessing.cpu_count()
@@ -659,17 +660,17 @@ def run_compile_all(
 
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
-            (src, out, uncompiled_path, variables, uncompiled_path, dry_run, label)
-            for src, out, variables, label in files_to_process
+            (src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command)
+            for src, out, variables, in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
             results = pool.starmap(compile_single_file, args_list)
         total_inlined_count += sum(inlined for inlined, _ in results)
         written_files_count += sum(written for _, written in results)
     else:
-        for src, out, variables, label in files_to_process:
+        for src, out, variables in files_to_process:
             inlined_for_file, wrote = compile_single_file(
-                src, out, uncompiled_path, variables, uncompiled_path, dry_run, label
+                src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
@@ -684,25 +685,3 @@ def run_compile_all(
         logger.info(f"[DRY RUN] Simulation complete. Would have processed {written_files_count} file(s).")
 
     return total_inlined_count
-
-
-# --- Quick self-check / demonstration ---
-if __name__ == "__main__":
-    demo = """
-job:
-  variables: !reference [ .job-one, variables ]
-  script:
-    - ./scripts/hello.sh
-"""
-    from ruamel.yaml import YAML
-
-    yaml = YAML()
-    yaml.preserve_quotes = True
-    inlined, out = inline_gitlab_scripts(
-        demo,
-        scripts_root=Path("."),
-        global_vars={},
-        uncompiled_path=Path("."),
-    )
-    print("--- inlined sections:", inlined)
-    print(out)

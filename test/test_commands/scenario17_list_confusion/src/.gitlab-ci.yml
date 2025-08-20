@@ -1,0 +1,28 @@
+include:
+  - project: 'my-group/my-project'
+    ref: main
+    file: '/templates/.gitlab-ci-template.yml'
+
+variables:
+  LOCAL_VAR: "LocalValue"
+
+stages:
+  - build
+  - test
+  - deploy
+
+before_script:
+  - bash ./short_task.sh
+
+build_job:
+  stage: build
+  script:
+    - echo "Building..."
+    - bash ./long_task.sh
+    - echo "Build finished."
+
+test_job:
+  stage: test
+  script:
+    - echo "Testing..."
+    - bash ./short_task.sh

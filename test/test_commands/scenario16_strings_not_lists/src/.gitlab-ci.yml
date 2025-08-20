@@ -1,0 +1,47 @@
+---
+stages:
+  - build
+
+job1:
+  stage: build
+  script:
+    - ./script.sh
+
+
+job2:
+  stage: build
+  script:
+    - echo
+    - echo
+    - echo
+    - echo
+    - echo
+    - echo
+
+job3:
+  stage: build
+  script:
+    - single_line
+
+job4:
+  stage: build
+  script:
+    - ./script2.sh
+
+variables:
+  A: B
+  C: D
+
+# Not safe to inline because we can't tell where this is going to be dereferenced
+.my-script-template: &my-script-anchor
+  - ./script3.sh
+
+.echo:
+  a: a
+  b: a
+
+.noecho:
+  c: a
+  d: a
+
+.thing: !reference [.echo, .noecho]
