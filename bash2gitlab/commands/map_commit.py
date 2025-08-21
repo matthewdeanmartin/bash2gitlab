@@ -1,102 +1,135 @@
-"""Copy from many repos relevant shell scripts changes back to the central repo."""
+"""
+Syncs changes from multiple target folders back to a single source folder.
+This is intended to be fed by a TOML configuration file where users can easily
+map one source directory to a list of target/deployed directories.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import shutil
+from collections.abc import Collection
 from pathlib import Path
+
+from bash2gitlab.commands.compile_not_bash import _INTERPRETER_EXTS
 
 __all__ = ["run_commit_map"]
 
 
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
+for _key, value in _INTERPRETER_EXTS.items():
+    _VALID_SUFFIXES.update(value)
+
+_CHUNK_SIZE = 65536  # 64kb
+
 logger = logging.getLogger(__name__)
 
 
+def _calculate_file_hash(file_path: Path) -> str | None:
+    """Calculates the SHA256 hash of a file, returning None if it doesn't exist."""
+    if not file_path.is_file():
+        return None
+
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while chunk := f.read(_CHUNK_SIZE):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def _sync_single_target_to_source(
+    source_base_path: Path,
+    target_base_path: Path,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """Helper to sync one target directory back to the source."""
+    if not target_base_path.is_dir():
+        print(f"Warning: Target directory '{target_base_path}' does not exist. Skipping.")
+        return
+
+    print(f"\nProcessing sync: '{target_base_path}' -> '{source_base_path}'")
+
+    for target_file_path in target_base_path.rglob("*"):
+        # Skip directories and non-file types
+        if not target_file_path.is_file():
+            continue
+
+        # Skip ignored files
+        if (
+            target_file_path.name == ".gitignore"
+            or target_file_path.suffix == ".hash"
+            or target_file_path.suffix.lower() not in _VALID_SUFFIXES
+        ):
+            continue
+
+        relative_path = target_file_path.relative_to(target_base_path)
+        source_file_path = source_base_path / relative_path
+        hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
+
+        target_hash = _calculate_file_hash(target_file_path)
+        stored_hash = hash_file_path.read_text().strip() if hash_file_path.exists() else None
+
+        # Case 1: File is unchanged since last deployment/sync.
+        if stored_hash and target_hash == stored_hash:
+            # Using logger.debug for unchanged files to reduce noise
+            logger.debug(f"Unchanged: '{target_file_path}'")
+            continue
+
+        # Case 2: Source file was modified locally since deployment.
+        source_hash = _calculate_file_hash(source_file_path)
+        if stored_hash and source_hash and source_hash != stored_hash and not force:
+            print(f"Warning: Source file '{source_file_path}' was modified locally.")
+            print("         Skipping sync. Use --force to overwrite.")
+            continue
+
+        # Case 3: File in target has changed, proceed with sync.
+        action = "Creating" if not source_file_path.exists() else "Updating"
+        print(f"{action}: '{source_file_path}' (from '{target_file_path}')")
+
+        if not dry_run:
+            # Ensure the destination directory exists
+            source_file_path.parent.mkdir(parents=True, exist_ok=True)
+            # Copy file and its metadata
+            shutil.copy2(target_file_path, source_file_path)
+            # Update the hash file in the target directory to reflect the new state
+            hash_file_path.write_text(target_hash or "")
+
+
 def run_commit_map(
-    source_to_target_map: dict[str, str],
+    deployment_map: dict[str, list[str] | Collection[str]],
     dry_run: bool = False,
     force: bool = False,
 ) -> None:
-    """Copy modified deployed files back to their source directories.
+    """
+    Syncs modified files from target directories back to their source directory.
 
-    This function performs the inverse of :func:`bash2gitlab.map_deploy_command.map_deploy`.
-    For every mapping of ``source`` to ``target`` directories it traverses the
-    deployed ``target`` directory and copies changed files back to the
-    corresponding ``source`` directory. Change detection relies on ``.hash``
-    files created during deployment. A file is copied back when the content of
-    the deployed file differs from the stored hash. After a successful copy the
-    ``.hash`` file is updated to reflect the new content hash.
+    For each source directory, this function iterates through its corresponding
+    list of target (deployed) directories. It detects changes in the target
+    files by comparing their current content hash against a stored hash in a
+    parallel '.hash' file.
+
+    If a file has changed in the target, it is copied back to the source,
+    overwriting the original.
 
     Args:
-        source_to_target_map: Mapping of source directories to deployed target
-            directories.
-        dry_run: If ``True`` the operation is only simulated and no files are
-            written.
-        force: If ``True`` a source file is overwritten even if it was modified
-            locally since the last deployment.
+        deployment_map: A mapping where each key is a source directory and the
+            value is a list of target directories where the source content
+            was deployed.
+        dry_run: If ``True``, simulates the sync and prints actions without
+            modifying any files.
+        force: If ``True``, a source file will be overwritten even if it was
+            modified locally since the last deployment.
     """
-    for source_base, target_base in source_to_target_map.items():
+    for source_base, target_bases in deployment_map.items():
         source_base_path = Path(source_base).resolve()
-        target_base_path = Path(target_base).resolve()
 
-        if not target_base_path.is_dir():
-            print(f"Warning: Target directory '{target_base_path}' does not exist. Skipping.")
+        if not isinstance(target_bases, (list, tuple, set)):
+            logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
             continue
 
-        print(f"\nProcessing map: '{target_base_path}' -> '{source_base_path}'")
-
-        for root, _, files in os.walk(target_base_path):
-            target_root_path = Path(root)
-
-            for filename in files:
-                if filename == ".gitignore" or filename.endswith(".hash"):
-                    continue
-
-                target_file_path = target_root_path / filename
-                if target_file_path.suffix.lower() not in _VALID_SUFFIXES:
-                    continue
-
-                relative_path = target_file_path.relative_to(target_base_path)
-                source_file_path = source_base_path / relative_path
-                hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
-
-                # Calculate hash of the deployed file
-                with open(target_file_path, "rb") as f:
-                    target_hash = hashlib.sha256(f.read()).hexdigest()
-
-                stored_hash = ""
-                if hash_file_path.exists():
-                    with open(hash_file_path, encoding="utf-8") as f:
-                        stored_hash = f.read().strip()
-
-                source_hash_actual = ""
-                if source_file_path.exists():
-                    with open(source_file_path, "rb") as f:
-                        source_hash_actual = hashlib.sha256(f.read()).hexdigest()
-
-                if stored_hash and target_hash == stored_hash:
-                    print(f"Unchanged: '{target_file_path}'")
-                    continue
-
-                if stored_hash and source_hash_actual and source_hash_actual != stored_hash and not force:
-                    print(f"Warning: '{source_file_path}' was modified in source since last deployment.")
-                    print("Skipping copy. Use --force to overwrite.")
-                    continue
-
-                action = "Copied" if not source_file_path.exists() else "Updated"
-                print(f"{action}: '{target_file_path}' -> '{source_file_path}'")
-
-                if dry_run:
-                    continue
-
-                if not source_file_path.parent.exists():
-                    print(f"Creating directory: {source_file_path.parent}")
-                    source_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-                shutil.copy2(target_file_path, source_file_path)
-                with open(hash_file_path, "w", encoding="utf-8") as f:
-                    f.write(target_hash)
+        for target_base in target_bases:
+            target_base_path = Path(target_base).resolve()
+            _sync_single_target_to_source(source_base_path, target_base_path, dry_run, force)

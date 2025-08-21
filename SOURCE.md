@@ -2,6 +2,7 @@
 ```
 ├── builtin_plugins.py
 ├── commands/
+│   ├── best_effort_runner.py
 │   ├── clean_all.py
 │   ├── clone2local.py
 │   ├── compile_all.py
@@ -77,6 +78,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -237,6 +239,15 @@ class _Config:
             return copy_dict
         return {}
 
+    def get_dict_of_list(self, key: str, section: str | None = None) -> dict[str, list[str] | Collection[str]]:
+        value, _ = self._get_value(key, section)
+        if isinstance(value, dict):
+            copy_dict = {}
+            for key, the_value in value.items():
+                copy_dict[str(key)] = the_value
+            return copy_dict
+        return {}
+
     # --- General Properties ---
     @property
     def input_dir(self) -> str | None:
@@ -349,8 +360,8 @@ class _Config:
 
     # --- `map-deploy` / `commit-map` Properties ---
     @property
-    def map_folders(self) -> dict[str, str]:
-        return self.get_dict("map", section="map")  # type: ignore[return=value]
+    def map_folders(self) -> dict[str, list[str] | Collection[str]]:
+        return self.get_dict_of_list("map", section="map")  # type: ignore[return=value]
 
     @property
     def map_force(self) -> bool | None:
@@ -464,7 +475,8 @@ class CommandRunner:
                     if not line:
                         break
                     self.output_widget.after(
-                        0, lambda insert_line=line: self.output_widget.insert(tk.END, insert_line)  # type: ignore
+                        0,
+                        lambda insert_line=line: self.output_widget.insert(tk.END, insert_line),  # type: ignore
                     )
                     self.output_widget.after(0, lambda: self.output_widget.see(tk.END))  # type: ignore
 
@@ -3017,10 +3029,7 @@ def clean_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-essential_gitlab_args_help = (
-    "GitLab connection options. For private instances require --gitlab-url and possibly --token. "
-    "Use --project-id for project-scoped lint when your config relies on includes or project context."
-)
+essential_gitlab_args_help = "GitLab connection options. For private instances require --gitlab-url and possibly --token. Use --project-id for project-scoped lint when your config relies on includes or project context."
 
 
 def lint_handler(args: argparse.Namespace) -> int:
@@ -3361,8 +3370,7 @@ def main() -> int:
         "decompile",
         help="Decompile GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
         description=(
-            "Use either --in-file (single YAML) or --in-folder (process tree).\n"
-            "--out must be a directory; output YAML and scripts are written side-by-side."
+            "Use either --in-file (single YAML) or --in-folder (process tree).\n--out must be a directory; output YAML and scripts are written side-by-side."
         ),
     )
 
@@ -3479,8 +3487,7 @@ def main() -> int:
     commit_map_parser = subparsers.add_parser(
         "commit-map",
         help=(
-            "Copy changed files from deployed directories back to their source"
-            " locations based on a mapping in pyproject.toml."
+            "Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml."
         ),
     )
     commit_map_parser.add_argument(
@@ -3707,6 +3714,443 @@ def main() -> int:
 if __name__ == "__main__":
     sys.exit(main())
 ```
+## File: commands\best_effort_runner.py
+```python
+"""
+Super limited local pipeline runner.
+"""
+
+from __future__ import annotations
+
+import os
+import shlex
+import subprocess  # nosec
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Union
+
+from ruamel.yaml import YAML
+
+
+def merge_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """
+    Merge os.environ and an env dict into a new dict.
+    Values from env override os.environ on conflict.
+
+    Args:
+        env: Optional dict of environment variables.
+
+    Returns:
+        A merged dict suitable for subprocess calls.
+    """
+    # merged = dict(os.environ)  # copy system env
+    # if env:
+    #     merged.update(env)     # env wins
+    merged = dict(os.environ)
+    if env:
+        merged.update(env)
+
+    return merged
+
+
+# ANSI color codes
+GREEN = "\033[92m"
+RED = "\033[91m"
+RESET = "\033[0m"
+
+# Disable colors if NO_COLOR is set
+if os.getenv("NO_COLOR"):
+    GREEN = RED = RESET = ""
+
+
+def run_colored(command, env=None, cwd=None) -> int:
+    env = merge_env(env)
+    process = subprocess.Popen(  # nosec
+        command,
+        env=env,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,  # line-buffered
+    )
+
+    # Print stdout in green, stderr in red
+    for line in process.stdout or []:
+        sys.stdout.write(f"{GREEN}{line}{RESET}")
+    for line in process.stderr or []:
+        sys.stderr.write(f"{RED}{line}{RESET}")
+
+    process.wait()
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, command)
+
+    return process.returncode
+
+
+@dataclass
+class JobConfig:
+    """Configuration for a single job."""
+
+    name: str
+    stage: str = "test"
+    script: list[str] = field(default_factory=list)
+    variables: dict[str, str] = field(default_factory=dict)
+    before_script: list[str] = field(default_factory=list)
+    after_script: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DefaultConfig:
+    """Default configuration that can be inherited by jobs."""
+
+    before_script: list[str] = field(default_factory=list)
+    after_script: list[str] = field(default_factory=list)
+    variables: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class PipelineConfig:
+    """Complete pipeline configuration."""
+
+    stages: list[str] = field(default_factory=lambda: ["test"])
+    variables: dict[str, str] = field(default_factory=dict)
+    default: DefaultConfig = field(default_factory=DefaultConfig)
+    jobs: list[JobConfig] = field(default_factory=list)
+
+
+class GitLabCIError(Exception):
+    """Base exception for GitLab CI runner errors."""
+
+
+class JobExecutionError(GitLabCIError):
+    """Raised when a job fails to execute successfully."""
+
+
+class ConfigurationLoader:
+    """Loads and processes GitLab CI configuration files."""
+
+    def __init__(self, base_path: Path | None = None):
+        if not base_path:
+            self.base_path = Path.cwd()
+        else:
+            self.base_path = base_path
+        self.yaml = YAML(typ="safe")
+
+    def load_config(self, config_path: Path | None = None) -> dict[str, Any]:
+        """Load the main configuration file and process includes."""
+        if config_path is None:
+            config_path = self.base_path / ".gitlab-ci.yml"
+
+        if not config_path.exists():
+            raise GitLabCIError(f"Configuration file not found: {config_path}")
+
+        config = self._load_yaml_file(config_path)
+        config = self._process_includes(config, config_path.parent)
+
+        return config
+
+    def _load_yaml_file(self, file_path: Path) -> dict[str, Any]:
+        """Load a single YAML file."""
+        try:
+            with open(file_path) as f:
+                return self.yaml.load(f) or {}
+        except Exception as e:
+            raise GitLabCIError(f"Failed to load YAML file {file_path}: {e}") from e
+
+    def _process_includes(self, config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
+        """Process include directives for local files only."""
+        includes = config.pop("include", [])
+        if not includes:
+            return config
+
+        if isinstance(includes, (str, dict)):
+            includes = [includes]
+
+        for include_item in includes:
+            if isinstance(include_item, str):
+                # Simple local file include
+                include_path = base_dir / include_item
+                included_config = self._load_yaml_file(include_path)
+                config = self._merge_configs(config, included_config)
+            elif isinstance(include_item, dict) and "local" in include_item:
+                # Local file with explicit local key
+                include_path = base_dir / include_item["local"]
+                included_config = self._load_yaml_file(include_path)
+                config = self._merge_configs(config, included_config)
+
+        return config
+
+    def _merge_configs(self, base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+        """Merge two configuration dictionaries."""
+        result = base.copy()
+        for key, value in overlay.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = self._merge_configs(result[key], value)
+            else:
+                result[key] = value
+        return result
+
+
+class PipelineProcessor:
+    """Processes raw configuration into structured pipeline configuration."""
+
+    RESERVED_KEYWORDS = {
+        "stages",
+        "variables",
+        "default",
+        "include",
+        "image",
+        "services",
+        "before_script",
+        "after_script",
+        "cache",
+        "artifacts",
+    }
+
+    def process_config(self, raw_config: dict[str, Any]) -> PipelineConfig:
+        """Process raw configuration into structured pipeline config."""
+        # Extract global configuration
+        stages = raw_config.get("stages", ["test"])
+        global_variables = raw_config.get("variables", {})
+        default_config = self._process_default_config(raw_config.get("default", {}))
+
+        # Process jobs
+        jobs = []
+        for name, job_data in raw_config.items():
+            if name not in self.RESERVED_KEYWORDS and isinstance(job_data, dict):
+                job = self._process_job(name, job_data, default_config, global_variables)
+                jobs.append(job)
+
+        return PipelineConfig(stages=stages, variables=global_variables, default=default_config, jobs=jobs)
+
+    def _process_default_config(self, default_data: dict[str, Any]) -> DefaultConfig:
+        """Process default configuration block."""
+        return DefaultConfig(
+            before_script=self._ensure_list(default_data.get("before_script", [])),
+            after_script=self._ensure_list(default_data.get("after_script", [])),
+            variables=default_data.get("variables", {}),
+        )
+
+    def _process_job(
+        self, name: str, job_data: dict[str, Any], default: DefaultConfig, global_vars: dict[str, str]
+    ) -> JobConfig:
+        """Process a single job configuration."""
+        # Merge variables with precedence: job > global > default
+        variables = {}
+        variables.update(default.variables)
+        variables.update(global_vars)
+        variables.update(job_data.get("variables", {}))
+
+        # Merge scripts with default
+        before_script = default.before_script + self._ensure_list(job_data.get("before_script", []))
+        after_script = self._ensure_list(job_data.get("after_script", [])) + default.after_script
+
+        return JobConfig(
+            name=name,
+            stage=job_data.get("stage", "test"),
+            script=self._ensure_list(job_data.get("script", [])),
+            variables=variables,
+            before_script=before_script,
+            after_script=after_script,
+        )
+
+    def _ensure_list(self, value: Union[str, list[str]]) -> list[str]:
+        """Ensure a value is a list of strings."""
+        if isinstance(value, str):
+            return [value]
+        elif isinstance(value, list):
+            return [item for item in value]
+        return []
+
+
+class VariableManager:
+    """Manages variable substitution and environment preparation."""
+
+    def __init__(self, base_variables: dict[str, str] | None = None):
+        self.base_variables = base_variables or {}
+        self.gitlab_ci_vars = self._get_gitlab_ci_variables()
+
+    def _get_gitlab_ci_variables(self) -> dict[str, str]:
+        """Get GitLab CI built-in variables that we can simulate."""
+        return {
+            "CI": "true",
+            "CI_PROJECT_DIR": str(Path.cwd()),
+            "CI_PROJECT_NAME": Path.cwd().name,
+            "CI_JOB_STAGE": "",  # Will be set per job
+        }
+
+    def prepare_environment(self, job: JobConfig) -> dict[str, str]:
+        """Prepare environment variables for job execution."""
+        env = os.environ.copy()
+
+        # Apply variables in order: built-in -> base -> job
+        env.update(self.gitlab_ci_vars)
+        env.update(self.base_variables)
+        env.update(job.variables)
+
+        # Set job-specific variables
+        env["CI_JOB_STAGE"] = job.stage
+        env["CI_JOB_NAME"] = job.name
+
+        return env
+
+    def substitute_variables(self, text: str, variables: dict[str, str]) -> str:
+        """Perform basic variable substitution in text."""
+        # Simple substitution - replace $VAR and ${VAR} patterns
+        import re
+
+        def replace_var(match):
+            var_name = match.group(1) or match.group(2)
+            return variables.get(var_name, match.group(0))
+
+        # Match $VAR or ${VAR}
+        pattern = r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)"
+        return re.sub(pattern, replace_var, text)
+
+
+class JobExecutor:
+    """Executes individual jobs."""
+
+    def __init__(self, variable_manager: VariableManager):
+        self.variable_manager = variable_manager
+
+    def execute_job(self, job: JobConfig) -> None:
+        """Execute a single job."""
+        print(f"🔧 Running job: {job.name} (stage: {job.stage})")
+
+        env = self.variable_manager.prepare_environment(job)
+
+        try:
+            # Execute before_script
+            if job.before_script:
+                print("  📋 Running before_script...")
+                self._execute_scripts(job.before_script, env)
+
+            # Execute main script
+            if job.script:
+                print("  🚀 Running script...")
+                self._execute_scripts(job.script, env)
+
+            # Execute after_script
+            if job.after_script:
+                print("  📋 Running after_script...")
+                self._execute_scripts(job.after_script, env)
+
+            print(f"✅ Job {job.name} completed successfully")
+
+        except subprocess.CalledProcessError as e:
+            raise JobExecutionError(f"Job {job.name} failed with exit code {e.returncode}") from e
+
+    def _execute_scripts(self, scripts: list[str], env: dict[str, str]) -> None:
+        """Execute a list of script commands."""
+        for script in scripts:
+            if not isinstance(script, str):
+                raise Exception(f"{script} is not a string")
+            if not script.strip():
+                continue
+
+            # Substitute variables in the script
+            script = self.variable_manager.substitute_variables(script, env)
+
+            print(f"    $ {script}")
+
+            # Execute using bash
+            # command = ['"/c/Program Files/Git/bin/bash.exe"', '-c', shlex.quote(script).strip('\'')]
+            command = shlex.split(script)
+            returncode = run_colored(
+                command,
+                env=env,
+                cwd=Path.cwd(),
+            )
+
+            if returncode != 0:
+                raise subprocess.CalledProcessError(returncode, script)
+
+
+class StageOrchestrator:
+    """Orchestrates job execution by stages."""
+
+    def __init__(self, job_executor: JobExecutor):
+        self.job_executor = job_executor
+
+    def execute_pipeline(self, pipeline: PipelineConfig) -> None:
+        """Execute all jobs in the pipeline, organized by stages."""
+        print("🚀 Starting GitLab CI pipeline execution")
+        print(f"📋 Stages: {', '.join(pipeline.stages)}")
+
+        jobs_by_stage = self._organize_jobs_by_stage(pipeline)
+
+        for stage in pipeline.stages:
+            stage_jobs = jobs_by_stage.get(stage, [])
+            if not stage_jobs:
+                print(f"⏭️  Skipping empty stage: {stage}")
+                continue
+
+            print(f"\n🎯 Executing stage: {stage}")
+
+            for job in stage_jobs:
+                self.job_executor.execute_job(job)
+
+        print("\n🎉 Pipeline completed successfully!")
+
+    def _organize_jobs_by_stage(self, pipeline: PipelineConfig) -> dict[str, list[JobConfig]]:
+        """Organize jobs by their stages."""
+        jobs_by_stage: dict[str, Any] = {}
+
+        for job in pipeline.jobs:
+            stage = job.stage
+            if stage not in jobs_by_stage:
+                jobs_by_stage[stage] = []
+            jobs_by_stage[stage].append(job)
+
+        return jobs_by_stage
+
+
+class LocalGitLabRunner:
+    """Main runner class that orchestrates the entire pipeline execution."""
+
+    def __init__(self, base_path: Path | None = None):
+        if not base_path:
+            self.base_path = Path.cwd()
+        else:
+            self.base_path = base_path
+        self.loader = ConfigurationLoader(base_path)
+        self.processor = PipelineProcessor()
+
+    def run_pipeline(self, config_path: Path | None = None) -> None:
+        """Run the complete pipeline."""
+        try:
+            # Load and process configuration
+            raw_config = self.loader.load_config(config_path)
+            pipeline = self.processor.process_config(raw_config)
+
+            # Set up execution components
+            variable_manager = VariableManager(pipeline.variables)
+            job_executor = JobExecutor(variable_manager)
+            orchestrator = StageOrchestrator(job_executor)
+
+            # Execute pipeline
+            orchestrator.execute_pipeline(pipeline)
+
+        except GitLabCIError as e:
+            print(f"❌ GitLab CI Error: {e}")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
+            sys.exit(1)
+
+
+def best_efforts_run(config_path: Path) -> None:
+    """Main entry point for the best-efforts-run command."""
+    runner = LocalGitLabRunner()
+    runner.run_pipeline(config_path)
+
+
+if __name__ == "__main__":
+    best_efforts_run(Path("./best/.gitlab-ci.yml"))
+```
 ## File: commands\clean_all.py
 ```python
 from __future__ import annotations
@@ -3868,38 +4312,40 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
     for p in root.rglob("*.hash"):
         if p.is_dir():
             continue
-        base = base_from_hash(p)
-        if not base.exists() or not base.is_file():
+        base_file = base_from_hash(p)
+        if not base_file.exists() or not base_file.is_file():
             # Stray .hash; leave it
             continue
-        seen_pairs.add((base, p))
+        seen_pairs.add((base_file, p))
 
     if not seen_pairs:
         logger.info("No target pairs found under %s", short_path(root))
         return (0, 0, 0)
 
-    for base, hashf in sorted(seen_pairs):
-        status = is_target_unchanged(base, hashf)
+    for base_file, hash_file in sorted(seen_pairs):
+        status = is_target_unchanged(base_file, hash_file)
         if status is None:
+            logger.warning(
+                "Refusing to remove %s (invalid/corrupt hash at %s)", short_path(base_file), short_path(hash_file)
+            )
             skipped_invalid += 1
-            logger.warning("Refusing to remove %s (invalid/corrupt hash at %s)", base, hashf)
             continue
-        if status is False:
+        if not status:
             skipped_changed += 1
-            logger.warning("Refusing to remove %s (content has changed since last write)", base)
+            logger.warning("Refusing to remove %s (content has changed since last write)", short_path(base_file))
             continue
 
         # status is True: safe to delete
         if dry_run:
-            logger.info("[DRY RUN] Would delete %s and %s", base, hashf)
+            logger.info("[DRY RUN] Would delete %s and %s", short_path(base_file), short_path(hash_file))
         else:
             try:
-                base.unlink(missing_ok=False)
-                hashf.unlink(missing_ok=True)
-                logger.info("Deleted %s and %s", base, hashf)
+                base_file.unlink(missing_ok=False)
+                hash_file.unlink(missing_ok=True)
+                logger.info("Deleted %s and %s", short_path(base_file), short_path(hash_file))
             # narrow surface area; logs any fs issues
             except Exception as e:  # nosec
-                logger.error("Failed to delete %s / %s: %s", base, hashf, e)
+                logger.error("Failed to delete %s / %s: %s", short_path(base_file), short_path(hash_file), e)
                 continue
         deleted += 1
 
@@ -3923,20 +4369,20 @@ def report_targets(root: Path) -> list[Path]:
     pairs = list(iter_target_pairs(root))
     strays = list_stray_files(root)
 
-    logger.debug("Target report for %s", root)
+    logger.debug("Target report for %s", short_path(root))
     logger.debug("Pairs found: %d", len(pairs))
-    for base, hashf in pairs:
-        status = is_target_unchanged(base, hashf)
-        if status is True:
-            logger.debug("OK: %s (hash matches)", base)
+    for bash_file, hash_file in pairs:
+        status = is_target_unchanged(bash_file, hash_file)
+        if status:
+            logger.debug("OK: %s (hash matches)", short_path(bash_file))
         elif status is False:
-            logger.warning("CHANGED: %s (hash mismatch)", base)
+            logger.warning("CHANGED: %s (hash mismatch)", short_path(bash_file))
         else:
-            logger.warning("INVALID HASH: %s (cannot decode %s)", base, hashf)
+            logger.warning("INVALID HASH: %s (cannot decode %s)", short_path(bash_file), short_path(hash_file))
 
     logger.debug("Strays: %d", len(strays))
     for s in strays:
-        logger.debug("Stray: %s", s)
+        logger.debug("Stray: %s", short_path(s))
     return strays
 ```
 ## File: commands\clone2local.py
@@ -4028,8 +4474,7 @@ def fetch_repository_archive(
             except urllib.error.HTTPError as e:
                 # Re-raise with a more specific message for clarity.
                 raise ConnectionError(
-                    f"Could not find archive for branch '{branch}' at '{archive_url}'. "
-                    f"Please check the repository URL and branch name. (HTTP Status: {e.code})"
+                    f"Could not find archive for branch '{branch}' at '{archive_url}'. Please check the repository URL and branch name. (HTTP Status: {e.code})"
                 ) from e
             except urllib.error.URLError as e:
                 raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
@@ -4207,7 +4652,7 @@ def infer_cli(
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> str:
-    command = "bash2gitlab compile " f"--in {short_path(uncompiled_path)} " f"--out {short_path(output_path)}"
+    command = f"bash2gitlab compile --in {short_path(uncompiled_path)} --out {short_path(output_path)}"
     if dry_run:
         command += " --dry-run"
     if parallelism:
@@ -4416,7 +4861,6 @@ def process_script_list(
 
     # Collapse to literal block only when no YAML features and sufficiently long
     if not has_yaml_features and only_plain_strings and len(processed_items) > 1 and collapse_lists and scripts_found:
-
         final_script_block = "\n".join(processed_items)
 
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
@@ -4532,7 +4976,6 @@ def inline_gitlab_scripts(
             # Can't deal with !reference tagged jobs at all
             continue
         if hasattr(job_data, "anchor") and job_data.anchor.value:
-
             # Can't deal with &anchor tagged jobs at all
             # Okay, more exactly, we can inline, but we can't collapse lists because you can't tell if it is
             # going into a script or some other block.
@@ -4687,11 +5130,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
 
     # --- File and hash file exist, perform validation ---
     if not hash_file.exists():
-        error_message = (
-            f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. "
-            "Aborting to prevent data loss. If you want to regenerate this file, "
-            "please remove it and run the script again."
-        )
+        error_message = f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. Aborting to prevent data loss. If you want to regenerate this file, please remove it and run the script again."
         logger.error(error_message)
         raise SystemExit(1)
 
@@ -4700,11 +5139,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     try:
         last_known_content = base64.b64decode(last_known_base64).decode("utf-8")
     except (ValueError, TypeError) as e:
-        error_message = (
-            f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\n"
-            f"Error: {e}\n"
-            "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
-        )
+        error_message = f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\nError: {e}\nAborting to prevent data loss. Please remove the file and its .hash file to regenerate."
         logger.error(error_message)
         raise SystemExit(1) from e
 
@@ -4747,23 +5182,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             else ""
         )
 
-        error_message = (
-            f"\n--- MANUAL EDIT DETECTED ---\n"
-            f"CANNOT OVERWRITE: The destination file below has been modified:\n"
-            f"  {output_file}\n\n"
-            f"{corruption_warning}"
-            f"The script detected that its data no longer matches the last generated version.\n"
-            f"To prevent data loss, the process has been stopped.\n\n"
-            f"--- DETECTED CHANGES ---\n"
-            f"{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n"
-            f"--- HOW TO RESOLVE ---\n"
-            f"1. Revert the manual changes in '{output_file}' and run this script again.\n"
-            f"OR\n"
-            f"2. If the manual changes are desired, incorporate them into the source files\n"
-            f"   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n"
-            f"   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n"
-            f"   to regenerate it from the new base.\n"
-        )
+        error_message = f"\n--- MANUAL EDIT DETECTED ---\nCANNOT OVERWRITE: The destination file below has been modified:\n  {output_file}\n\n{corruption_warning}The script detected that its data no longer matches the last generated version.\nTo prevent data loss, the process has been stopped.\n\n--- DETECTED CHANGES ---\n{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n--- HOW TO RESOLVE ---\n1. Revert the manual changes in '{output_file}' and run this script again.\nOR\n2. If the manual changes are desired, incorporate them into the source files\n   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n   to regenerate it from the new base.\n"
         # We use sys.exit to print the message directly and exit with an error code.
         sys.exit(error_message)
 
@@ -4883,7 +5302,7 @@ def run_compile_all(
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
             (src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command)
-            for src, out, variables, in files_to_process
+            for src, out, variables in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
             results = pool.starmap(compile_single_file, args_list)
@@ -6589,7 +7008,6 @@ def find_script_references_in_node(
 
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
-
     src = Source(dot_output)
     out_file = src.render(
         filename=filename_base,
@@ -6633,7 +7051,6 @@ def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_b
 
 
 def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
-
     out_path = Path.cwd() / f"{filename_base}.svg"
     G = nx.DiGraph()
 
@@ -6906,8 +7323,7 @@ def create_or_update_config_file(base_path: Path, config_data: dict[str, Any], f
 
         if "tool" in doc and "bash2gitlab" in doc["tool"] and not force:  # type: ignore[operator]
             raise FileExistsError(
-                "A '[tool.bash2gitlab]' section already exists in pyproject.toml. "
-                "Use the --force flag to overwrite it."
+                "A '[tool.bash2gitlab]' section already exists in pyproject.toml. Use the --force flag to overwrite it."
             )
     else:
         logger.info(f"No 'pyproject.toml' found. A new one will be created at '{short_path(base_path)}'.")
@@ -7714,226 +8130,279 @@ def summarize_results(results: Sequence[LintResult]) -> tuple[int, int]:
 ```
 ## File: commands\map_commit.py
 ```python
-"""Copy from many repos relevant shell scripts changes back to the central repo."""
+"""
+Syncs changes from multiple target folders back to a single source folder.
+This is intended to be fed by a TOML configuration file where users can easily
+map one source directory to a list of target/deployed directories.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import shutil
+from collections.abc import Collection
 from pathlib import Path
+
+from bash2gitlab.commands.compile_not_bash import _INTERPRETER_EXTS
 
 __all__ = ["run_commit_map"]
 
 
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
+for _key, value in _INTERPRETER_EXTS.items():
+    _VALID_SUFFIXES.update(value)
+
+_CHUNK_SIZE = 65536  # 64kb
+
 logger = logging.getLogger(__name__)
 
 
+def _calculate_file_hash(file_path: Path) -> str | None:
+    """Calculates the SHA256 hash of a file, returning None if it doesn't exist."""
+    if not file_path.is_file():
+        return None
+
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        while chunk := f.read(_CHUNK_SIZE):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def _sync_single_target_to_source(
+    source_base_path: Path,
+    target_base_path: Path,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """Helper to sync one target directory back to the source."""
+    if not target_base_path.is_dir():
+        print(f"Warning: Target directory '{target_base_path}' does not exist. Skipping.")
+        return
+
+    print(f"\nProcessing sync: '{target_base_path}' -> '{source_base_path}'")
+
+    for target_file_path in target_base_path.rglob("*"):
+        # Skip directories and non-file types
+        if not target_file_path.is_file():
+            continue
+
+        # Skip ignored files
+        if (
+            target_file_path.name == ".gitignore"
+            or target_file_path.suffix == ".hash"
+            or target_file_path.suffix.lower() not in _VALID_SUFFIXES
+        ):
+            continue
+
+        relative_path = target_file_path.relative_to(target_base_path)
+        source_file_path = source_base_path / relative_path
+        hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
+
+        target_hash = _calculate_file_hash(target_file_path)
+        stored_hash = hash_file_path.read_text().strip() if hash_file_path.exists() else None
+
+        # Case 1: File is unchanged since last deployment/sync.
+        if stored_hash and target_hash == stored_hash:
+            # Using logger.debug for unchanged files to reduce noise
+            logger.debug(f"Unchanged: '{target_file_path}'")
+            continue
+
+        # Case 2: Source file was modified locally since deployment.
+        source_hash = _calculate_file_hash(source_file_path)
+        if stored_hash and source_hash and source_hash != stored_hash and not force:
+            print(f"Warning: Source file '{source_file_path}' was modified locally.")
+            print("         Skipping sync. Use --force to overwrite.")
+            continue
+
+        # Case 3: File in target has changed, proceed with sync.
+        action = "Creating" if not source_file_path.exists() else "Updating"
+        print(f"{action}: '{source_file_path}' (from '{target_file_path}')")
+
+        if not dry_run:
+            # Ensure the destination directory exists
+            source_file_path.parent.mkdir(parents=True, exist_ok=True)
+            # Copy file and its metadata
+            shutil.copy2(target_file_path, source_file_path)
+            # Update the hash file in the target directory to reflect the new state
+            hash_file_path.write_text(target_hash or "")
+
+
 def run_commit_map(
-    source_to_target_map: dict[str, str],
+    deployment_map: dict[str, list[str] | Collection[str]],
     dry_run: bool = False,
     force: bool = False,
 ) -> None:
-    """Copy modified deployed files back to their source directories.
+    """
+    Syncs modified files from target directories back to their source directory.
 
-    This function performs the inverse of :func:`bash2gitlab.map_deploy_command.map_deploy`.
-    For every mapping of ``source`` to ``target`` directories it traverses the
-    deployed ``target`` directory and copies changed files back to the
-    corresponding ``source`` directory. Change detection relies on ``.hash``
-    files created during deployment. A file is copied back when the content of
-    the deployed file differs from the stored hash. After a successful copy the
-    ``.hash`` file is updated to reflect the new content hash.
+    For each source directory, this function iterates through its corresponding
+    list of target (deployed) directories. It detects changes in the target
+    files by comparing their current content hash against a stored hash in a
+    parallel '.hash' file.
+
+    If a file has changed in the target, it is copied back to the source,
+    overwriting the original.
 
     Args:
-        source_to_target_map: Mapping of source directories to deployed target
-            directories.
-        dry_run: If ``True`` the operation is only simulated and no files are
-            written.
-        force: If ``True`` a source file is overwritten even if it was modified
-            locally since the last deployment.
+        deployment_map: A mapping where each key is a source directory and the
+            value is a list of target directories where the source content
+            was deployed.
+        dry_run: If ``True``, simulates the sync and prints actions without
+            modifying any files.
+        force: If ``True``, a source file will be overwritten even if it was
+            modified locally since the last deployment.
     """
-    for source_base, target_base in source_to_target_map.items():
+    for source_base, target_bases in deployment_map.items():
         source_base_path = Path(source_base).resolve()
-        target_base_path = Path(target_base).resolve()
 
-        if not target_base_path.is_dir():
-            print(f"Warning: Target directory '{target_base_path}' does not exist. Skipping.")
+        if not isinstance(target_bases, (list, tuple, set)):
+            logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
             continue
 
-        print(f"\nProcessing map: '{target_base_path}' -> '{source_base_path}'")
-
-        for root, _, files in os.walk(target_base_path):
-            target_root_path = Path(root)
-
-            for filename in files:
-                if filename == ".gitignore" or filename.endswith(".hash"):
-                    continue
-
-                target_file_path = target_root_path / filename
-                if target_file_path.suffix.lower() not in _VALID_SUFFIXES:
-                    continue
-
-                relative_path = target_file_path.relative_to(target_base_path)
-                source_file_path = source_base_path / relative_path
-                hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
-
-                # Calculate hash of the deployed file
-                with open(target_file_path, "rb") as f:
-                    target_hash = hashlib.sha256(f.read()).hexdigest()
-
-                stored_hash = ""
-                if hash_file_path.exists():
-                    with open(hash_file_path, encoding="utf-8") as f:
-                        stored_hash = f.read().strip()
-
-                source_hash_actual = ""
-                if source_file_path.exists():
-                    with open(source_file_path, "rb") as f:
-                        source_hash_actual = hashlib.sha256(f.read()).hexdigest()
-
-                if stored_hash and target_hash == stored_hash:
-                    print(f"Unchanged: '{target_file_path}'")
-                    continue
-
-                if stored_hash and source_hash_actual and source_hash_actual != stored_hash and not force:
-                    print(f"Warning: '{source_file_path}' was modified in source since last deployment.")
-                    print("Skipping copy. Use --force to overwrite.")
-                    continue
-
-                action = "Copied" if not source_file_path.exists() else "Updated"
-                print(f"{action}: '{target_file_path}' -> '{source_file_path}'")
-
-                if dry_run:
-                    continue
-
-                if not source_file_path.parent.exists():
-                    print(f"Creating directory: {source_file_path.parent}")
-                    source_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-                shutil.copy2(target_file_path, source_file_path)
-                with open(hash_file_path, "w", encoding="utf-8") as f:
-                    f.write(target_hash)
+        for target_base in target_bases:
+            target_base_path = Path(target_base).resolve()
+            _sync_single_target_to_source(source_base_path, target_base_path, dry_run, force)
 ```
 ## File: commands\map_deploy.py
 ```python
-"""Copy from a central repos relevant shell scripts changes to many dependent repos for debugging."""
+"""
+Deploys scripts from a central source directory to multiple target directories.
+"""
 
 from __future__ import annotations
 
 import hashlib
-import os
+import logging
 import shutil
+from collections.abc import Collection
 from pathlib import Path
+
+from bash2gitlab.commands.compile_not_bash import _INTERPRETER_EXTS
+
+__all__ = ["run_map_deploy"]
 
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
-__all__ = [
-    "run_map_deploy",
-]
+for _key, value in _INTERPRETER_EXTS.items():
+    _VALID_SUFFIXES.update(value)
+
+_CHUNK_SIZE = 65536  # 64kb
+
+logger = logging.getLogger(__name__)
+
+
+def calculate_file_hash(file_path: Path) -> str | None:
+    """Calculates the SHA256 hash of a file, returning None if it doesn't exist."""
+    if not file_path.is_file():
+        return None
+
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        # Read in chunks to handle large files efficiently
+        while chunk := f.read(_CHUNK_SIZE):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def deploy_to_single_target(
+    source_base_path: Path,
+    target_base_path: Path,
+    dry_run: bool,
+    force: bool,
+) -> None:
+    """
+    Helper function to handle the deployment logic for one source-to-target pair.
+    """
+    print(f"\nProcessing deployment: '{source_base_path}' -> '{target_base_path}'")
+
+    # Create target directory and .gitignore if they don't exist
+    if not dry_run:
+        target_base_path.mkdir(parents=True, exist_ok=True)
+        gitignore_path = target_base_path / ".gitignore"
+        if not gitignore_path.exists():
+            print(f"Creating .gitignore in '{target_base_path}'")
+            gitignore_path.write_text("*\n")
+    else:
+        if not target_base_path.exists():
+            print(f"DRY RUN: Would create directory '{target_base_path}'")
+        if not (target_base_path / ".gitignore").exists():
+            print(f"DRY RUN: Would create .gitignore in '{target_base_path}'")
+
+    # Use rglob for efficient recursive file searching
+    for source_file_path in source_base_path.rglob("*"):
+        if not source_file_path.is_file() or source_file_path.suffix.lower() not in _VALID_SUFFIXES:
+            continue
+
+        relative_path = source_file_path.relative_to(source_base_path)
+        target_file_path = target_base_path / relative_path
+        hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
+
+        source_hash = calculate_file_hash(source_file_path)
+
+        # Check for modifications at the destination if the file exists
+        if target_file_path.exists():
+            target_hash = calculate_file_hash(target_file_path)
+            stored_hash = hash_file_path.read_text().strip() if hash_file_path.exists() else None
+
+            # Case 1: Target file was modified locally since last deployment.
+            if stored_hash and target_hash != stored_hash:
+                print(f"Warning: Target '{target_file_path}' was modified locally.")
+                if not force:
+                    print("         Skipping copy. Use --force to overwrite.")
+                    continue
+                print("         Forcing overwrite.")
+
+            # Case 2: Target file is identical to the source file.
+            if source_hash == target_hash:
+                logger.debug(f"Unchanged: '{target_file_path}'")
+                continue
+
+        # If we reach here, we need to copy/update the file.
+        action = "Deploying" if not target_file_path.exists() else "Updating"
+        print(f"{action}: '{source_file_path}' -> '{target_file_path}'")
+
+        if not dry_run:
+            target_file_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_file_path, target_file_path)
+            hash_file_path.write_text(source_hash or "")
 
 
 def run_map_deploy(
-    source_to_target_map: dict[str, str],
+    deployment_map: dict[str, list[str] | Collection[str]],
     dry_run: bool = False,
     force: bool = False,
 ) -> None:
-    """Copies files from source to target directories based on a map.
+    """
+    Deploys files from source directories to their corresponding target directories.
 
-    This function iterates through a dictionary mapping source directories to
-    target directories. It copies each file from the source to the corresponding
-    target, creating a .hash file to track changes.
-
-    - If a destination file has been modified since the last deployment (hash
-      mismatch), it will be skipped unless 'force' is True.
-    - A .gitignore file with '*' is created in each target directory to
-      prevent accidental check-ins.
-    - All necessary directories are created.
+    This function iterates through a map where each source directory is associated
+    with a list of target directories. It copies valid files and creates a '.hash'
+    file alongside each deployed file to track its state.
 
     Args:
-        source_to_target_map: A dictionary where keys are source paths and
-                              values are target paths.
+        deployment_map: A dictionary where keys are source paths and values are
+                        a list or collection of target paths.
         dry_run: If True, simulates the deployment without making changes.
-        force: If True, overwrites target files even if they have been modified.
+        force: If True, overwrites target files even if they have been modified
+               locally since the last deployment.
     """
-    for source_base, target_base in source_to_target_map.items():
+    for source_base, target_bases in deployment_map.items():
         source_base_path = Path(source_base).resolve()
-        target_base_path = Path(target_base).resolve()
 
         if not source_base_path.is_dir():
             print(f"Warning: Source directory '{source_base_path}' does not exist. Skipping.")
             continue
 
-        print(f"\nProcessing map: '{source_base_path}' -> '{target_base_path}'")
+        if not isinstance(target_bases, (list, tuple, set)):
+            logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
+            continue
 
-        # Create target base directory and .gitignore if they don't exist
-        if not target_base_path.exists():
-            print(f"Target directory '{target_base_path}' does not exist.")
-            if not dry_run:
-                print(f"Creating directory: {target_base_path}")
-                target_base_path.mkdir(parents=True, exist_ok=True)
-
-        gitignore_path = target_base_path / ".gitignore"
-        if not gitignore_path.exists():
-            if not dry_run:
-                print(f"Creating .gitignore in '{target_base_path}'")
-                with open(gitignore_path, "w", encoding="utf-8") as f:
-                    f.write("*\n")
-            else:
-                print(f"DRY RUN: Would create .gitignore in '{target_base_path}'")
-
-        for root, _, files in os.walk(source_base_path):
-            source_root_path = Path(root)
-
-            for filename in files:
-                source_file_path = source_root_path / filename
-                if source_file_path.suffix.lower() not in _VALID_SUFFIXES:
-                    continue
-
-                relative_path = source_file_path.relative_to(source_base_path)
-                target_file_path = target_base_path / relative_path
-                hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
-
-                # Ensure parent directory of the target file exists
-                if not target_file_path.parent.exists():
-                    print(f"Target directory '{target_file_path.parent}' does not exist.")
-                    if not dry_run:
-                        print(f"Creating directory: {target_file_path.parent}")
-                        target_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-                # Calculate source file hash
-                with open(source_file_path, "rb") as f:
-                    source_hash = hashlib.sha256(f.read()).hexdigest()
-
-                # Check for modifications at the destination
-                if target_file_path.exists():
-                    with open(target_file_path, "rb") as f:
-                        target_hash_actual = hashlib.sha256(f.read()).hexdigest()
-
-                    stored_hash = ""
-                    if hash_file_path.exists():
-                        with open(hash_file_path, encoding="utf-8") as f:
-                            stored_hash = f.read().strip()
-
-                    if stored_hash and target_hash_actual != stored_hash:
-                        print(f"Warning: '{target_file_path}' was modified since last deployment.")
-                        if not force:
-                            print("Skipping copy. Use --force to overwrite.")
-                            continue
-                        print("Forcing overwrite.")
-
-                # Perform copy and write hash
-                if not target_file_path.exists() or source_hash != target_hash_actual:
-                    action = "Copied" if not target_file_path.exists() else "Updated"
-                    print(f"{action}: '{source_file_path}' -> '{target_file_path}'")
-                    if not dry_run:
-                        shutil.copy2(source_file_path, target_file_path)
-                        with open(hash_file_path, "w", encoding="utf-8") as f:
-                            f.write(source_hash)
-                else:
-                    print(f"Unchanged: '{target_file_path}'")
+        for target_base in target_bases:
+            target_base_path = Path(target_base).resolve()
+            deploy_to_single_target(source_base_path, target_base_path, dry_run, force)
 ```
 ## File: commands\precommit.py
 ```python
@@ -8125,9 +8594,7 @@ def install(repo_root: Path | None = None, *, force: bool = False) -> None:
     _git_dir = resolve_git_dir(repo_root)  # raises if not a repo
     if not has_required_config():
         raise PrecommitHookError(
-            "Missing bash2gitlab input/output configuration. "
-            "Run `bash2gitlab init` to create TOML, or set "
-            "BASH2GITLAB_INPUT_DIR and BASH2GITLAB_OUTPUT_DIR."
+            "Missing bash2gitlab input/output configuration. Run `bash2gitlab init` to create TOML, or set BASH2GITLAB_INPUT_DIR and BASH2GITLAB_OUTPUT_DIR."
         )
 
     # Ensure hooks dir exists
@@ -12369,13 +12836,10 @@ def format_update_message(
     # Check if current version is yanked
     if version_info.current_yanked:
         if c:
-            yank_msg = (
-                f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} "
-                f"has been yanked from PyPI!{c.ENDC}"
-            )
+            yank_msg = f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!{c.ENDC}"
         else:
             yank_msg = (
-                f"WARNING: Your current version {current_version_str} of {package_name} " f"has been yanked from PyPI!"
+                f"WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!"
             )
         messages.append(yank_msg)
 
@@ -12385,15 +12849,9 @@ def format_update_message(
             latest_stable = _version.parse(version_info.latest_stable)
             if latest_stable > current:
                 if c:
-                    stable_msg = (
-                        f"{c.YELLOW}A new stable version of {package_name} is available: "
-                        f"{c.GREEN}{latest_stable}{c.YELLOW} (you are using {current}).{c.ENDC}"
-                    )
+                    stable_msg = f"{c.YELLOW}A new stable version of {package_name} is available: {c.GREEN}{latest_stable}{c.YELLOW} (you are using {current}).{c.ENDC}"
                 else:
-                    stable_msg = (
-                        f"A new stable version of {package_name} is available: "
-                        f"{latest_stable} (you are using {current})."
-                    )
+                    stable_msg = f"A new stable version of {package_name} is available: {latest_stable} (you are using {current})."
                 messages.append(stable_msg)
         except _version.InvalidVersion:
             pass
@@ -12404,10 +12862,7 @@ def format_update_message(
             latest_dev = _version.parse(version_info.latest_dev)
             if current is None or latest_dev > current:
                 if c:
-                    dev_msg = (
-                        f"{c.BLUE}Development version available: {c.GREEN}{latest_dev}{c.BLUE} "
-                        f"(use at your own risk).{c.ENDC}"
-                    )
+                    dev_msg = f"{c.BLUE}Development version available: {c.GREEN}{latest_dev}{c.BLUE} (use at your own risk).{c.ENDC}"
                 else:
                     dev_msg = f"Development version available: {latest_dev} (use at your own risk)."
                 messages.append(dev_msg)

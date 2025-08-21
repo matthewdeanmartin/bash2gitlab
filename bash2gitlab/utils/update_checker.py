@@ -326,13 +326,10 @@ def format_update_message(
     # Check if current version is yanked
     if version_info.current_yanked:
         if c:
-            yank_msg = (
-                f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} "
-                f"has been yanked from PyPI!{c.ENDC}"
-            )
+            yank_msg = f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!{c.ENDC}"
         else:
             yank_msg = (
-                f"WARNING: Your current version {current_version_str} of {package_name} " f"has been yanked from PyPI!"
+                f"WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!"
             )
         messages.append(yank_msg)
 
@@ -342,15 +339,9 @@ def format_update_message(
             latest_stable = _version.parse(version_info.latest_stable)
             if latest_stable > current:
                 if c:
-                    stable_msg = (
-                        f"{c.YELLOW}A new stable version of {package_name} is available: "
-                        f"{c.GREEN}{latest_stable}{c.YELLOW} (you are using {current}).{c.ENDC}"
-                    )
+                    stable_msg = f"{c.YELLOW}A new stable version of {package_name} is available: {c.GREEN}{latest_stable}{c.YELLOW} (you are using {current}).{c.ENDC}"
                 else:
-                    stable_msg = (
-                        f"A new stable version of {package_name} is available: "
-                        f"{latest_stable} (you are using {current})."
-                    )
+                    stable_msg = f"A new stable version of {package_name} is available: {latest_stable} (you are using {current})."
                 messages.append(stable_msg)
         except _version.InvalidVersion:
             pass
@@ -361,10 +352,7 @@ def format_update_message(
             latest_dev = _version.parse(version_info.latest_dev)
             if current is None or latest_dev > current:
                 if c:
-                    dev_msg = (
-                        f"{c.BLUE}Development version available: {c.GREEN}{latest_dev}{c.BLUE} "
-                        f"(use at your own risk).{c.ENDC}"
-                    )
+                    dev_msg = f"{c.BLUE}Development version available: {c.GREEN}{latest_dev}{c.BLUE} (use at your own risk).{c.ENDC}"
                 else:
                     dev_msg = f"Development version available: {latest_dev} (use at your own risk)."
                 messages.append(dev_msg)

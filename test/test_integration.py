@@ -29,13 +29,13 @@ class TestProcessUncompiledDirectory:
 
         # 1. Global Variables
         (uncompiled_path / "global_variables.sh").write_text(
-            'export GLOBAL_VAR="GlobalValue"\n' 'PROJECT_NAME="MyProject"'
+            'export GLOBAL_VAR="GlobalValue"\nPROJECT_NAME="MyProject"'
         )
 
         # 2. Scripts
-        (uncompiled_path / "short_task.sh").write_text("echo 'Short task line 1'\n" "echo 'Short task line 2'")
+        (uncompiled_path / "short_task.sh").write_text("echo 'Short task line 1'\necho 'Short task line 2'")
         (uncompiled_path / "long_task.sh").write_text(
-            "echo 'Line 1'\n" "echo 'Line 2'\n" "echo 'Line 3'\n" "echo 'Line 4 is too many'"
+            "echo 'Line 1'\necho 'Line 2'\necho 'Line 3'\necho 'Line 4 is too many'"
         )
         (uncompiled_path / "template_script.sh").write_text("echo 'From a template'")
 

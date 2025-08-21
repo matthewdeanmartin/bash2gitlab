@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.8.22] - 2025-08-21
+
+### Changed
+- Map deploy writes to multiple folders.
+- Map commit gathers multiple folders. Does not handle conflicts yet.
+
 ## [0.8.21] - 2025-08-20
 
 ### Added

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -163,6 +164,15 @@ class _Config:
             return copy_dict
         return {}
 
+    def get_dict_of_list(self, key: str, section: str | None = None) -> dict[str, list[str] | Collection[str]]:
+        value, _ = self._get_value(key, section)
+        if isinstance(value, dict):
+            copy_dict = {}
+            for key, the_value in value.items():
+                copy_dict[str(key)] = the_value
+            return copy_dict
+        return {}
+
     # --- General Properties ---
     @property
     def input_dir(self) -> str | None:
@@ -275,8 +285,8 @@ class _Config:
 
     # --- `map-deploy` / `commit-map` Properties ---
     @property
-    def map_folders(self) -> dict[str, str]:
-        return self.get_dict("map", section="map")  # type: ignore[return=value]
+    def map_folders(self) -> dict[str, list[str] | Collection[str]]:
+        return self.get_dict_of_list("map", section="map")  # type: ignore[return=value]
 
     @property
     def map_force(self) -> bool | None:

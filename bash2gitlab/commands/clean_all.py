@@ -157,38 +157,40 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
     for p in root.rglob("*.hash"):
         if p.is_dir():
             continue
-        base = base_from_hash(p)
-        if not base.exists() or not base.is_file():
+        base_file = base_from_hash(p)
+        if not base_file.exists() or not base_file.is_file():
             # Stray .hash; leave it
             continue
-        seen_pairs.add((base, p))
+        seen_pairs.add((base_file, p))
 
     if not seen_pairs:
         logger.info("No target pairs found under %s", short_path(root))
         return (0, 0, 0)
 
-    for base, hashf in sorted(seen_pairs):
-        status = is_target_unchanged(base, hashf)
+    for base_file, hash_file in sorted(seen_pairs):
+        status = is_target_unchanged(base_file, hash_file)
         if status is None:
+            logger.warning(
+                "Refusing to remove %s (invalid/corrupt hash at %s)", short_path(base_file), short_path(hash_file)
+            )
             skipped_invalid += 1
-            logger.warning("Refusing to remove %s (invalid/corrupt hash at %s)", base, hashf)
             continue
-        if status is False:
+        if not status:
             skipped_changed += 1
-            logger.warning("Refusing to remove %s (content has changed since last write)", base)
+            logger.warning("Refusing to remove %s (content has changed since last write)", short_path(base_file))
             continue
 
         # status is True: safe to delete
         if dry_run:
-            logger.info("[DRY RUN] Would delete %s and %s", base, hashf)
+            logger.info("[DRY RUN] Would delete %s and %s", short_path(base_file), short_path(hash_file))
         else:
             try:
-                base.unlink(missing_ok=False)
-                hashf.unlink(missing_ok=True)
-                logger.info("Deleted %s and %s", base, hashf)
+                base_file.unlink(missing_ok=False)
+                hash_file.unlink(missing_ok=True)
+                logger.info("Deleted %s and %s", short_path(base_file), short_path(hash_file))
             # narrow surface area; logs any fs issues
             except Exception as e:  # nosec
-                logger.error("Failed to delete %s / %s: %s", base, hashf, e)
+                logger.error("Failed to delete %s / %s: %s", short_path(base_file), short_path(hash_file), e)
                 continue
         deleted += 1
 
@@ -212,18 +214,18 @@ def report_targets(root: Path) -> list[Path]:
     pairs = list(iter_target_pairs(root))
     strays = list_stray_files(root)
 
-    logger.debug("Target report for %s", root)
+    logger.debug("Target report for %s", short_path(root))
     logger.debug("Pairs found: %d", len(pairs))
-    for base, hashf in pairs:
-        status = is_target_unchanged(base, hashf)
-        if status is True:
-            logger.debug("OK: %s (hash matches)", base)
+    for bash_file, hash_file in pairs:
+        status = is_target_unchanged(bash_file, hash_file)
+        if status:
+            logger.debug("OK: %s (hash matches)", short_path(bash_file))
         elif status is False:
-            logger.warning("CHANGED: %s (hash mismatch)", base)
+            logger.warning("CHANGED: %s (hash mismatch)", short_path(bash_file))
         else:
-            logger.warning("INVALID HASH: %s (cannot decode %s)", base, hashf)
+            logger.warning("INVALID HASH: %s (cannot decode %s)", short_path(bash_file), short_path(hash_file))
 
     logger.debug("Strays: %d", len(strays))
     for s in strays:
-        logger.debug("Stray: %s", s)
+        logger.debug("Stray: %s", short_path(s))
     return strays

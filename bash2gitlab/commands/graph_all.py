@@ -138,7 +138,6 @@ def find_script_references_in_node(
 
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
-
     src = Source(dot_output)
     out_file = src.render(
         filename=filename_base,
@@ -182,7 +181,6 @@ def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_b
 
 
 def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
-
     out_path = Path.cwd() / f"{filename_base}.svg"
     G = nx.DiGraph()
 

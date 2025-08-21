@@ -22,26 +22,16 @@ def test_inline_bash_source_success_and_circular_dependency(tmp_path: Path):
         # Script 1: The main entry point
         main_sh = tmp_path / "main.sh"
         main_sh.write_text(
-            "#!/bin/bash\n"
-            'echo "Start of main script"\n'
-            "\n"
-            "# Source a helper script\n"
-            "source ./helpers/utils.sh\n"
-            "\n"
-            'echo "End of main script"\n'
+            '#!/bin/bash\necho "Start of main script"\n\n# Source a helper script\nsource ./helpers/utils.sh\n\necho "End of main script"\n'
         )
 
         # Script 2: A helper script that sources another script and itself (circular)
         (helpers_dir / "utils.sh").write_text(
-            'echo "This is the utils script"\n'
-            "# Source a nested script\n"
-            ". ../nested/data.sh\n"
-            "# This next line demonstrates circular sourcing\n"
-            "source ../main.sh\n"
+            'echo "This is the utils script"\n# Source a nested script\n. ../nested/data.sh\n# This next line demonstrates circular sourcing\nsource ../main.sh\n'
         )
 
         # Script 3: A nested data script
-        (nested_dir / "data.sh").write_text('DATA_VAR="Hello, World!"\n' "echo $DATA_VAR\n")
+        (nested_dir / "data.sh").write_text('DATA_VAR="Hello, World!"\necho $DATA_VAR\n')
 
         # --- Call the function under test ---
         result = inline_bash_source(main_sh)

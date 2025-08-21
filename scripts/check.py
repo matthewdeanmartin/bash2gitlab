@@ -31,14 +31,14 @@ from urllib.request import urlopen
 class Install:
     path: Path
     version: str  # e.g. "3.11.9"
-    cycle: str    # e.g. "3.11"
+    cycle: str  # e.g. "3.11"
 
 
 @dataclass(frozen=True)
 class CycleInfo:
-    cycle: str            # "3.11"
-    latest: str | None # "3.11.9" (may be None/"" if unknown)
-    eol: date | None   # EOL date if known
+    cycle: str  # "3.11"
+    latest: str | None  # "3.11.9" (may be None/"" if unknown)
+    eol: date | None  # EOL date if known
 
 
 # --------------------------- Version Utilities -------------------------------
@@ -68,6 +68,7 @@ def version_cycle(v: str) -> str:
 
 
 # --------------------------- Discovery (Windows) -----------------------------
+
 
 def _discover_with_py_launcher() -> list[Path]:
     """Use `py -0p` to list interpreter paths."""
@@ -110,7 +111,7 @@ def _discover_from_registry() -> list[Path]:
                     except OSError:
                         break
                     try:
-                        with winreg.OpenKey(h, fr"{ver}\InstallPath") as pkey:
+                        with winreg.OpenKey(h, rf"{ver}\InstallPath") as pkey:
                             # Prefer ExecutablePath value if present
                             try:
                                 exe, _ = winreg.QueryValueEx(pkey, "ExecutablePath")
@@ -179,6 +180,7 @@ def get_python_version(exe: Path) -> str | None:
 
 # ----------------------------- Remote metadata -------------------------------
 
+
 def fetch_python_cycles() -> dict[str, CycleInfo]:
     """
     Pull Python cycle info from endoflife.date.
@@ -217,14 +219,17 @@ def newest_maintained_cycle(cycles: dict[str, CycleInfo]) -> str | None:
             maintained.append(c.cycle)
     if not maintained:
         return None
+
     # Pick numerically greatest X.Y
     def keyfn(s: str) -> tuple[int, int]:
         x, y = s.split(".")
         return int(x), int(y)
+
     return max(maintained, key=keyfn)
 
 
 # ------------------------------- Reporting -----------------------------------
+
 
 def main() -> int:
     if os.name != "nt":
@@ -252,8 +257,7 @@ def main() -> int:
         print(f"  - {inst.version:<8}  {inst.path}")
 
     if not cycles:
-        print("\nWarning: Could not fetch latest version info. "
-              "Network blocked or API unavailable. Showing only local installs.")
+        print("\nWarning: Could not fetch latest version info. Network blocked or API unavailable. Showing only local installs.")
         # No remote comparison possible -> treat as no actionable signal
         return 0
 
@@ -270,9 +274,7 @@ def main() -> int:
         if ci and ci.latest:
             try:
                 if version_lt(inst.version, ci.latest):
-                    status_lines.append(
-                        f"• Patch available for {inst.cycle}: {inst.version} → {ci.latest}"
-                    )
+                    status_lines.append(f"• Patch available for {inst.cycle}: {inst.version} → {ci.latest}")
                     recs.append(f"Install Python {ci.latest} (same series).")
                 else:
                     status_lines.append(f"• Up-to-date on {inst.cycle} (installed {inst.version}).")

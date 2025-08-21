@@ -77,10 +77,7 @@ def clean_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-essential_gitlab_args_help = (
-    "GitLab connection options. For private instances require --gitlab-url and possibly --token. "
-    "Use --project-id for project-scoped lint when your config relies on includes or project context."
-)
+essential_gitlab_args_help = "GitLab connection options. For private instances require --gitlab-url and possibly --token. Use --project-id for project-scoped lint when your config relies on includes or project context."
 
 
 def lint_handler(args: argparse.Namespace) -> int:
@@ -421,8 +418,7 @@ def main() -> int:
         "decompile",
         help="Decompile GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
         description=(
-            "Use either --in-file (single YAML) or --in-folder (process tree).\n"
-            "--out must be a directory; output YAML and scripts are written side-by-side."
+            "Use either --in-file (single YAML) or --in-folder (process tree).\n--out must be a directory; output YAML and scripts are written side-by-side."
         ),
     )
 
@@ -539,8 +535,7 @@ def main() -> int:
     commit_map_parser = subparsers.add_parser(
         "commit-map",
         help=(
-            "Copy changed files from deployed directories back to their source"
-            " locations based on a mapping in pyproject.toml."
+            "Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml."
         ),
     )
     commit_map_parser.add_argument(

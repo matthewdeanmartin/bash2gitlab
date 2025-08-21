@@ -186,9 +186,7 @@ def install(repo_root: Path | None = None, *, force: bool = False) -> None:
     _git_dir = resolve_git_dir(repo_root)  # raises if not a repo
     if not has_required_config():
         raise PrecommitHookError(
-            "Missing bash2gitlab input/output configuration. "
-            "Run `bash2gitlab init` to create TOML, or set "
-            "BASH2GITLAB_INPUT_DIR and BASH2GITLAB_OUTPUT_DIR."
+            "Missing bash2gitlab input/output configuration. Run `bash2gitlab init` to create TOML, or set BASH2GITLAB_INPUT_DIR and BASH2GITLAB_OUTPUT_DIR."
         )
 
     # Ensure hooks dir exists

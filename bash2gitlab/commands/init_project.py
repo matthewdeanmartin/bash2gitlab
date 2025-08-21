@@ -123,8 +123,7 @@ def create_or_update_config_file(base_path: Path, config_data: dict[str, Any], f
 
         if "tool" in doc and "bash2gitlab" in doc["tool"] and not force:  # type: ignore[operator]
             raise FileExistsError(
-                "A '[tool.bash2gitlab]' section already exists in pyproject.toml. "
-                "Use the --force flag to overwrite it."
+                "A '[tool.bash2gitlab]' section already exists in pyproject.toml. Use the --force flag to overwrite it."
             )
     else:
         logger.info(f"No 'pyproject.toml' found. A new one will be created at '{short_path(base_path)}'.")

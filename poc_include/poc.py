@@ -3,7 +3,7 @@ from pathlib import Path
 from ruamel.yaml import YAML
 
 
-def run()->None:
+def run() -> None:
     # --- 1. Setup: Create a dummy script file to include ---
     script_content = "echo 'Hello from the included script!'"
     script_path = Path("my_script.sh")
@@ -36,7 +36,7 @@ def run()->None:
     # --- 4. Initialize the parser and register the custom tag ---
     yaml = YAML()
     # Teach the parser about our new "!include" tag
-    yaml.constructor.add_constructor('!include', include_constructor)
+    yaml.constructor.add_constructor("!include", include_constructor)
 
     print("--- Source YAML ---")
     print(yaml_string)
@@ -48,12 +48,13 @@ def run()->None:
     print(data)
 
     print("\n--- Resulting script commands ---")
-    for command in data['job']['script']:
+    for command in data["job"]["script"]:
         print(f"- {command.strip()}")
 
     # --- 6. Clean up the dummy file ---
     script_path.unlink()
     print(f"\nCleaned up (deleted) '{script_path}'")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run()

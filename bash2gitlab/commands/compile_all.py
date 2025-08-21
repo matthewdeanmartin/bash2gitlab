@@ -40,7 +40,7 @@ def infer_cli(
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> str:
-    command = "bash2gitlab compile " f"--in {short_path(uncompiled_path)} " f"--out {short_path(output_path)}"
+    command = f"bash2gitlab compile --in {short_path(uncompiled_path)} --out {short_path(output_path)}"
     if dry_run:
         command += " --dry-run"
     if parallelism:
@@ -249,7 +249,6 @@ def process_script_list(
 
     # Collapse to literal block only when no YAML features and sufficiently long
     if not has_yaml_features and only_plain_strings and len(processed_items) > 1 and collapse_lists and scripts_found:
-
         final_script_block = "\n".join(processed_items)
 
         logger.debug("Formatting script block as a single literal block (no anchors/tags detected).")
@@ -365,7 +364,6 @@ def inline_gitlab_scripts(
             # Can't deal with !reference tagged jobs at all
             continue
         if hasattr(job_data, "anchor") and job_data.anchor.value:
-
             # Can't deal with &anchor tagged jobs at all
             # Okay, more exactly, we can inline, but we can't collapse lists because you can't tell if it is
             # going into a script or some other block.
@@ -520,11 +518,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
 
     # --- File and hash file exist, perform validation ---
     if not hash_file.exists():
-        error_message = (
-            f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. "
-            "Aborting to prevent data loss. If you want to regenerate this file, "
-            "please remove it and run the script again."
-        )
+        error_message = f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. Aborting to prevent data loss. If you want to regenerate this file, please remove it and run the script again."
         logger.error(error_message)
         raise SystemExit(1)
 
@@ -533,11 +527,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     try:
         last_known_content = base64.b64decode(last_known_base64).decode("utf-8")
     except (ValueError, TypeError) as e:
-        error_message = (
-            f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\n"
-            f"Error: {e}\n"
-            "Aborting to prevent data loss. Please remove the file and its .hash file to regenerate."
-        )
+        error_message = f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\nError: {e}\nAborting to prevent data loss. Please remove the file and its .hash file to regenerate."
         logger.error(error_message)
         raise SystemExit(1) from e
 
@@ -580,23 +570,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             else ""
         )
 
-        error_message = (
-            f"\n--- MANUAL EDIT DETECTED ---\n"
-            f"CANNOT OVERWRITE: The destination file below has been modified:\n"
-            f"  {output_file}\n\n"
-            f"{corruption_warning}"
-            f"The script detected that its data no longer matches the last generated version.\n"
-            f"To prevent data loss, the process has been stopped.\n\n"
-            f"--- DETECTED CHANGES ---\n"
-            f"{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n"
-            f"--- HOW TO RESOLVE ---\n"
-            f"1. Revert the manual changes in '{output_file}' and run this script again.\n"
-            f"OR\n"
-            f"2. If the manual changes are desired, incorporate them into the source files\n"
-            f"   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n"
-            f"   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n"
-            f"   to regenerate it from the new base.\n"
-        )
+        error_message = f"\n--- MANUAL EDIT DETECTED ---\nCANNOT OVERWRITE: The destination file below has been modified:\n  {output_file}\n\n{corruption_warning}The script detected that its data no longer matches the last generated version.\nTo prevent data loss, the process has been stopped.\n\n--- DETECTED CHANGES ---\n{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n--- HOW TO RESOLVE ---\n1. Revert the manual changes in '{output_file}' and run this script again.\nOR\n2. If the manual changes are desired, incorporate them into the source files\n   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n   to regenerate it from the new base.\n"
         # We use sys.exit to print the message directly and exit with an error code.
         sys.exit(error_message)
 
@@ -716,7 +690,7 @@ def run_compile_all(
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
             (src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command)
-            for src, out, variables, in files_to_process
+            for src, out, variables in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
             results = pool.starmap(compile_single_file, args_list)

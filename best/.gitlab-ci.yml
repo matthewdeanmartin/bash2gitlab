@@ -1,0 +1,147 @@
+# Simple GitLab pipeline using uv. All bash is inlined; no Makefile logic.
+# Stages: test (lint, mypy, pytest), security (bandit), docs (checks & build), build (package), release (manual publish)
+
+image: python:3.11-slim
+
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  UV_LINK_MODE: copy
+  UV_PROJECT_ENVIRONMENT: .venv
+  UV_CACHE_DIR: .uv
+  # Adjust if your package name differs
+  PACKAGE_DIR: bash2gitlab
+
+stages:
+  - test
+  - security
+  - docs
+  - build
+  - release
+
+# Shared setup to avoid duplication
+before_script:
+  - set -euo pipefail
+  - apt-get update -y && apt-get install -y --no-install-recommends curl git ca-certificates && rm -rf /var/lib/apt/lists/*
+  - |
+    curl -LsSf https://astral.sh/uv/install.sh | sh -s -- -y
+  - export PATH="$HOME/.local/bin:$PATH"
+  - uv --version
+  - uv sync --all-extras --dev
+
+cache:
+  key:
+    files:
+      - pyproject.toml
+      - uv.lock
+  paths:
+    - .venv/
+    - .uv/
+    - .cache/
+
+# ------------------------
+# TEST STAGE
+# ------------------------
+
+lint:
+  stage: test
+  script:
+    - uv run ruff format .
+    - uv run ruff check --fix .
+    - uv run pylint "$PACKAGE_DIR" --fail-under 9.8
+  allow_failure: false
+
+mypy:
+  stage: test
+  script:
+    - uv run mypy "$PACKAGE_DIR" --ignore-missing-imports --check-untyped-defs
+
+precommit:
+  stage: test
+  script:
+    - uv run pre-commit run --all-files
+
+pytest:
+  stage: test
+  needs: ["lint"]
+  script:
+    - uv run pytest test -vv -n 2 \
+        --cov="$PACKAGE_DIR" --cov-branch \
+        --cov-report=xml --cov-report=html \
+        --cov-fail-under=48 \
+        --junitxml=junit.xml -o junit_family=legacy \
+        --timeout=5 --session-timeout=600
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+      cobertura: coverage.xml
+    paths:
+      - htmlcov/
+      - coverage.xml
+
+# ------------------------
+# SECURITY STAGE
+# ------------------------
+
+bandit:
+  stage: security
+  script:
+    - uv run bandit "$PACKAGE_DIR" -r --quiet
+
+# ------------------------
+# DOCS STAGE
+# ------------------------
+
+check_docs:
+  stage: docs
+  script:
+    - uv run interrogate "$PACKAGE_DIR" --verbose
+    - |
+      set -o pipefail
+      uv run pydoctest --config .pydoctest.json | grep -v "__init__" | grep -v "__main__" | grep -v "Unable to parse"
+    - uv run linkcheckMarkdown README.md
+    - uv run markdownlint README.md --config .markdownlintrc
+    - uv run mdformat README.md docs/*.md
+    - uv run codespell README.md "$PACKAGE_DIR" docs --ignore-words=private_dictionary.txt
+    - |
+      # Spelling via pylint (non-fatal)
+      uv run pylint "$PACKAGE_DIR" --enable C0402 --rcfile=.pylintrc_spell || true
+      uv run pylint docs --enable C0402 --rcfile=.pylintrc_spell || true
+    - uv run changelogmanager validate || true
+
+build_docs:
+  stage: docs
+  script:
+    - uv run pdoc "$PACKAGE_DIR" --html -o docs --force
+  artifacts:
+    paths:
+      - docs/
+
+# ------------------------
+# BUILD STAGE
+# ------------------------
+
+build_package:
+  stage: build
+  script:
+    - rm -rf dist
+    - uv run hatch build
+  artifacts:
+    paths:
+      - dist/
+
+# ------------------------
+# RELEASE STAGE (manual)
+# ------------------------
+
+publish_pypi:
+  stage: release
+  needs: ["build_package"]
+  rules:
+    - if: "$CI_COMMIT_TAG"
+      when: manual
+    - when: never
+  script:
+    - test -n "${TWINE_USERNAME:-}" || echo "Set TWINE_USERNAME/TWINE_PASSWORD or TWINE_API_TOKEN" >&2
+    - uv run python -c "import os,sys; assert os.getenv('TWINE_API_TOKEN') or (os.getenv('TWINE_USERNAME') and os.getenv('TWINE_PASSWORD')), 'Missing Twine credentials'"
+    - uv run twine upload dist/*

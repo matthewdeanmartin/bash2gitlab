@@ -70,11 +70,10 @@ def _collect_exported_env_from_sh(path: Path) -> dict[str, str]:
         return {}
 
     # Use `set -a` so simple assignments export automatically
-    script = f"set -a\n. {shlex.quote(str(path))}\nset +a\n" \
-             f"env -0"
+    script = f"set -a\n. {shlex.quote(str(path))}\nset +a\nenv -0"
 
     # Empty base env; ensure predictable locale
-    proc = subprocess.run( # noqa
+    proc = subprocess.run(  # noqa
         ["bash", "-c", script],
         check=True,
         stdout=subprocess.PIPE,
@@ -203,8 +202,10 @@ def extract_job_names_from_yaml(data) -> tuple[str, ...]:
 
 # ------------------ CLI helpers ------------------
 
+
 def _load_yaml(path: Path):
     from bash2gitlab.utils.yaml_factory import get_yaml  # lazy import to use project's config
+
     yaml = get_yaml()
     return yaml.load(path.read_text(encoding="utf-8"))
 
@@ -340,6 +341,7 @@ def apply_inheritance_hints(data) -> None:
 
 
 # -------------- Integration shim --------------
+
 
 def integrate_into_compiler(data, uncompiled_yaml_path: Path) -> None:
     """Call this inside your `inline_gitlab_scripts` after loading YAML and before dump.

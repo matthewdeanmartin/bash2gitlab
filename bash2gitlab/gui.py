@@ -90,7 +90,8 @@ class CommandRunner:
                     if not line:
                         break
                     self.output_widget.after(
-                        0, lambda insert_line=line: self.output_widget.insert(tk.END, insert_line)  # type: ignore
+                        0,
+                        lambda insert_line=line: self.output_widget.insert(tk.END, insert_line),  # type: ignore
                     )
                     self.output_widget.after(0, lambda: self.output_widget.see(tk.END))  # type: ignore
 

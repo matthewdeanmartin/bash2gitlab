@@ -1,43 +1,14 @@
 # TODO
 
-## Pragma
-
-```yaml
-.some-script: &some-anchor
-  - ./script1.sh  # Pragma: must-inline
-```
-
 ## Compile
 
 - config option to only inline if `.` or `source`?
-- `Compiled with the command` will omit all the switches! Need to be able to normalize to command that reproduces.
-
-## Compile Bug
-- variables treated as scripts.
-
-Secretly variables
-```
-.variables
-   - X: 1
-```
-
-Explicitly variables
-```
-variables:
-   - X: 1
-```
-
-Obviously variables
-```
-.some_job:
-    variables:
-       - X: 1
-```
-
 
 ## Complement to drift-detection
 
-- Detect uncompiled
+- Detect uncompiled. Same as `compile --dry-run` or `compile` but error on something done or TODO
+- BUG: detect stray files doesn't detect stray files. (delete yaml from source, not deleted from destination). Should
+  run at compile time
 
 ## Decompile
 
@@ -58,7 +29,6 @@ variables:
 - allow --config-file to be set on any command
 - better example of how to set config via env vars
 
-
 ## Docs
 
 - docstrings
@@ -73,10 +43,10 @@ variables:
 
 ## Graph
 
-- Does not open in browser? No arg to pass this along and the default is FALSE   - partially fixed?
+- Does not open in browser? No arg to pass this along and the default is FALSE - partially fixed?
 - pyvis doesn't specify encoding, so blows up on windows (out of bounds way to set this?) - fixed?
-  - Will work if PYTHONUTF8=1  env var is set.   - fixed?
-- if dot isn't available, it blows up and doesn't retry, no way to check for recursion/retry  - fixed?
+    - Will work if PYTHONUTF8=1 env var is set. - fixed?
+- if dot isn't available, it blows up and doesn't retry, no way to check for recursion/retry - fixed?
 
 - networkx is unreadable
 - If you do retry from the error message, it recalculates the graph
@@ -84,6 +54,7 @@ variables:
 
 ## Doctor
 
+- Needs major attention 
 - blows up checking if a file is in a subfolder "stray source file: ... f.relative_to..."
 - Warning about *Every* single .sh script in src, "Dependency not found and will be skipped..." - What?
 
@@ -91,7 +62,6 @@ variables:
 
 - console colors broken in log capture of 'clean' - fixed?
 - console colors broken in log capture of compile, too - fixed?
-
 
 ## GUI
 
@@ -103,12 +73,17 @@ variables:
 
 - Lint doesn't grab the gitlab URL from the config
 
-
 ## Config
 
 - Is parallelism coming from shared?
 
 ## Tests needed
+
 - test of !reference "variable/scripts"
 - test of variables with description
 
+## Core/CI build
+- options: 
+  - force everyone to pick core/all
+  - Split library
+  - Default to core, tell people how to install on 1st attempt to use a fancy feature

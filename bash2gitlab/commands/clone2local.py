@@ -85,8 +85,7 @@ def fetch_repository_archive(
             except urllib.error.HTTPError as e:
                 # Re-raise with a more specific message for clarity.
                 raise ConnectionError(
-                    f"Could not find archive for branch '{branch}' at '{archive_url}'. "
-                    f"Please check the repository URL and branch name. (HTTP Status: {e.code})"
+                    f"Could not find archive for branch '{branch}' at '{archive_url}'. Please check the repository URL and branch name. (HTTP Status: {e.code})"
                 ) from e
             except urllib.error.URLError as e:
                 raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e

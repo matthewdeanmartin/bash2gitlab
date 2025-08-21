@@ -139,12 +139,7 @@ def create_dummy_factory(tmp_path):
     (tmp_path / "bash2gitlab" / "__init__.py").touch()
     factory_path = utils_dir / "yaml_factory.py"
     factory_path.write_text(
-        "from ruamel.yaml import YAML\n\n"
-        "def get_yaml():\n"
-        "    yaml = YAML()\n"
-        "    yaml.preserve_quotes = True\n"
-        "    yaml.indent(mapping=2, sequence=4, offset=2)\n"
-        "    return yaml\n"
+        "from ruamel.yaml import YAML\n\ndef get_yaml():\n    yaml = YAML()\n    yaml.preserve_quotes = True\n    yaml.indent(mapping=2, sequence=4, offset=2)\n    return yaml\n"
     )
     return factory_path
 

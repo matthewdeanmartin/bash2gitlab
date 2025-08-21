@@ -31,8 +31,8 @@ def setup_test_environment(tmp_path: Path):
         "tool": {
             "bash2gitlab": {
                 "map": {
-                    str(source_angular): str(target_angular),
-                    str(source_java.parent): str(target_java),  # testing parent dir mapping
+                    str(source_angular): [str(target_angular)],
+                    str(source_java.parent): [str(target_java)],  # testing parent dir mapping
                 }
             }
         }
@@ -68,14 +68,14 @@ def test_initial_deployment(setup_test_environment):
 def test_skips_unsupported_extensions(setup_test_environment):
     """Files with unsupported extensions are ignored during deployment."""
     tmp_path, pyproject_path = setup_test_environment
-    (tmp_path / "src" / "angular" / "ignore.txt").write_text("skip me")
+    (tmp_path / "src" / "angular" / "ignore.xyzzy").write_text("skip me")
     config = reset_for_testing(pyproject_path)
     deployment_map = config.map_folders
 
     run_map_deploy(deployment_map)
 
-    assert not (tmp_path / "dest" / "angular_app" / "ignore.txt").exists()
-    assert not (tmp_path / "dest" / "angular_app" / "ignore.txt.hash").exists()
+    assert not (tmp_path / "dest" / "angular_app" / "ignore.xyzzy").exists()
+    assert not (tmp_path / "dest" / "angular_app" / "ignore.xyzzy.hash").exists()
 
 
 def test_unchanged_redeployment(setup_test_environment):
