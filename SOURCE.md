@@ -2940,7 +2940,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.21"
+__version__ = "0.8.22"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -8346,6 +8346,8 @@ from bash2gitlab.commands.compile_not_bash import _INTERPRETER_EXTS
 
 __all__ = ["run_map_deploy"]
 
+from bash2gitlab.utils.utils import short_path
+
 _VALID_SUFFIXES = {".sh", ".ps1", ".yml", ".yaml", ".bash"}
 
 for _key, value in _INTERPRETER_EXTS.items():
@@ -8378,20 +8380,20 @@ def deploy_to_single_target(
     """
     Helper function to handle the deployment logic for one source-to-target pair.
     """
-    print(f"\nProcessing deployment: '{source_base_path}' -> '{target_base_path}'")
+    logger.info(f"\nProcessing deployment: '{short_path(source_base_path)}' -> '{short_path(target_base_path)}'")
 
     # Create target directory and .gitignore if they don't exist
     if not dry_run:
         target_base_path.mkdir(parents=True, exist_ok=True)
         gitignore_path = target_base_path / ".gitignore"
         if not gitignore_path.exists():
-            print(f"Creating .gitignore in '{target_base_path}'")
+            logger.info(f"Creating .gitignore in '{short_path(target_base_path)}'")
             gitignore_path.write_text("*\n")
     else:
         if not target_base_path.exists():
-            print(f"DRY RUN: Would create directory '{target_base_path}'")
+            logger.info(f"DRY RUN: Would create directory '{short_path(target_base_path)}'")
         if not (target_base_path / ".gitignore").exists():
-            print(f"DRY RUN: Would create .gitignore in '{target_base_path}'")
+            logger.info(f"DRY RUN: Would create .gitignore in '{short_path(target_base_path)}'")
 
     # Use rglob for efficient recursive file searching
     for source_file_path in source_base_path.rglob("*"):
@@ -8411,20 +8413,20 @@ def deploy_to_single_target(
 
             # Case 1: Target file was modified locally since last deployment.
             if stored_hash and target_hash != stored_hash:
-                print(f"Warning: Target '{target_file_path}' was modified locally.")
+                logger.warning(f"Warning: Target '{short_path(target_file_path)}' was modified locally.")
                 if not force:
-                    print("         Skipping copy. Use --force to overwrite.")
+                    logger.warning("         Skipping copy. Use --force to overwrite.")
                     continue
-                print("         Forcing overwrite.")
+                logger.warning("         Forcing overwrite.")
 
             # Case 2: Target file is identical to the source file.
             if source_hash == target_hash:
-                logger.debug(f"Unchanged: '{target_file_path}'")
+                logger.debug(f"Unchanged: '{short_path(target_file_path)}'")
                 continue
 
         # If we reach here, we need to copy/update the file.
         action = "Deploying" if not target_file_path.exists() else "Updating"
-        print(f"{action}: '{source_file_path}' -> '{target_file_path}'")
+        logger.info(f"{action}: '{short_path(source_file_path)}' -> '{short_path(target_file_path)}'")
 
         if not dry_run:
             target_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -8451,16 +8453,29 @@ def run_map_deploy(
         force: If True, overwrites target files even if they have been modified
                locally since the last deployment.
     """
+    if len(deployment_map):
+        logger.info(f"Preparing to deploy {len(deployment_map)} items")
+    else:
+        logger.warning(
+            f"""No items in map config section. Map deploy requires pyproject.toml to have something like
+        [tool.bash2gitlab.map.map]
+        "out/python" =["my_microservice/gitlab-scripts", "my_other/gitlab-scripts"]"""
+        )
+
+    # bash2gitlab.toml
     for source_base, target_bases in deployment_map.items():
+        logger.info(f"Deploying {short_path(Path(source_base))} to {len(target_bases)} destinations")
         source_base_path = Path(source_base).resolve()
 
         if not source_base_path.is_dir():
-            print(f"Warning: Source directory '{source_base_path}' does not exist. Skipping.")
+            logger.warning(f"Warning: Source directory '{short_path(source_base_path)}' does not exist. Skipping.")
             continue
 
         if not isinstance(target_bases, (list, tuple, set)):
             logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
             continue
+        if not len(target_bases):
+            logger.warning(f"Source folder but no destinations!")
 
         for target_base in target_bases:
             target_base_path = Path(target_base).resolve()

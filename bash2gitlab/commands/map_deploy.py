@@ -124,15 +124,16 @@ def run_map_deploy(
     if len(deployment_map):
         logger.info(f"Preparing to deploy {len(deployment_map)} items")
     else:
-        logger.warning(f"""No items in map config section. Map deploy requires pyproject.toml to have something like
+        logger.warning(
+            """No items in map config section. Map deploy requires pyproject.toml to have something like
         [tool.bash2gitlab.map.map]
-        "out/python" =["my_microservice/gitlab-scripts", "my_other/gitlab-scripts"]""")
+        "out/python" =["my_microservice/gitlab-scripts", "my_other/gitlab-scripts"]"""
+        )
 
     # bash2gitlab.toml
     for source_base, target_bases in deployment_map.items():
         logger.info(f"Deploying {short_path(Path(source_base))} to {len(target_bases)} destinations")
         source_base_path = Path(source_base).resolve()
-
 
         if not source_base_path.is_dir():
             logger.warning(f"Warning: Source directory '{short_path(source_base_path)}' does not exist. Skipping.")
@@ -142,7 +143,7 @@ def run_map_deploy(
             logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
             continue
         if not len(target_bases):
-            logger.warning(f"Source folder but no destinations!")
+            logger.warning("Source folder but no destinations!")
 
         for target_base in target_bases:
             target_base_path = Path(target_base).resolve()
