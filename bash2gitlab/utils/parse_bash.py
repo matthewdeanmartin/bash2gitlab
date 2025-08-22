@@ -38,7 +38,7 @@ def extract_script_path(cmd_line: str) -> str | None:
         • there are **no leading ENV=val assignments**
     """
     if not isinstance(cmd_line, str):
-        raise Exception()
+        raise Exception("Expected string for cmd_line")
 
     tokens = split_cmd(cmd_line)
     if not tokens:

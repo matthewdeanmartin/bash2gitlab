@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from difflib import get_close_matches
 
 
 class SmartParser(argparse.ArgumentParser):
@@ -11,7 +12,6 @@ class SmartParser(argparse.ArgumentParser):
             bad = message.split("invalid choice:")[1].split("(")[0].strip().strip("'\"")
             choices_str = message.split("choose from")[1]
             choices = [c.strip().strip(",)'") for c in choices_str.split() if c.strip(",)")]
-            from difflib import get_close_matches
 
             tips = get_close_matches(bad, choices, n=3, cutoff=0.6)
             if tips:

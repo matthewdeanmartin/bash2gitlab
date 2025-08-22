@@ -5,35 +5,44 @@ Super limited local pipeline runner.
 from __future__ import annotations
 
 import os
-import shlex
+import re
 import subprocess  # nosec
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Union
 
 from ruamel.yaml import YAML
 
+BASE_ENV = os.environ.copy()
 
-def merge_env(env: dict[str, str] | None = None) -> dict[str, str]:
-    """
-    Merge os.environ and an env dict into a new dict.
-    Values from env override os.environ on conflict.
 
-    Args:
-        env: Optional dict of environment variables.
-
-    Returns:
-        A merged dict suitable for subprocess calls.
-    """
-    # merged = dict(os.environ)  # copy system env
-    # if env:
-    #     merged.update(env)     # env wins
-    merged = dict(os.environ)
+def merge_env(env=None):
     if env:
-        merged.update(env)
+        return {**BASE_ENV, **env}
+    return BASE_ENV
 
-    return merged
+
+# def merge_env(env: dict[str, str] | None = None) -> dict[str, str]:
+#     """
+#     Merge os.environ and an env dict into a new dict.
+#     Values from env override os.environ on conflict.
+#
+#     Args:
+#         env: Optional dict of environment variables.
+#
+#     Returns:
+#         A merged dict suitable for subprocess calls.
+#     """
+#     # merged = dict(os.environ)  # copy system env
+#     # if env:
+#     #     merged.update(env)     # env wins
+#     merged = dict(os.environ)
+#     if env:
+#         merged.update(env)
+#
+#     return merged
 
 
 # ANSI color codes
@@ -46,27 +55,62 @@ if os.getenv("NO_COLOR"):
     GREEN = RED = RESET = ""
 
 
-def run_colored(command, env=None, cwd=None) -> int:
+def run_colored(script: str, env=None, cwd=None) -> int:
     env = merge_env(env)
+
+    # Disable colors if NO_COLOR is set
+    if os.getenv("NO_COLOR"):
+        g, r, reset = "", "", ""
+    else:
+        g, r, reset = GREEN, RED, RESET
+    if os.name == "nt":
+        bash = r"C:\Program Files\Git\bin\bash.exe"
+    else:
+        bash = "bash"
     process = subprocess.Popen(  # nosec
-        command,
+        # , "-l"  # -l loads .bashrc and make it really, really slow.
+        [bash],  # bash reads script from stdin
         env=env,
         cwd=cwd,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        text=True,  # to prevent \r
         bufsize=1,  # line-buffered
     )
 
-    # Print stdout in green, stderr in red
-    for line in process.stdout or []:
-        sys.stdout.write(f"{GREEN}{line}{RESET}")
-    for line in process.stderr or []:
-        sys.stderr.write(f"{RED}{line}{RESET}")
+    def stream(pipe, color, target):
+        for line in iter(pipe.readline, ""):  # text mode here, so sentinel is ""
+            if not line:
+                break
+            target.write(f"{color}{line}{reset}")
+            target.flush()
+        pipe.close()
 
+    # Start threads to stream stdout and stderr in parallel
+    threads = [
+        threading.Thread(target=stream, args=(process.stdout, g, sys.stdout)),
+        threading.Thread(target=stream, args=(process.stderr, r, sys.stderr)),
+    ]
+    for t in threads:
+        t.start()
+
+    # Feed the script and close stdin
+
+    if os.name == "nt":
+        script = script.replace("\r\n", "\n")
+
+    if process.stdin:
+        process.stdin.write(script)
+        process.stdin.close()
+
+    # Wait for process to finish
     process.wait()
+    for t in threads:
+        t.join()
+
     if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, command)
+        raise subprocess.CalledProcessError(process.returncode, script)
 
     return process.returncode
 
@@ -243,7 +287,7 @@ class PipelineProcessor:
         if isinstance(value, str):
             return [value]
         elif isinstance(value, list):
-            return [item for item in value]
+            return value
         return []
 
 
@@ -281,7 +325,6 @@ class VariableManager:
     def substitute_variables(self, text: str, variables: dict[str, str]) -> str:
         """Perform basic variable substitution in text."""
         # Simple substitution - replace $VAR and ${VAR} patterns
-        import re
 
         def replace_var(match):
             var_name = match.group(1) or match.group(2)
@@ -340,9 +383,10 @@ class JobExecutor:
 
             # Execute using bash
             # command = ['"/c/Program Files/Git/bin/bash.exe"', '-c', shlex.quote(script).strip('\'')]
-            command = shlex.split(script)
+            # command = shlex.split(script)
+
             returncode = run_colored(
-                command,
+                script,
                 env=env,
                 cwd=Path.cwd(),
             )
@@ -431,4 +475,11 @@ def best_efforts_run(config_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    best_efforts_run(Path("./best/.gitlab-ci.yml"))
+
+    def run() -> None:
+        print(sys.argv)
+        config = str(sys.argv[-1:][0])
+        print(f"Running {config} ...")
+        best_efforts_run(Path(config))
+
+    run()

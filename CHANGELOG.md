@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Map deploy writes to multiple folders.
 - Map commit gathers multiple folders. Does not handle conflicts yet.
 
+### Added
+- Best effort local runner will attempt to run a `.gitlab-ci.yml`, obviously without many, many feature.
+
 ## [0.8.21] - 2025-08-20
 
 ### Added
@@ -29,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed regression where stages were turned into string blocks.
 
-### Added 
+### Added
 - Now validates yaml against Gitlab's Json Schema. No flag to ignore validation results.
 
 ## [0.8.19] - 2025-08-19

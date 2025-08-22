@@ -152,7 +152,7 @@ def resolve_interpreter_target(
     For python -m, map "a.b.c" -> a/b/c.py
     """
     if module:
-        if not normalize_interp(interp) == "python":
+        if normalize_interp(interp) != "python":
             raise ValueError(f"-m is only supported for python, got: {interp}")
         rel = Path(module.replace(".", "/") + ".py")
         return scripts_root / rel, f"python -m {module}"

@@ -64,17 +64,21 @@ pytest:
   stage: test
   needs: ["lint"]
   script:
-    - uv run pytest test -vv -n 2 \
-        --cov="$PACKAGE_DIR" --cov-branch \
-        --cov-report=xml --cov-report=html \
-        --cov-fail-under=48 \
-        --junitxml=junit.xml -o junit_family=legacy \
-        --timeout=5 --session-timeout=600
+    - # -n 2  --timeout=5 --session-timeout=600 \
+    - |
+          uv run pytest test -vv \
+          --cov="$PACKAGE_DIR" --cov-branch \
+          --cov-report=xml --cov-report=html \
+          --cov-fail-under=48 \
+          --junitxml=junit.xml -o junit_family=legacy \
+          --timeout=5 --session-timeout=600
   artifacts:
     when: always
     reports:
       junit: junit.xml
-      cobertura: coverage.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
     paths:
       - htmlcov/
       - coverage.xml
@@ -142,6 +146,7 @@ publish_pypi:
       when: manual
     - when: never
   script:
-    - test -n "${TWINE_USERNAME:-}" || echo "Set TWINE_USERNAME/TWINE_PASSWORD or TWINE_API_TOKEN" >&2
-    - uv run python -c "import os,sys; assert os.getenv('TWINE_API_TOKEN') or (os.getenv('TWINE_USERNAME') and os.getenv('TWINE_PASSWORD')), 'Missing Twine credentials'"
-    - uv run twine upload dist/*
+    - exit 0
+#    - test -n "${TWINE_USERNAME:-}" || echo "Set TWINE_USERNAME/TWINE_PASSWORD or TWINE_API_TOKEN" >&2
+#    - uv run python -c "import os,sys; assert os.getenv('TWINE_API_TOKEN') or (os.getenv('TWINE_USERNAME') and os.getenv('TWINE_PASSWORD')), 'Missing Twine credentials'"
+#    - uv run twine upload dist/*

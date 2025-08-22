@@ -234,8 +234,8 @@ class _Config:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
             copy_dict = {}
-            for key, the_value in value.items():
-                copy_dict[str(key)] = str(the_value)
+            for the_key, the_value in value.items():
+                copy_dict[str(the_key)] = str(the_value)
             return copy_dict
         return {}
 
@@ -243,8 +243,8 @@ class _Config:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
             copy_dict = {}
-            for key, the_value in value.items():
-                copy_dict[str(key)] = the_value
+            for the_key, the_value in value.items():
+                copy_dict[str(the_key)] = the_value
             return copy_dict
         return {}
 
@@ -3067,7 +3067,7 @@ def lint_handler(args: argparse.Namespace) -> int:
         logger.error("Unexpected error during lint: %s", e)
         return 1
 
-    ok, fail = summarize_results(results)
+    _ok, fail = summarize_results(results)
     return 0 if fail == 0 else 2
 
 
@@ -3723,35 +3723,44 @@ Super limited local pipeline runner.
 from __future__ import annotations
 
 import os
-import shlex
+import re
 import subprocess  # nosec
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Union
 
 from ruamel.yaml import YAML
 
+BASE_ENV = os.environ.copy()
 
-def merge_env(env: dict[str, str] | None = None) -> dict[str, str]:
-    """
-    Merge os.environ and an env dict into a new dict.
-    Values from env override os.environ on conflict.
 
-    Args:
-        env: Optional dict of environment variables.
-
-    Returns:
-        A merged dict suitable for subprocess calls.
-    """
-    # merged = dict(os.environ)  # copy system env
-    # if env:
-    #     merged.update(env)     # env wins
-    merged = dict(os.environ)
+def merge_env(env=None):
     if env:
-        merged.update(env)
+        return {**BASE_ENV, **env}
+    return BASE_ENV
 
-    return merged
+
+# def merge_env(env: dict[str, str] | None = None) -> dict[str, str]:
+#     """
+#     Merge os.environ and an env dict into a new dict.
+#     Values from env override os.environ on conflict.
+#
+#     Args:
+#         env: Optional dict of environment variables.
+#
+#     Returns:
+#         A merged dict suitable for subprocess calls.
+#     """
+#     # merged = dict(os.environ)  # copy system env
+#     # if env:
+#     #     merged.update(env)     # env wins
+#     merged = dict(os.environ)
+#     if env:
+#         merged.update(env)
+#
+#     return merged
 
 
 # ANSI color codes
@@ -3764,27 +3773,62 @@ if os.getenv("NO_COLOR"):
     GREEN = RED = RESET = ""
 
 
-def run_colored(command, env=None, cwd=None) -> int:
+def run_colored(script: str, env=None, cwd=None) -> int:
     env = merge_env(env)
+
+    # Disable colors if NO_COLOR is set
+    if os.getenv("NO_COLOR"):
+        g, r, reset = "", "", ""
+    else:
+        g, r, reset = GREEN, RED, RESET
+    if os.name == "nt":
+        bash = r"C:\Program Files\Git\bin\bash.exe"
+    else:
+        bash = "bash"
     process = subprocess.Popen(  # nosec
-        command,
+        # , "-l"  # -l loads .bashrc and make it really, really slow.
+        [bash],  # bash reads script from stdin
         env=env,
         cwd=cwd,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
+        text=True,  # to prevent \r
         bufsize=1,  # line-buffered
     )
 
-    # Print stdout in green, stderr in red
-    for line in process.stdout or []:
-        sys.stdout.write(f"{GREEN}{line}{RESET}")
-    for line in process.stderr or []:
-        sys.stderr.write(f"{RED}{line}{RESET}")
+    def stream(pipe, color, target):
+        for line in iter(pipe.readline, ""):  # text mode here, so sentinel is ""
+            if not line:
+                break
+            target.write(f"{color}{line}{reset}")
+            target.flush()
+        pipe.close()
 
+    # Start threads to stream stdout and stderr in parallel
+    threads = [
+        threading.Thread(target=stream, args=(process.stdout, g, sys.stdout)),
+        threading.Thread(target=stream, args=(process.stderr, r, sys.stderr)),
+    ]
+    for t in threads:
+        t.start()
+
+    # Feed the script and close stdin
+
+    if os.name == "nt":
+        script = script.replace("\r\n", "\n")
+
+    if process.stdin:
+        process.stdin.write(script)
+        process.stdin.close()
+
+    # Wait for process to finish
     process.wait()
+    for t in threads:
+        t.join()
+
     if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, command)
+        raise subprocess.CalledProcessError(process.returncode, script)
 
     return process.returncode
 
@@ -3961,7 +4005,7 @@ class PipelineProcessor:
         if isinstance(value, str):
             return [value]
         elif isinstance(value, list):
-            return [item for item in value]
+            return value
         return []
 
 
@@ -3999,7 +4043,6 @@ class VariableManager:
     def substitute_variables(self, text: str, variables: dict[str, str]) -> str:
         """Perform basic variable substitution in text."""
         # Simple substitution - replace $VAR and ${VAR} patterns
-        import re
 
         def replace_var(match):
             var_name = match.group(1) or match.group(2)
@@ -4058,9 +4101,10 @@ class JobExecutor:
 
             # Execute using bash
             # command = ['"/c/Program Files/Git/bin/bash.exe"', '-c', shlex.quote(script).strip('\'')]
-            command = shlex.split(script)
+            # command = shlex.split(script)
+
             returncode = run_colored(
-                command,
+                script,
                 env=env,
                 cwd=Path.cwd(),
             )
@@ -4149,7 +4193,14 @@ def best_efforts_run(config_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    best_efforts_run(Path("./best/.gitlab-ci.yml"))
+
+    def run() -> None:
+        print(sys.argv)
+        config = str(sys.argv[-1:][0])
+        print(f"Running {config} ...")
+        best_efforts_run(Path(config))
+
+    run()
 ```
 ## File: commands\clean_all.py
 ```python
@@ -5258,8 +5309,7 @@ def run_compile_all(
             logger.info("No input changes detected since last compilation. Skipping compilation.")
             logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
             return 0
-        else:
-            logger.info("Input changes detected, proceeding with compilation...")
+        logger.info("Input changes detected, proceeding with compilation...")
 
     inferred_cli_command = infer_cli(uncompiled_path, output_path, dry_run, parallelism)
     strays = report_targets(output_path)
@@ -5841,7 +5891,7 @@ def resolve_interpreter_target(
     For python -m, map "a.b.c" -> a/b/c.py
     """
     if module:
-        if not normalize_interp(interp) == "python":
+        if normalize_interp(interp) != "python":
             raise ValueError(f"-m is only supported for python, got: {interp}")
         rel = Path(module.replace(".", "/") + ".py")
         return scripts_root / rel, f"python -m {module}"
@@ -5981,6 +6031,7 @@ from bash2gitlab.config import config
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
+from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
@@ -6046,7 +6097,13 @@ def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> l
                     raw_lines.append(dumped)
 
     # Filter empties
-    return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+    # return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+
+    # Make sure line continuations (`\`) get their own newline
+    normalized = []
+    for ln in raw_lines:
+        normalized.append(ln.rstrip())
+    return [ln for ln in normalized if ln and ln.strip()]
 
 
 def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dry_run: bool = False) -> None:
@@ -6360,10 +6417,8 @@ def process_decompile_job(
 
 
 def iterate_yaml_files(root: Path) -> Iterable[Path]:
-    for path in root.rglob("*.yml"):
-        yield path
-    for path in root.rglob("*.yaml"):
-        yield path
+    yield from root.rglob("*.yml")
+    yield from root.rglob("*.yaml")
 
 
 def run_decompile_gitlab_file(
@@ -6427,6 +6482,12 @@ def run_decompile_gitlab_file(
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             with output_yaml_path.open("w", encoding="utf-8") as f:
                 yaml.dump(data, f)
+            with output_yaml_path.open() as f:
+                new_content = f.read()
+                validator = GitLabCIValidator()
+                ok, problems = validator.validate_ci_config(new_content)
+                if not ok:
+                    raise Exception(problems)
     else:
         logger.info("No script or variable blocks found to decompile.")
 
@@ -6860,11 +6921,11 @@ def run_doctor() -> int:
     if issues_found == 0:
         print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ All checks passed. Your project looks healthy!{Colors.ENDC}")
         return 0
-    else:
-        print(
-            f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
-        )
-        return 1
+
+    print(
+        f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
+    )
+    return 1
 ```
 ## File: commands\graph_all.py
 ```python
@@ -7415,7 +7476,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from io import StringIO
 from pathlib import Path
+
+from ruamel.yaml import YAML
 
 from bash2gitlab.utils.yaml_factory import get_yaml
 
@@ -7428,12 +7492,10 @@ def normalize_yaml_content(content: str) -> str:
         yaml = get_yaml()
         data = yaml.load(content)
         # Use a clean YAML dumper for normalization
-        from ruamel.yaml import YAML
 
         norm_yaml = YAML()
         norm_yaml.preserve_quotes = False
         norm_yaml.default_flow_style = False
-        from io import StringIO
 
         output = StringIO()
         norm_yaml.dump(data, output)
@@ -7745,6 +7807,7 @@ import logging
 import multiprocessing
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from urllib import error, request
 
@@ -8076,7 +8139,6 @@ def lint_output_folder(
 
     # Use processes for simple isolation; network-bound so processes vs threads
     # is not critical, but this avoids GIL considerations for file IO + json.
-    from functools import partial
 
     worker = partial(
         lint_single_file,
@@ -11914,6 +11976,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from difflib import get_close_matches
 
 
 class SmartParser(argparse.ArgumentParser):
@@ -11923,7 +11986,6 @@ class SmartParser(argparse.ArgumentParser):
             bad = message.split("invalid choice:")[1].split("(")[0].strip().strip("'\"")
             choices_str = message.split("choose from")[1]
             choices = [c.strip().strip(",)'") for c in choices_str.split() if c.strip(",)")]
-            from difflib import get_close_matches
 
             tips = get_close_matches(bad, choices, n=3, cutoff=0.6)
             if tips:
@@ -12320,7 +12382,7 @@ def extract_script_path(cmd_line: str) -> str | None:
         • there are **no leading ENV=val assignments**
     """
     if not isinstance(cmd_line, str):
-        raise Exception()
+        raise Exception("Expected string for cmd_line")
 
     tokens = split_cmd(cmd_line)
     if not tokens:
@@ -13078,7 +13140,7 @@ class GitLabCIValidator:
             # Try modern importlib.resources approach (Python 3.9+) or importlib_resources backport
             if files is not None:
                 try:
-                    package_files = files(__package__ or __name__.split(".")[0])
+                    package_files = files(__package__ or __name__.split(".", maxsplit=1)[0])
                     schema_file = package_files / self.fallback_schema_path
                     if schema_file.is_file():
                         schema_data = schema_file.read_text(encoding="utf-8")

@@ -97,7 +97,7 @@ class GitLabCIValidator:
             # Try modern importlib.resources approach (Python 3.9+) or importlib_resources backport
             if files is not None:
                 try:
-                    package_files = files(__package__ or __name__.split(".")[0])
+                    package_files = files(__package__ or __name__.split(".", maxsplit=1)[0])
                     schema_file = package_files / self.fallback_schema_path
                     if schema_file.is_file():
                         schema_data = schema_file.read_text(encoding="utf-8")

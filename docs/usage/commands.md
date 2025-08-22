@@ -174,6 +174,27 @@ input_file = ".gitlab-ci.yml"
 output_dir = "src"
 ```
 
+### Quirks
+
+Line continuations will be collapsed into one line (invalid bash) if written line this
+```yaml
+job:
+  script:
+    - cmd --switch \
+        --switch2
+```
+
+But not if written like this
+```yaml
+job:
+  script:
+    - |
+       cmd --switch \
+           --switch2
+```
+
+I think this is an issue with gitlab as well, `\` do not always behave as expected.
+
 -----
 
 ## Command: `clean`

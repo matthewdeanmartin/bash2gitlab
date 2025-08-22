@@ -646,8 +646,7 @@ def run_compile_all(
             logger.info("No input changes detected since last compilation. Skipping compilation.")
             logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
             return 0
-        else:
-            logger.info("Input changes detected, proceeding with compilation...")
+        logger.info("Input changes detected, proceeding with compilation...")
 
     inferred_cli_command = infer_cli(uncompiled_path, output_path, dry_run, parallelism)
     strays = report_targets(output_path)

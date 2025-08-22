@@ -15,28 +15,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.21] - 2025-08-20
 
 ### Added
-- `# Pragma: do-not-validate-schema` for `!reference` code. Gitlab merges all templates before json validation.
 
+- `# Pragma: do-not-validate-schema` for `!reference` code. Gitlab merges all templates before json validation.
 
 ## [0.8.20] - 2025-08-20
 
 ### Fixed
+
 - Fixed regression where stages were turned into string blocks.
 
-### Added 
+### Added
+
 - Now validates yaml against Gitlab's Json Schema. No flag to ignore validation results.
 
 ## [0.8.19] - 2025-08-19
 
 ### Fixed
+
 - Fixed regression where scripts were quoted lists again. Added a lot of unit tests.
 
 ### Added
+
 - Compile will skip if no changes have been made since last compile to any file in the input folder.
 
 ## [0.8.18] - 2025-08-19
 
 ### Fixed
+
 - Fix for variable lists turning into a string block/`!reference` turning into a plain list.
 
 ## [0.8.17] - 2025-08-17
@@ -49,7 +54,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lint didn't get gitlab_url from config
 - Fix `Pragma` feature
 - Fix tkinter to change tab when command run
-
 
 ## [0.8.16] - 2025-08-17
 
@@ -68,13 +72,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `shred` renamed to decompile.
-- Config updates to support storing almost all command options in config file 
+- Config updates to support storing almost all command options in config file
 - Inline supports Pragma commands to skip certain bash from being in-lined.
-    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
-    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
-    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
-    - `# Pragma: end-do-not-inline`: Ends the block.
-    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+  - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+  - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+  - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+  - `# Pragma: end-do-not-inline`: Ends the block.
+  - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
 
 ## [0.8.14] - 2025-08-16
 
@@ -121,7 +125,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Now support inlining a much larger list of script languages using variations on `intepreter -c "..."`
+- Now support inlining a much larger list of script languages using variations on `interpreter -c "..."`
 
 ## [0.8.10] - 2025-08-11
 
@@ -173,7 +177,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files.
+- Map deploy and map commit now restricted to .sh, .ps1 and .y[a]ml files.
 
 ### Added
 
@@ -327,4 +331,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - verbose and quiet logging
 - CLI interface
 - supports simple in/out project structure
-- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution 
+- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution

@@ -44,6 +44,7 @@ import logging
 import multiprocessing
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from urllib import error, request
 
@@ -375,7 +376,6 @@ def lint_output_folder(
 
     # Use processes for simple isolation; network-bound so processes vs threads
     # is not critical, but this avoids GIL considerations for file IO + json.
-    from functools import partial
 
     worker = partial(
         lint_single_file,

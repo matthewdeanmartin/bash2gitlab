@@ -50,6 +50,7 @@ job_with_all_scripts:
 job_with_empty_script:
   stage: test
   script:
+    - ""
 
 # A job with no script key, which should be untouched.
 job_no_script:
@@ -124,8 +125,9 @@ class TestdecompileGitlabCI:
         # assert data[".hidden_job"]["script"] == "./.hidden_job.sh" # that is not hidden!
 
         # Check that jobs without scripts or with empty scripts are untouched
+        # `script:` with nothing (None), is not valid per schema. So I turned it into `- ""`
         assert "script" not in data["job_no_script"]
-        assert data["job_with_empty_script"]["script"] is None, "Empty script block should remain empty"
+        assert data["job_with_empty_script"]["script"] == [""], "Empty script block should remain empty"
 
         # Check content and permissions of a simple script
         script1 = out_yaml.parent / "job_simple_script.sh"

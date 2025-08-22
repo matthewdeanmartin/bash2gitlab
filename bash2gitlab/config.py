@@ -159,8 +159,8 @@ class _Config:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
             copy_dict = {}
-            for key, the_value in value.items():
-                copy_dict[str(key)] = str(the_value)
+            for the_key, the_value in value.items():
+                copy_dict[str(the_key)] = str(the_value)
             return copy_dict
         return {}
 
@@ -168,8 +168,8 @@ class _Config:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
             copy_dict = {}
-            for key, the_value in value.items():
-                copy_dict[str(key)] = the_value
+            for the_key, the_value in value.items():
+                copy_dict[str(the_key)] = the_value
             return copy_dict
         return {}
 

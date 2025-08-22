@@ -28,6 +28,7 @@ from bash2gitlab.config import config
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
+from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
 from bash2gitlab.utils.yaml_factory import get_yaml
 
 logger = logging.getLogger(__name__)
@@ -93,7 +94,13 @@ def bashify_script_items(script_content: list[str | Any] | str, yaml: YAML) -> l
                     raw_lines.append(dumped)
 
     # Filter empties
-    return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+    # return [ln for ln in (ln if isinstance(ln, str) else str(ln) for ln in raw_lines) if ln and ln.strip()]
+
+    # Make sure line continuations (`\`) get their own newline
+    normalized = []
+    for ln in raw_lines:
+        normalized.append(ln.rstrip())
+    return [ln for ln in normalized if ln and ln.strip()]
 
 
 def generate_makefile(jobs_info: dict[str, dict[str, str]], output_dir: Path, dry_run: bool = False) -> None:
@@ -407,10 +414,8 @@ def process_decompile_job(
 
 
 def iterate_yaml_files(root: Path) -> Iterable[Path]:
-    for path in root.rglob("*.yml"):
-        yield path
-    for path in root.rglob("*.yaml"):
-        yield path
+    yield from root.rglob("*.yml")
+    yield from root.rglob("*.yaml")
 
 
 def run_decompile_gitlab_file(
@@ -474,6 +479,12 @@ def run_decompile_gitlab_file(
             output_yaml_path.parent.mkdir(parents=True, exist_ok=True)
             with output_yaml_path.open("w", encoding="utf-8") as f:
                 yaml.dump(data, f)
+            with output_yaml_path.open() as f:
+                new_content = f.read()
+                validator = GitLabCIValidator()
+                ok, problems = validator.validate_ci_config(new_content)
+                if not ok:
+                    raise Exception(problems)
     else:
         logger.info("No script or variable blocks found to decompile.")
 

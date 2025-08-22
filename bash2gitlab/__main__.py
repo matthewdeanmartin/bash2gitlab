@@ -115,7 +115,7 @@ def lint_handler(args: argparse.Namespace) -> int:
         logger.error("Unexpected error during lint: %s", e)
         return 1
 
-    ok, fail = summarize_results(results)
+    _ok, fail = summarize_results(results)
     return 0 if fail == 0 else 2
 
 

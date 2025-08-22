@@ -151,8 +151,8 @@ def run_doctor() -> int:
     if issues_found == 0:
         print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ All checks passed. Your project looks healthy!{Colors.ENDC}")
         return 0
-    else:
-        print(
-            f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
-        )
-        return 1
+
+    print(
+        f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
+    )
+    return 1

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from io import StringIO
 from pathlib import Path
+
+from ruamel.yaml import YAML
 
 from bash2gitlab.utils.yaml_factory import get_yaml
 
@@ -21,12 +24,10 @@ def normalize_yaml_content(content: str) -> str:
         yaml = get_yaml()
         data = yaml.load(content)
         # Use a clean YAML dumper for normalization
-        from ruamel.yaml import YAML
 
         norm_yaml = YAML()
         norm_yaml.preserve_quotes = False
         norm_yaml.default_flow_style = False
-        from io import StringIO
 
         output = StringIO()
         norm_yaml.dump(data, output)
