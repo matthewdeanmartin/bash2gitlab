@@ -450,29 +450,33 @@ wheels = [
 
 [[package]]
 name = "bash2gitlab"
-version = "0.8.22"
+version = "0.9.0"
 source = { editable = "." }
 dependencies = [
-    { name = "argcomplete" },
-    { name = "colorlog" },
-    { name = "graphviz", version = "0.20.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "graphviz", version = "0.21", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "importlib-resources", version = "6.4.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "importlib-resources", version = "6.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "jsonschema", version = "4.23.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "jsonschema", version = "4.25.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "pluggy", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "pluggy", version = "1.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "ruamel-yaml" },
+    { name = "toml" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "argcomplete" },
+    { name = "colorlog" },
+    { name = "graphviz", version = "0.20.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "graphviz", version = "0.21", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "matplotlib", version = "3.7.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "matplotlib", version = "3.9.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.9.*'" },
     { name = "matplotlib", version = "3.10.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "packaging" },
-    { name = "pluggy", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
-    { name = "pluggy", version = "1.6.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "pyvis" },
     { name = "rich" },
-    { name = "ruamel-yaml" },
     { name = "textual", version = "0.73.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.8.1'" },
     { name = "textual", version = "5.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.8.1'" },
-    { name = "toml" },
     { name = "tomlkit" },
     { name = "watchdog", version = "4.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "watchdog", version = "6.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
@@ -529,22 +533,23 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "argcomplete" },
-    { name = "colorlog" },
-    { name = "graphviz" },
+    { name = "argcomplete", marker = "extra == 'all'" },
+    { name = "colorlog", marker = "extra == 'all'" },
+    { name = "graphviz", marker = "extra == 'all'" },
     { name = "importlib-resources" },
     { name = "jsonschema" },
-    { name = "matplotlib" },
-    { name = "packaging" },
+    { name = "matplotlib", marker = "extra == 'all'" },
+    { name = "packaging", marker = "extra == 'all'" },
     { name = "pluggy" },
-    { name = "pyvis" },
-    { name = "rich" },
+    { name = "pyvis", marker = "extra == 'all'" },
+    { name = "rich", marker = "extra == 'all'" },
     { name = "ruamel-yaml" },
-    { name = "textual" },
+    { name = "textual", marker = "extra == 'all'" },
     { name = "toml" },
-    { name = "tomlkit" },
-    { name = "watchdog", specifier = ">=3.0.0" },
+    { name = "tomlkit", marker = "extra == 'all'" },
+    { name = "watchdog", marker = "extra == 'all'", specifier = ">=3.0.0" },
 ]
+provides-extras = ["all"]
 
 [package.metadata.requires-dev]
 dev = [

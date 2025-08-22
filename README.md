@@ -21,11 +21,8 @@ Your IDE sees a single YAML string, and your scripts are trapped in one file.
 ```yaml
 build-job:
   script:
-    - echo "Setting up environment..."
-    - export APP_VERSION=$(cat version.txt)
-    - echo "Building project version $APP_VERSION"
+    - echo "Building project"
     - make build
-    - echo "Build complete."
 ```
 
 ## After
@@ -38,8 +35,7 @@ Your IDE provides full support for Bash, and your scripts can be versioned, shar
 #!/usr/bin/env bash
 set -eo pipefail
 
-export APP_VERSION=$(cat version.txt)
-echo "Building project version $APP_VERSION"
+echo "Building project"
 make build
 ```
 
@@ -71,12 +67,15 @@ If your CI/CD configuration is simple or contained entirely within a single repo
 
 `bash2gitlab` is a standalone command-line tool. Installation with `pipx` is recommended to avoid dependency conflicts.
 
+Install `[all]` extras for all commands. On your build server install just `bash2gitlab` for the core libraries which
+allows you to run `compile`, `decompile` on server. This minimizes supply chain risks.
+
 ```bash
 # Recommended
-pipx install bash2gitlab
+pipx install bash2gitlab[all]
 
 # Or via pip
-pip install bash2gitlab
+pip install bash2gitlab[all]
 ```
 
 ## Getting Started: A Quick Tour
@@ -188,8 +187,7 @@ To define variables that should be inlined into the global `variables:` block of
 - **[gitlab-ci-local](https://github.com/firecow/gitlab-ci-local):** This is an excellent tool for running your entire
   GitLab pipeline in local Docker containers. `bash2gitlab` is different—it focuses on the "unit testing" of your Bash
   logic itself, assuming you can and want to execute your scripts on your local machine without the overhead of Docker.
-- \*\*GitHub Actions
-  \*\* [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
+- **GitHub Actions** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
   do not have this problem. A shared GitHub action can reference a script in the shared action's repo. A GitHub
   "reusable" workflow is a single yaml file and might suffer from the same problem as Gitlab pipelines.
 - **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.

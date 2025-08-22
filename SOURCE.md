@@ -23,6 +23,7 @@
 ├── config.py
 ├── gui.py
 ├── hookspecs.py
+├── install_help.py
 ├── interactive.py
 ├── plugins.py
 ├── py.typed
@@ -30,6 +31,7 @@
 │   └── gitlab_ci_schema.json
 ├── tui.py
 ├── utils/
+│   ├── check_interactive.py
 │   ├── cli_suggestions.py
 │   ├── dotenv.py
 │   ├── logging_config.py
@@ -1269,6 +1271,85 @@ def after_command(result: int, args: argparse.Namespace) -> None:
     Called after the command handler returns. Read-only by convention.
     Use for logging/metrics/teardown. No return.
     """
+```
+## File: install_help.py
+```python
+from bash2gitlab import __about__
+from bash2gitlab.utils.check_interactive import detect_environment
+
+APP = __about__.__title__
+HELP = f"""
+To unlock the *full* experience of this {APP}, you should install the [all] extra.
+By default, `pip install {APP}` only gives you the minimal core.
+
+Here are the most common ways to install `{APP}[all]`:
+
+─────────────────────────────
+Command line (pip):
+─────────────────────────────
+    pip install "{APP}[all]"
+    pip install "{APP}[all]" --upgrade
+    python -m pip install "{APP}[all]"
+
+─────────────────────────────
+Command line (uv / pipx / poetry run):
+─────────────────────────────
+    uv pip install "{APP}[all]"
+    pipx install "{APP}[all]"
+    pipx install {APP} --pip-args='.[all]'
+    poetry run pip install "{APP}[all]"
+
+─────────────────────────────
+requirements.txt:
+─────────────────────────────
+Add one of these lines:
+    {APP}[all]
+    {APP}[all]==1.2.3        # pin a version
+    {APP}[all]>=1.2.0,<2.0   # version range
+
+─────────────────────────────
+pyproject.toml (PEP 621 / Poetry / Hatch / uv):
+─────────────────────────────
+[tool.poetry.dependencies]
+{APP} = {{ version = "1.2.3", extras = ["all"] }}
+
+# or for PEP 621 (uv, hatchling, setuptools):
+[project]
+dependencies = [
+    "{APP}[all]>=1.2.3",
+]
+
+─────────────────────────────
+setup.cfg (setuptools):
+─────────────────────────────
+[options]
+install_requires =
+    {APP}[all]
+
+─────────────────────────────
+environment.yml (conda/mamba):
+─────────────────────────────
+dependencies:
+  - pip
+  - pip:
+      - {APP}[all]
+
+─────────────────────────────
+Other notes:
+─────────────────────────────
+- Quoting is sometimes required: "{APP}[all]"
+- If you already installed core, run: pip install --upgrade "{APP}[all]"
+- Wheels/conda may not provide all extras; fall back to pip if needed.
+
+Summary:
+▶ Default install = minimal.
+▶ `{APP}[all]` = full, recommended.
+"""
+
+
+def print_install_help():
+    if detect_environment() == "interactive":
+        print(HELP)
 ```
 ## File: interactive.py
 ```python
@@ -2940,7 +3021,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.8.22"
+__version__ = "0.9.0"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -2983,11 +3064,19 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.config
+import os
 import sys
 from pathlib import Path
 from urllib import error as _urlerror
 
-import argcomplete
+from bash2gitlab.commands.best_effort_runner import best_efforts_run
+from bash2gitlab.install_help import print_install_help
+from bash2gitlab.utils.check_interactive import detect_environment
+
+try:
+    import argcomplete
+except ModuleNotFoundError:
+    argcomplete = None  # type: ignore[assignment]
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
@@ -3293,6 +3382,12 @@ def show_config_handler(args: argparse.Namespace) -> int:
     return run_show_config()
 
 
+def best_efforts_run_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'run' command."""
+
+    return best_efforts_run(Path(args.in_file))
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared CLI flags to a subparser."""
     parser.add_argument(
@@ -3307,6 +3402,13 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 def main() -> int:
     """Main CLI entry point."""
+    if (
+        argcomplete is None
+        and detect_environment == "interactive"
+        and not os.environ.get("BASH2GITLAB_HIDE_CORE_ALL_HELP")
+    ):
+        print_install_help()
+
     check_for_updates(__about__.__title__, __about__.__version__)
 
     parser = SmartParser(
@@ -3634,9 +3736,23 @@ def main() -> int:
     add_common_arguments(show_config_parser)
     show_config_parser.set_defaults(func=show_config_handler)
 
+    # --- Run command ---
+    run_parser = subparsers.add_parser("run", help="Best efforts to run a .gitlab-ci.yml file locally.")
+    run_parser.add_argument(
+        "--in-file",
+        default=".gitlab-ci.yml",
+        dest="input_file",
+        required=False,
+        help="Path to `.gitlab-ci.yml`, defaults to current directory",
+    )
+
+    add_common_arguments(run_parser)
+    run_parser.set_defaults(func=best_efforts_run_handler)
+
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
-    argcomplete.autocomplete(parser)
+    if argcomplete:
+        argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     # --- Configuration Precedence: CLI > ENV > TOML ---
@@ -3737,30 +3853,19 @@ BASE_ENV = os.environ.copy()
 
 
 def merge_env(env=None):
+    """
+    Merge os.environ and an env dict into a new dict.
+    Values from env override os.environ on conflict.
+
+    Args:
+        env: Optional dict of environment variables.
+
+    Returns:
+        A merged dict suitable for subprocess calls.
+    """
     if env:
         return {**BASE_ENV, **env}
     return BASE_ENV
-
-
-# def merge_env(env: dict[str, str] | None = None) -> dict[str, str]:
-#     """
-#     Merge os.environ and an env dict into a new dict.
-#     Values from env override os.environ on conflict.
-#
-#     Args:
-#         env: Optional dict of environment variables.
-#
-#     Returns:
-#         A merged dict suitable for subprocess calls.
-#     """
-#     # merged = dict(os.environ)  # copy system env
-#     # if env:
-#     #     merged.update(env)     # env wins
-#     merged = dict(os.environ)
-#     if env:
-#         merged.update(env)
-#
-#     return merged
 
 
 # ANSI color codes
@@ -4163,7 +4268,7 @@ class LocalGitLabRunner:
         self.loader = ConfigurationLoader(base_path)
         self.processor = PipelineProcessor()
 
-    def run_pipeline(self, config_path: Path | None = None) -> None:
+    def run_pipeline(self, config_path: Path | None = None) -> int:
         """Run the complete pipeline."""
         try:
             # Load and process configuration
@@ -4184,12 +4289,13 @@ class LocalGitLabRunner:
         except Exception as e:
             print(f"❌ Unexpected error: {e}")
             sys.exit(1)
+        return 0
 
 
-def best_efforts_run(config_path: Path) -> None:
+def best_efforts_run(config_path: Path) -> int:
     """Main entry point for the best-efforts-run command."""
     runner = LocalGitLabRunner()
-    runner.run_pipeline(config_path)
+    return runner.run_pipeline(config_path)
 
 
 if __name__ == "__main__":
@@ -6937,10 +7043,13 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Literal
 
-import matplotlib.pyplot as plt
-import networkx as nx
-from graphviz import Source
-from pyvis.network import Network
+try:
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from graphviz import Source
+    from pyvis.network import Network
+except ModuleNotFoundError:
+    pass
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX
@@ -8457,7 +8566,7 @@ def run_map_deploy(
         logger.info(f"Preparing to deploy {len(deployment_map)} items")
     else:
         logger.warning(
-            f"""No items in map config section. Map deploy requires pyproject.toml to have something like
+            """No items in map config section. Map deploy requires pyproject.toml to have something like
         [tool.bash2gitlab.map.map]
         "out/python" =["my_microservice/gitlab-scripts", "my_other/gitlab-scripts"]"""
         )
@@ -8475,7 +8584,7 @@ def run_map_deploy(
             logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
             continue
         if not len(target_bases):
-            logger.warning(f"Source folder but no destinations!")
+            logger.warning("Source folder but no destinations!")
 
         for target_base in target_bases:
             target_base_path = Path(target_base).resolve()
@@ -11984,6 +12093,73 @@ def run_show_config() -> int:
     }
   }
 }
+```
+## File: utils\check_interactive.py
+```python
+from __future__ import annotations
+
+import os
+import sys
+from typing import Literal
+
+EnvType = Literal["interactive", "non-interactive"]
+
+
+def detect_environment() -> EnvType:
+    """
+    Detect if the current process is running interactively (likely a user
+    on a laptop/terminal) or in a non-interactive context (CI, build server,
+    cron, etc.).
+
+    Returns:
+        "interactive" or "non-interactive"
+
+    Detection strategy:
+    - CI markers: CI=true, GITHUB_ACTIONS, GITLAB_CI, BUILD_ID, etc.
+    - Headless signals: DISPLAY unset (on Linux), running as PID 1 in container.
+    - Non-TTY stdin/stdout/stderr (not attached to terminal).
+    - Fallback: default to "interactive".
+    """
+    # --- CI / build system markers ---
+    ci_env_markers = [
+        "CI",
+        "BUILD_ID",
+        "BUILD_NUMBER",
+        "TEAMCITY_VERSION",
+        "JENKINS_HOME",
+        "GITHUB_ACTIONS",
+        "GITLAB_CI",
+        "CIRCLECI",
+        "TRAVIS",
+        "APPVEYOR",
+        "AZURE_HTTP_USER_AGENT",
+    ]
+    for marker in ci_env_markers:
+        if os.getenv(marker):
+            return "non-interactive"
+
+    # --- Headless signals ---
+    if sys.platform.startswith("linux") and not os.getenv("DISPLAY"):
+        # But ignore WSL and interactive shells where DISPLAY may not be set
+        if "WSL_DISTRO_NAME" not in os.environ and "TERM" not in os.environ:
+            return "non-interactive"
+
+    # --- Container heuristics ---
+    if os.path.exists("/.dockerenv"):
+        return "non-interactive"
+    try:
+        with open("/proc/1/cgroup") as f:
+            if "docker" in f.read() or "kubepods" in f.read():
+                return "non-interactive"
+    except OSError:
+        pass  # not Linux, skip
+
+    # --- TTY checks ---
+    if not (sys.stdin.isatty() and sys.stdout.isatty() and sys.stderr.isatty()):
+        return "non-interactive"
+
+    # --- Default ---
+    return "interactive"
 ```
 ## File: utils\cli_suggestions.py
 ```python

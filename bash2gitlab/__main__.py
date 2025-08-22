@@ -31,11 +31,19 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.config
+import os
 import sys
 from pathlib import Path
 from urllib import error as _urlerror
 
-import argcomplete
+from bash2gitlab.commands.best_effort_runner import best_efforts_run
+from bash2gitlab.install_help import print_install_help
+from bash2gitlab.utils.check_interactive import detect_environment
+
+try:
+    import argcomplete
+except ModuleNotFoundError:
+    argcomplete = None  # type: ignore[assignment]
 
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
@@ -341,6 +349,11 @@ def show_config_handler(args: argparse.Namespace) -> int:
     return run_show_config()
 
 
+def best_efforts_run_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'run' command."""
+    return best_efforts_run(Path(args.input_file))
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared CLI flags to a subparser."""
     parser.add_argument(
@@ -355,6 +368,13 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 def main() -> int:
     """Main CLI entry point."""
+    if (
+        argcomplete is None
+        and detect_environment == "interactive"
+        and not os.environ.get("BASH2GITLAB_HIDE_CORE_ALL_HELP")
+    ):
+        print_install_help()
+
     check_for_updates(__about__.__title__, __about__.__version__)
 
     parser = SmartParser(
@@ -682,9 +702,23 @@ def main() -> int:
     add_common_arguments(show_config_parser)
     show_config_parser.set_defaults(func=show_config_handler)
 
+    # --- Run command ---
+    run_parser = subparsers.add_parser("run", help="Best efforts to run a .gitlab-ci.yml file locally.")
+    run_parser.add_argument(
+        "--in-file",
+        default=".gitlab-ci.yml",
+        dest="input_file",
+        required=False,
+        help="Path to `.gitlab-ci.yml`, defaults to current directory",
+    )
+
+    add_common_arguments(run_parser)
+    run_parser.set_defaults(func=best_efforts_run_handler)
+
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
-    argcomplete.autocomplete(parser)
+    if argcomplete:
+        argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     # --- Configuration Precedence: CLI > ENV > TOML ---

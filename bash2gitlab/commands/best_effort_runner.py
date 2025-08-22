@@ -19,30 +19,19 @@ BASE_ENV = os.environ.copy()
 
 
 def merge_env(env=None):
+    """
+    Merge os.environ and an env dict into a new dict.
+    Values from env override os.environ on conflict.
+
+    Args:
+        env: Optional dict of environment variables.
+
+    Returns:
+        A merged dict suitable for subprocess calls.
+    """
     if env:
         return {**BASE_ENV, **env}
     return BASE_ENV
-
-
-# def merge_env(env: dict[str, str] | None = None) -> dict[str, str]:
-#     """
-#     Merge os.environ and an env dict into a new dict.
-#     Values from env override os.environ on conflict.
-#
-#     Args:
-#         env: Optional dict of environment variables.
-#
-#     Returns:
-#         A merged dict suitable for subprocess calls.
-#     """
-#     # merged = dict(os.environ)  # copy system env
-#     # if env:
-#     #     merged.update(env)     # env wins
-#     merged = dict(os.environ)
-#     if env:
-#         merged.update(env)
-#
-#     return merged
 
 
 # ANSI color codes
@@ -445,7 +434,7 @@ class LocalGitLabRunner:
         self.loader = ConfigurationLoader(base_path)
         self.processor = PipelineProcessor()
 
-    def run_pipeline(self, config_path: Path | None = None) -> None:
+    def run_pipeline(self, config_path: Path | None = None) -> int:
         """Run the complete pipeline."""
         try:
             # Load and process configuration
@@ -466,12 +455,13 @@ class LocalGitLabRunner:
         except Exception as e:
             print(f"❌ Unexpected error: {e}")
             sys.exit(1)
+        return 0
 
 
-def best_efforts_run(config_path: Path) -> None:
+def best_efforts_run(config_path: Path) -> int:
     """Main entry point for the best-efforts-run command."""
     runner = LocalGitLabRunner()
-    runner.run_pipeline(config_path)
+    return runner.run_pipeline(config_path)
 
 
 if __name__ == "__main__":

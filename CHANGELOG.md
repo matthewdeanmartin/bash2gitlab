@@ -12,40 +12,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.0] - 2025-08-22
+
+### Changed
+
+- Installation is `bash2gitlab` for core in the CI/build server or `bash2gitlab[all]` for all commands on your laptop.
+  this will mitigate against supply chain risks as the core has very, very few 3rd party packages.
+
+### Added
+
+- CLI option for `bash2gitlab run --in-file .gitlab-ci.yml` for best efforts to run a pipeline locally. This is not a
+  real runner!
+
 ## [0.8.22] - 2025-08-21
 
 ### Changed
+
 - Map deploy writes to multiple folders.
 - Map commit gathers multiple folders. Does not handle conflicts yet.
 
 ### Added
+
 - Best effort local runner will attempt to run a `.gitlab-ci.yml`, obviously without many, many feature.
 
 ## [0.8.21] - 2025-08-20
 
 ### Added
-- `# Pragma: do-not-validate-schema` for `!reference` code. Gitlab merges all templates before json validation.
 
+- `# Pragma: do-not-validate-schema` for `!reference` code. Gitlab merges all templates before json validation.
 
 ## [0.8.20] - 2025-08-20
 
 ### Fixed
+
 - Fixed regression where stages were turned into string blocks.
 
 ### Added
+
 - Now validates yaml against Gitlab's Json Schema. No flag to ignore validation results.
 
 ## [0.8.19] - 2025-08-19
 
 ### Fixed
+
 - Fixed regression where scripts were quoted lists again. Added a lot of unit tests.
 
 ### Added
+
 - Compile will skip if no changes have been made since last compile to any file in the input folder.
 
 ## [0.8.18] - 2025-08-19
 
 ### Fixed
+
 - Fix for variable lists turning into a string block/`!reference` turning into a plain list.
 
 ## [0.8.17] - 2025-08-17
@@ -58,7 +77,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lint didn't get gitlab_url from config
 - Fix `Pragma` feature
 - Fix tkinter to change tab when command run
-
 
 ## [0.8.16] - 2025-08-17
 
@@ -77,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `shred` renamed to decompile.
-- Config updates to support storing almost all command options in config file 
+- Config updates to support storing almost all command options in config file
 - Inline supports Pragma commands to skip certain bash from being in-lined.
     - `# Pragma: do-not-inline`: Prevents inlining on the current line.
     - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.

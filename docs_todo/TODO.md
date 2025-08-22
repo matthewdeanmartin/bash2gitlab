@@ -1,5 +1,18 @@
 # TODO
 
+## Core/All installation
+
+- Default to core
+- Require installing with "all"
+
+## Best effort runner
+
+- Doesn't stop on tools failing
+
+## Minor Config
+
+- For config not yet implemented in config file, just check env var.
+
 ## Compile
 
 - config option to only inline if `.` or `source`?

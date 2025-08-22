@@ -32,7 +32,7 @@ jobs:
           pipx install pylint && pipx install pre-commit && pipx install poetry && pipx install hatch
 
       - name: Install Dependencies
-        run: uv sync
+        run: uv sync --all-extras
 
       - name: Run make check
         run: chmod +x *.sh && uv run make check

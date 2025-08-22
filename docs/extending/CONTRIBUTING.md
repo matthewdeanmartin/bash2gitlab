@@ -16,7 +16,7 @@
 Fork the repo.
 
 ```bash
-uv sync
+uv sync --all-extras
 . ./.venv/Scripts/activate
 ```
 

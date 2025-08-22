@@ -6,42 +6,42 @@
 #     bash2gitlab compile --in C:\github\bash2gitlab\test\test_commands\scenario17_list_confusion\src --out C:\github\bash2gitlab\test\test_commands\scenario17_list_confusion\out
 
 include:
-- project: 'my-group/my-project'
-  ref: main
-  file: '/templates/.gitlab-ci-template.yml'
+  - project: 'my-group/my-project'
+    ref: main
+    file: '/templates/.gitlab-ci-template.yml'
 
 variables:
   LOCAL_VAR: "LocalValue"
 
 stages:
-- build
-- test
-- deploy
+  - build
+  - test
+  - deploy
 
 before_script:
-- |-
-  # >>> BEGIN inline: short_task.sh
-  echo 'Short task line 1'
-  echo 'Short task line 2'
-  # <<< END inline
-build_job:
-  stage: build
-  script:
   - |-
-    echo "Building..."
-    # >>> BEGIN inline: long_task.sh
-    echo 'Line 1'
-    echo 'Line 2'
-    echo 'Line 3'
-    echo 'Line 4 is too many'
-    # <<< END inline
-    echo "Build finished."
-test_job:
-  stage: test
-  script:
-  - |-
-    echo "Testing..."
     # >>> BEGIN inline: short_task.sh
     echo 'Short task line 1'
     echo 'Short task line 2'
     # <<< END inline
+build_job:
+  stage: build
+  script:
+    - |-
+      echo "Building..."
+      # >>> BEGIN inline: long_task.sh
+      echo 'Line 1'
+      echo 'Line 2'
+      echo 'Line 3'
+      echo 'Line 4 is too many'
+      # <<< END inline
+      echo "Build finished."
+test_job:
+  stage: test
+  script:
+    - |-
+      echo "Testing..."
+      # >>> BEGIN inline: short_task.sh
+      echo 'Short task line 1'
+      echo 'Short task line 2'
+      # <<< END inline

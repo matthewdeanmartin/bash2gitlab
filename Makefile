@@ -12,7 +12,7 @@ endif
 
 uv.lock: pyproject.toml
 	@echo "Installing dependencies"
-	@uv sync
+	@uv sync --all-extras
 
 clean-pyc:
 	@echo "Removing compiled files"
@@ -139,3 +139,6 @@ install_plugins:
 .PHONY: issues
 issues:
 	echo "N/A"
+
+core_all_tests:
+	./tools/exercise_core_all.sh bash2gitlab "compile --in examples/compile/src --out examples/compile/out --dry-run"

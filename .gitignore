@@ -208,3 +208,4 @@ __marimo__/
 .build_history
 .justlogs
 .bash2gitlab
+.venv*

@@ -12,6 +12,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.0] - 2025-08-22
+
+### Changed
+
+- Installation is `bash2gitlab` for core in the CI/build server or `bash2gitlab[all]` for all commands on your laptop.
+  this will mitigate against supply chain risks as the core has very, very few 3rd party packages.
+
+### Added
+
+- CLI option for `bash2gitlab run --in-file .gitlab-ci.yml` for best efforts to run a pipeline locally. This is not a
+  real runner!
+
+## [0.8.22] - 2025-08-21
+
+### Changed
+
+- Map deploy writes to multiple folders.
+- Map commit gathers multiple folders. Does not handle conflicts yet.
+
+### Added
+
+- Best effort local runner will attempt to run a `.gitlab-ci.yml`, obviously without many, many feature.
+
 ## [0.8.21] - 2025-08-20
 
 ### Added
@@ -74,11 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shred` renamed to decompile.
 - Config updates to support storing almost all command options in config file
 - Inline supports Pragma commands to skip certain bash from being in-lined.
-  - `# Pragma: do-not-inline`: Prevents inlining on the current line.
-  - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
-  - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
-  - `# Pragma: end-do-not-inline`: Ends the block.
-  - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+    - `# Pragma: end-do-not-inline`: Ends the block.
+    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
 
 ## [0.8.14] - 2025-08-16
 
@@ -125,7 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Now support inlining a much larger list of script languages using variations on `interpreter -c "..."`
+- Now support inlining a much larger list of script languages using variations on `intepreter -c "..."`
 
 ## [0.8.10] - 2025-08-11
 
@@ -177,7 +200,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Map deploy and map commit now restricted to .sh, .ps1 and .y[a]ml files.
+- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files.
 
 ### Added
 
@@ -331,4 +354,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - verbose and quiet logging
 - CLI interface
 - supports simple in/out project structure
-- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution
+- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution 

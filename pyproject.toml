@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.8.22"
+version = "0.9.0"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -8,28 +8,15 @@ keywords = ["bash", "gitlab"]
 license = "MIT"
 requires-python = ">=3.8"
 dependencies = [
-    # Core
-    "ruamel.yaml",
-    "watchdog>=3.0.0", # could be optional
-    "jsonschema",
+    # Core enables compile, decompile, validate, best effort runner
+    "ruamel.yaml", # required to compile
+    "jsonschema", # required to compile
+    "importlib_resources", # Used by validator
+    "toml", # backwards compat, required to compile
+
     # Extensibility
-    "pluggy",
-    # CLI
-    "argcomplete", # could be optional
-    # UI
-    "textual", # could be optional
-    "colorlog", # could be optional
-    "rich", # could be optional
-    # graphing
-    "pyvis", # could be optional
-    "graphviz", # could be optional
-    "matplotlib", # could be optional
-    # update checker
-    "packaging",
-    # Config, backwards compatibility
-    "toml",
-    "tomlkit", # right now only used by init
-    "importlib_resources"
+    "pluggy", # required to compile
+
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -55,6 +42,28 @@ homepage = "https://github.com/matthewdeanmartin/bash2gitlab"
 issues = "https://github.com/matthewdeanmartin/bash2gitlab/issues/"
 # support – e.g. chat or forum - TODO
 
+[project.optional-dependencies]
+# "all" pulls in everything that isn't strictly core
+# This is to defend against supply chain risks on the build server.
+# The assumption is untrusted code is a bigger problem on a build server
+# This is not a substitute for being vigilant with your package scanning.
+all = [
+    # CLI
+    "argcomplete", # could be optional
+    # UI
+    "textual", # could be optional
+    "colorlog", # could be optional
+    "rich", # could be optional - interative/init/tui
+    "watchdog>=3.0.0", # optional
+    # graphing
+    "pyvis", # could be optional
+    "graphviz", # could be optional
+    "matplotlib", # could be optional
+    # update checker
+    "packaging", # could be optional
+    # Config
+    "tomlkit", # right now only used by init
+]
 
 #[project.optional-dependencies]
 #chat = ["bash2gitlab-chat"]

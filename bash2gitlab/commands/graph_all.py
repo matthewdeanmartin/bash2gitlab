@@ -6,10 +6,13 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Literal
 
-import matplotlib.pyplot as plt
-import networkx as nx
-from graphviz import Source
-from pyvis.network import Network
+try:
+    import matplotlib.pyplot as plt
+    import networkx as nx
+    from graphviz import Source
+    from pyvis.network import Network
+except ModuleNotFoundError:
+    pass
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX

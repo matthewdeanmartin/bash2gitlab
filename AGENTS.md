@@ -15,7 +15,7 @@ This repository uses Python and Markdown. Follow these rules when modifying any 
 - To run tests directly, use `uv run pytest`.
 
 ## Environment
-- Dependencies are managed with `uv`. Run `uv sync` if tools are missing.
+- Dependencies are managed with `uv`. Run `uv sync --all-extras` if tools are missing.
 
 ## Commits
 - Submit changes as a single commit on the main branch.
