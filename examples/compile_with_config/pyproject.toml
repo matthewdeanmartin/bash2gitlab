@@ -1,0 +1,24 @@
+[tool.bash2gitlab] # Configuration for bash2gitlab
+input_dir = "src" # Directory for source .yml and .sh files
+output_dir = "out" # Directory for compiled GitLab CI files
+
+format = true
+verbose = true
+quiet = false
+
+[tool.bash2gitlab.lint]
+gitlab_url = "https://gitlab.com"
+project_id = 123
+
+[tool.bash2gitlab.decompile]
+input_folder = "src"
+output_dir = "out"
+
+[tool.bash2gitlab.copy2local]
+repo_url = "https://github.com/matthewdeanmartin/bash2gitlab.git"
+branch = "main"
+source_dir = "compiled"
+copy_dir = "templates"
+
+[tool.bash2gitlab.map.map]
+"out/python" =["my_microservice/gitlab-scripts", "my_other/gitlab-scripts"]
