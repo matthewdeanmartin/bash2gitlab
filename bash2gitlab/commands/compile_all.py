@@ -464,11 +464,13 @@ def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to
         )
     )
 
+
 @dataclass(frozen=True)
 class DiffStats:
     changed: int
     insertions: int
     deletions: int
+
 
 def diff_stats(diff_text: str) -> DiffStats:
     """Compute (changed_lines, insertions, deletions) from unified diff text.
@@ -487,10 +489,7 @@ def diff_stats(diff_text: str) -> DiffStats:
             ins += 1
         elif line.startswith("-"):
             del_ += 1
-    return DiffStats(
-        changed=ins + del_,
-        insertions=ins,
-        deletions=del_)
+    return DiffStats(changed=ins + del_, insertions=ins, deletions=del_)
 
 
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
@@ -512,7 +511,9 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
                 normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
             )
             different = diff_stats(diff_text)
-            logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions}).")
+            logger.info(
+                f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions})."
+            )
             logger.debug(diff_text)
             return True
         logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")

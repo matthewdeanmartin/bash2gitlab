@@ -20,7 +20,7 @@ def normalize_for_compare(text: str) -> str:
     return text.strip(" \n")
 
 
-def yaml_is_same(current_content: str, new_content: str)->bool:
+def yaml_is_same(current_content: str, new_content: str) -> bool:
     if current_content.strip("\n") == new_content.strip("\n"):
         # Simple match.
         return True

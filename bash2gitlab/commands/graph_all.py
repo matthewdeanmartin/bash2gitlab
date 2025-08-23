@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Any, Literal
 
 try:
-    import matplotlib.pyplot as plt # noqa
-    import networkx as nx # noqa
-    from graphviz import Source # noqa
-    from pyvis.network import Network # noqa
+    import matplotlib.pyplot as plt  # noqa
+    import networkx as nx  # noqa
+    from graphviz import Source  # noqa
+    from pyvis.network import Network  # noqa
 except ModuleNotFoundError:
     # Optional render backends; handled at runtime in _auto_pick / render_graph
-    pass # nosec
+    pass  # nosec
 
 from ruamel.yaml.error import YAMLError
 
@@ -32,6 +32,7 @@ __all__ = ["generate_dependency_graph", "find_script_references_in_node"]
 # =============================
 # Data model
 # =============================
+
 
 @dataclass
 class GraphModel:
@@ -57,6 +58,7 @@ class GraphModel:
 # =============================
 # DOT formatting
 # =============================
+
 
 def format_dot_output(graph: dict[Path, set[Path]], root_path: Path) -> str:
     """Formats the dependency graph into the DOT language."""
@@ -112,6 +114,7 @@ def format_dot_output(graph: dict[Path, set[Path]], root_path: Path) -> str:
 # YAML/script parsing
 # =============================
 
+
 def parse_shell_script_dependencies(
     script_path: Path,
     root_path: Path,
@@ -138,7 +141,9 @@ def parse_shell_script_dependencies(
                 sourced_path = (script_path.parent / sourced_script_name).resolve()
 
                 if not is_relative_to(sourced_path, root_path):
-                    logger.error(f"Refusing to trace source '{short_path(sourced_path)}': escapes allowed root '{root_path}'.")
+                    logger.error(
+                        f"Refusing to trace source '{short_path(sourced_path)}': escapes allowed root '{root_path}'."
+                    )
                     continue
 
                 graph[script_path].add(sourced_path)
@@ -179,6 +184,7 @@ def find_script_references_in_node(
 # Build phase (no rendering)
 # =============================
 
+
 def build_graph(uncompiled_path: Path) -> GraphModel:
     """Scan YAML + scripts and construct a :class:`GraphModel`.
 
@@ -203,9 +209,7 @@ def build_graph(uncompiled_path: Path) -> GraphModel:
             content = yaml_path.read_text("utf-8")
             yaml_data = yaml_parser.load(content)
             if yaml_data:
-                find_script_references_in_node(
-                    yaml_data, yaml_path, root_path, model.graph, model.processed_scripts
-                )
+                find_script_references_in_node(yaml_data, yaml_path, root_path, model.graph, model.processed_scripts)
         except YAMLError as e:
             logger.error("Failed to parse YAML file %s: %s", yaml_path, e)
         except Exception as e:  # pragma: no cover (filesystem/env dependent)
@@ -225,6 +229,7 @@ def build_graph(uncompiled_path: Path) -> GraphModel:
 # =============================
 # Render phase (export artifact)
 # =============================
+
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
     src = Source(dot_output)
@@ -271,8 +276,8 @@ def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_b
 
 
 def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
-    from matplotlib import pyplot as plt  # type: ignore
     import networkx as nx  # type: ignore
+    from matplotlib import pyplot as plt  # type: ignore
 
     out_path = Path.cwd() / f"{filename_base}.svg"
     G = nx.DiGraph()
@@ -371,6 +376,7 @@ def render_graph(
 # =============================
 # Convenience wrapper (build + render)
 # =============================
+
 
 def generate_dependency_graph(
     uncompiled_path: Path,

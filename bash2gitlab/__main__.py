@@ -51,13 +51,13 @@ from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
 from bash2gitlab.commands.detect_drift import run_detect_drift
+from bash2gitlab.commands.input_change_detector import get_changed_files
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.show_config import run_show_config
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
-from bash2gitlab.commands.input_change_detector import get_changed_files
 
 try:
     import argcomplete
@@ -398,6 +398,7 @@ def handle_change_detection_commands(args, uncompiled_path: Path) -> bool:
         return True
 
     return False
+
 
 def main() -> int:
     """Main CLI entry point."""
@@ -740,17 +741,15 @@ def main() -> int:
     )
 
     # --- Detect Uncompiled ----
-    detect_uncompiled_parser = subparsers.add_parser("detect-uncompiled", help="Detect if input files have changed since last compilation")
+    detect_uncompiled_parser = subparsers.add_parser(
+        "detect-uncompiled", help="Detect if input files have changed since last compilation"
+    )
     """Add change detection arguments to argument parser."""
     detect_uncompiled_parser.add_argument(
-        '--check-only',
-        action='store_true',
-        help='Only check if compilation is needed, do not compile'
+        "--check-only", action="store_true", help="Only check if compilation is needed, do not compile"
     )
     detect_uncompiled_parser.add_argument(
-        '--list-changed',
-        action='store_true',
-        help='List files that have changed since last compilation'
+        "--list-changed", action="store_true", help="List files that have changed since last compilation"
     )
     detect_uncompiled_parser.add_argument(
         "--in",
@@ -759,8 +758,6 @@ def main() -> int:
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
     detect_uncompiled_parser.set_defaults(func=handle_change_detection_commands)
-
-
 
     add_common_arguments(run_parser)
     run_parser.set_defaults(func=best_effort_run_handler)

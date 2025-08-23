@@ -4,14 +4,15 @@
 ├── commands/
 │   ├── best_effort_runner.py
 │   ├── clean_all.py
-│   ├── clone2local.py
 │   ├── compile_all.py
 │   ├── compile_bash_reader.py
 │   ├── compile_detct_last_change.py
 │   ├── compile_not_bash.py
+│   ├── copy2local.py
 │   ├── decompile_all.py
 │   ├── detect_drift.py
 │   ├── doctor.py
+│   ├── doctor_checks.py
 │   ├── graph_all.py
 │   ├── init_project.py
 │   ├── input_change_detector.py
@@ -21,6 +22,7 @@
 │   ├── precommit.py
 │   └── show_config.py
 ├── config.py
+├── exceptions.py
 ├── gui.py
 ├── hookspecs.py
 ├── install_help.py
@@ -53,6 +55,8 @@
 
 ## File: builtin_plugins.py
 ```python
+"""Default implementation of pluggy hooks"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -383,6 +387,14 @@ def reset_for_testing(config_path_override: Path | None = None) -> _Config:
     global config
     config = _Config(config_path_override=config_path_override)
     return config
+```
+## File: exceptions.py
+```python
+"""Exceptions shared across entire library"""
+
+
+class Bash2GitlabError(Exception):
+    """Base error for all errors defined in bash2gitlab"""
 ```
 ## File: gui.py
 ```python
@@ -1275,6 +1287,8 @@ def after_command(result: int, args: argparse.Namespace) -> None:
 ```
 ## File: install_help.py
 ```python
+"""Let people know how to install bash2gitlab[all]"""
+
 import os
 
 from bash2gitlab import __about__
@@ -1286,7 +1300,7 @@ APP = __about__.__title__
 
 def print_install_help() -> None:
     """Prints recommendation to install bash2gitlab[all]"""
-    if detect_environment() == "interactive" and not os.environ.get("BASH2GITLAB_HIDE_CORE_ALL_HELP"):
+    if detect_environment() == "interactive" and not os.environ.get("BASH2GITLAB_HIDE_CORE_HELP"):
         if supports_underline():
             u = "\033[4m"
             r = "\033[0m"
@@ -1722,9 +1736,9 @@ class InteractiveInterface:
 
         from bash2gitlab.__main__ import (
             clean_handler,
-            clone2local_handler,
             commit_map_handler,
             compile_handler,
+            copy2local_handler,
             decompile_handler,
             doctor_handler,
             drift_handler,
@@ -1747,7 +1761,7 @@ class InteractiveInterface:
             "clean": clean_handler,
             "lint": lint_handler,
             "init": init_handler,
-            "copy2local": clone2local_handler,
+            "copy2local": copy2local_handler,
             "map-deploy": map_deploy_handler,
             "commit-map": commit_map_handler,
             "detect-drift": drift_handler,
@@ -1838,6 +1852,8 @@ if __name__ == "__main__":
 ```
 ## File: plugins.py
 ```python
+"""Pluggy related code"""
+
 import os
 
 import pluggy
@@ -1848,6 +1864,7 @@ _pm = None
 
 
 def get_pm() -> pluggy.PluginManager:
+    """Get a singleton plugin manager"""
     global _pm
     if _pm is None:
         _pm = pluggy.PluginManager("bash2gitlab")
@@ -1877,7 +1894,6 @@ def call_seq(func_name: str, value, **kwargs):
 ```
 ## File: tui.py
 ```python
-#!/usr/bin/env python3
 """
 Textual TUI for bash2gitlab - Interactive terminal interface
 """
@@ -3035,14 +3051,13 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.config
-import os
 import sys
 from pathlib import Path
 from urllib import error as _urlerror
 
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
+from bash2gitlab.commands.input_change_detector import needs_compilation
 from bash2gitlab.install_help import print_install_help
-from bash2gitlab.utils.check_interactive import detect_environment
 
 try:
     import argcomplete
@@ -3056,6 +3071,7 @@ from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
 from bash2gitlab.commands.detect_drift import run_detect_drift
+from bash2gitlab.commands.input_change_detector import get_changed_files
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.show_config import run_show_config
 from bash2gitlab.config import config
@@ -3070,7 +3086,7 @@ except ModuleNotFoundError:
 
 # Interactive
 try:
-    from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
+    from bash2gitlab.commands.copy2local import clone_repository_ssh, fetch_repository_archive
     from bash2gitlab.commands.doctor import run_doctor
     from bash2gitlab.commands.graph_all import generate_dependency_graph
     from bash2gitlab.commands.init_project import run_init
@@ -3155,9 +3171,9 @@ def init_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-def clone2local_handler(args: argparse.Namespace) -> int:
+def copy2local_handler(args: argparse.Namespace) -> int:
     """
-    Argparse handler for the clone2local command.
+    Argparse handler for the copy2local command.
 
     This handler remains compatible with the new archive-based fetch function.
     """
@@ -3165,9 +3181,9 @@ def clone2local_handler(args: argparse.Namespace) -> int:
     dry_run = bool(args.dry_run)
 
     if str(args.repo_url).startswith("ssh"):
-        clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+        clone_repository_ssh(args.repo_url, args.branch, Path(args.source_dir), Path(args.copy_dir), dry_run)
     else:
-        fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+        fetch_repository_archive(args.repo_url, args.branch, Path(args.source_dir), Path(args.copy_dir), dry_run)
     return 0
 
 
@@ -3364,7 +3380,7 @@ def show_config_handler(args: argparse.Namespace) -> int:
     return run_show_config()
 
 
-def best_efforts_run_handler(args: argparse.Namespace) -> int:
+def best_effort_run_handler(args: argparse.Namespace) -> int:
     """Handler for the 'run' command."""
     return best_efforts_run(Path(args.input_file))
 
@@ -3381,9 +3397,31 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
 
+def handle_change_detection_commands(args, uncompiled_path: Path) -> bool:
+    """Handle change detection specific commands. Returns True if command was handled."""
+    if args.check_only:
+        if needs_compilation(uncompiled_path):
+            print("Compilation needed: input files have changed")
+            return True
+        else:
+            print("No compilation needed: no input changes detected")
+            return True
+
+    if args.list_changed:
+        changed = get_changed_files(uncompiled_path)
+        if changed:
+            print("Changed files since last compilation:")
+            for file_path in changed:
+                print(f"  {file_path}")
+        else:
+            print("No files have changed since last compilation")
+        return True
+
+    return False
+
+
 def main() -> int:
     """Main CLI entry point."""
-
     if check_for_updates:  # type: ignore[truthy-function]
         check_for_updates(__about__.__title__, __about__.__version__)
 
@@ -3520,7 +3558,7 @@ def main() -> int:
         help="Directory to include in the copy.",
     )
     add_common_arguments(copy2local_parser)
-    copy2local_parser.set_defaults(func=clone2local_handler)
+    copy2local_parser.set_defaults(func=copy2local_handler)
 
     # Init Parser
     # Init Parser
@@ -3722,8 +3760,27 @@ def main() -> int:
         help="Path to `.gitlab-ci.yml`, defaults to current directory",
     )
 
+    # --- Detect Uncompiled ----
+    detect_uncompiled_parser = subparsers.add_parser(
+        "detect-uncompiled", help="Detect if input files have changed since last compilation"
+    )
+    """Add change detection arguments to argument parser."""
+    detect_uncompiled_parser.add_argument(
+        "--check-only", action="store_true", help="Only check if compilation is needed, do not compile"
+    )
+    detect_uncompiled_parser.add_argument(
+        "--list-changed", action="store_true", help="List files that have changed since last compilation"
+    )
+    detect_uncompiled_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=not bool(config.compile_input_dir),
+        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
+    )
+    detect_uncompiled_parser.set_defaults(func=handle_change_detection_commands)
+
     add_common_arguments(run_parser)
-    run_parser.set_defaults(func=best_efforts_run_handler)
+    run_parser.set_defaults(func=best_effort_run_handler)
 
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
@@ -3802,6 +3859,7 @@ def main() -> int:
         for _ in get_pm().hook.after_command(result=rc, args=args):
             pass
     except NameError:
+        # logger.error(ex)
         print_install_help()
         return 111
 
@@ -3830,6 +3888,9 @@ from typing import Any, Union
 
 from ruamel.yaml import YAML
 
+from bash2gitlab.exceptions import Bash2GitlabError
+
+# Copy of the base environment variables
 BASE_ENV = os.environ.copy()
 
 
@@ -3849,17 +3910,31 @@ def merge_env(env=None):
     return BASE_ENV
 
 
-# ANSI color codes
+# ANSI color codes for terminal output
 GREEN = "\033[92m"
 RED = "\033[91m"
 RESET = "\033[0m"
 
-# Disable colors if NO_COLOR is set
+# Disable colors if NO_COLOR is set in the environment
 if os.getenv("NO_COLOR"):
     GREEN = RED = RESET = ""
 
 
 def run_colored(script: str, env=None, cwd=None) -> int:
+    """
+    Run a script in a subprocess with colored output for stdout and stderr.
+
+    Args:
+        script: The script to execute.
+        env: Optional environment variables for the subprocess.
+        cwd: Optional working directory for the subprocess.
+
+    Returns:
+        The return code of the subprocess.
+
+    Raises:
+        subprocess.CalledProcessError: If the subprocess exits with a non-zero code.
+    """
     env = merge_env(env)
 
     # Disable colors if NO_COLOR is set
@@ -3867,10 +3942,14 @@ def run_colored(script: str, env=None, cwd=None) -> int:
         g, r, reset = "", "", ""
     else:
         g, r, reset = GREEN, RED, RESET
+
+    # Determine the bash executable based on the operating system
     if os.name == "nt":
         bash = r"C:\Program Files\Git\bin\bash.exe"
     else:
         bash = "bash"
+
+    # Start the subprocess
     process = subprocess.Popen(  # nosec
         # , "-l"  # -l loads .bashrc and make it really, really slow.
         [bash],  # bash reads script from stdin
@@ -3884,6 +3963,14 @@ def run_colored(script: str, env=None, cwd=None) -> int:
     )
 
     def stream(pipe, color, target):
+        """
+        Stream output from a pipe to a target with optional color.
+
+        Args:
+            pipe: The pipe to read from.
+            color: The color to apply to the output.
+            target: The target to write the output to.
+        """
         for line in iter(pipe.readline, ""):  # text mode here, so sentinel is ""
             if not line:
                 break
@@ -3921,7 +4008,17 @@ def run_colored(script: str, env=None, cwd=None) -> int:
 
 @dataclass
 class JobConfig:
-    """Configuration for a single job."""
+    """
+    Configuration for a single job.
+
+    Attributes:
+        name: The name of the job.
+        stage: The stage the job belongs to.
+        script: The main script to execute for the job.
+        variables: Environment variables specific to the job.
+        before_script: Scripts to run before the main script.
+        after_script: Scripts to run after the main script.
+    """
 
     name: str
     stage: str = "test"
@@ -3933,7 +4030,14 @@ class JobConfig:
 
 @dataclass
 class DefaultConfig:
-    """Default configuration that can be inherited by jobs."""
+    """
+    Default configuration that can be inherited by jobs.
+
+    Attributes:
+        before_script: Default scripts to run before job scripts.
+        after_script: Default scripts to run after job scripts.
+        variables: Default environment variables for jobs.
+    """
 
     before_script: list[str] = field(default_factory=list)
     after_script: list[str] = field(default_factory=list)
@@ -3942,7 +4046,15 @@ class DefaultConfig:
 
 @dataclass
 class PipelineConfig:
-    """Complete pipeline configuration."""
+    """
+    Complete pipeline configuration.
+
+    Attributes:
+        stages: List of pipeline stages.
+        variables: Global environment variables for the pipeline.
+        default: Default configuration for jobs.
+        jobs: List of job configurations.
+    """
 
     stages: list[str] = field(default_factory=lambda: ["test"])
     variables: dict[str, str] = field(default_factory=dict)
@@ -3950,7 +4062,7 @@ class PipelineConfig:
     jobs: list[JobConfig] = field(default_factory=list)
 
 
-class GitLabCIError(Exception):
+class GitLabCIError(Bash2GitlabError):
     """Base exception for GitLab CI runner errors."""
 
 
@@ -3959,7 +4071,13 @@ class JobExecutionError(GitLabCIError):
 
 
 class ConfigurationLoader:
-    """Loads and processes GitLab CI configuration files."""
+    """
+    Loads and processes GitLab CI configuration files.
+
+    Attributes:
+        base_path: The base path for resolving configuration files.
+        yaml: YAML parser instance.
+    """
 
     def __init__(self, base_path: Path | None = None):
         if not base_path:
@@ -3969,7 +4087,18 @@ class ConfigurationLoader:
         self.yaml = YAML(typ="safe")
 
     def load_config(self, config_path: Path | None = None) -> dict[str, Any]:
-        """Load the main configuration file and process includes."""
+        """
+        Load the main configuration file and process includes.
+
+        Args:
+            config_path: Path to the configuration file.
+
+        Returns:
+            The loaded and processed configuration.
+
+        Raises:
+            GitLabCIError: If the configuration file is not found or fails to load.
+        """
         if config_path is None:
             config_path = self.base_path / ".gitlab-ci.yml"
 
@@ -3982,7 +4111,18 @@ class ConfigurationLoader:
         return config
 
     def _load_yaml_file(self, file_path: Path) -> dict[str, Any]:
-        """Load a single YAML file."""
+        """
+        Load a single YAML file.
+
+        Args:
+            file_path: Path to the YAML file.
+
+        Returns:
+            The loaded YAML content.
+
+        Raises:
+            GitLabCIError: If the file fails to load.
+        """
         try:
             with open(file_path) as f:
                 return self.yaml.load(f) or {}
@@ -3990,7 +4130,16 @@ class ConfigurationLoader:
             raise GitLabCIError(f"Failed to load YAML file {file_path}: {e}") from e
 
     def _process_includes(self, config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
-        """Process include directives for local files only."""
+        """
+        Process include directives for local files only.
+
+        Args:
+            config: The main configuration dictionary.
+            base_dir: The base directory for resolving includes.
+
+        Returns:
+            The configuration with includes merged.
+        """
         includes = config.pop("include", [])
         if not includes:
             return config
@@ -4013,7 +4162,16 @@ class ConfigurationLoader:
         return config
 
     def _merge_configs(self, base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
-        """Merge two configuration dictionaries."""
+        """
+        Merge two configuration dictionaries.
+
+        Args:
+            base: The base configuration.
+            overlay: The overlay configuration.
+
+        Returns:
+            The merged configuration.
+        """
         result = base.copy()
         for key, value in overlay.items():
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -4024,7 +4182,12 @@ class ConfigurationLoader:
 
 
 class PipelineProcessor:
-    """Processes raw configuration into structured pipeline configuration."""
+    """
+    Processes raw configuration into structured pipeline configuration.
+
+    Attributes:
+        RESERVED_KEYWORDS: Reserved keywords in GitLab CI configuration.
+    """
 
     RESERVED_KEYWORDS = {
         "stages",
@@ -4040,7 +4203,15 @@ class PipelineProcessor:
     }
 
     def process_config(self, raw_config: dict[str, Any]) -> PipelineConfig:
-        """Process raw configuration into structured pipeline config."""
+        """
+        Process raw configuration into structured pipeline config.
+
+        Args:
+            raw_config: The raw configuration dictionary.
+
+        Returns:
+            A structured PipelineConfig object.
+        """
         # Extract global configuration
         stages = raw_config.get("stages", ["test"])
         global_variables = raw_config.get("variables", {})
@@ -4056,7 +4227,15 @@ class PipelineProcessor:
         return PipelineConfig(stages=stages, variables=global_variables, default=default_config, jobs=jobs)
 
     def _process_default_config(self, default_data: dict[str, Any]) -> DefaultConfig:
-        """Process default configuration block."""
+        """
+        Process default configuration block.
+
+        Args:
+            default_data: The default configuration dictionary.
+
+        Returns:
+            A DefaultConfig object.
+        """
         return DefaultConfig(
             before_script=self._ensure_list(default_data.get("before_script", [])),
             after_script=self._ensure_list(default_data.get("after_script", [])),
@@ -4066,7 +4245,18 @@ class PipelineProcessor:
     def _process_job(
         self, name: str, job_data: dict[str, Any], default: DefaultConfig, global_vars: dict[str, str]
     ) -> JobConfig:
-        """Process a single job configuration."""
+        """
+        Process a single job configuration.
+
+        Args:
+            name: The name of the job.
+            job_data: The job configuration dictionary.
+            default: The default configuration.
+            global_vars: Global environment variables.
+
+        Returns:
+            A JobConfig object.
+        """
         # Merge variables with precedence: job > global > default
         variables = {}
         variables.update(default.variables)
@@ -4087,7 +4277,15 @@ class PipelineProcessor:
         )
 
     def _ensure_list(self, value: Union[str, list[str]]) -> list[str]:
-        """Ensure a value is a list of strings."""
+        """
+        Ensure a value is a list of strings.
+
+        Args:
+            value: The value to ensure.
+
+        Returns:
+            A list of strings.
+        """
         if isinstance(value, str):
             return [value]
         elif isinstance(value, list):
@@ -4096,14 +4294,25 @@ class PipelineProcessor:
 
 
 class VariableManager:
-    """Manages variable substitution and environment preparation."""
+    """
+    Manages variable substitution and environment preparation.
+
+    Attributes:
+        base_variables: Base environment variables.
+        gitlab_ci_vars: Simulated GitLab CI built-in variables.
+    """
 
     def __init__(self, base_variables: dict[str, str] | None = None):
         self.base_variables = base_variables or {}
         self.gitlab_ci_vars = self._get_gitlab_ci_variables()
 
     def _get_gitlab_ci_variables(self) -> dict[str, str]:
-        """Get GitLab CI built-in variables that we can simulate."""
+        """
+        Get GitLab CI built-in variables that we can simulate.
+
+        Returns:
+            A dictionary of simulated GitLab CI variables.
+        """
         return {
             "CI": "true",
             "CI_PROJECT_DIR": str(Path.cwd()),
@@ -4112,7 +4321,15 @@ class VariableManager:
         }
 
     def prepare_environment(self, job: JobConfig) -> dict[str, str]:
-        """Prepare environment variables for job execution."""
+        """
+        Prepare environment variables for job execution.
+
+        Args:
+            job: The job configuration.
+
+        Returns:
+            A dictionary of prepared environment variables.
+        """
         env = os.environ.copy()
 
         # Apply variables in order: built-in -> base -> job
@@ -4127,7 +4344,16 @@ class VariableManager:
         return env
 
     def substitute_variables(self, text: str, variables: dict[str, str]) -> str:
-        """Perform basic variable substitution in text."""
+        """
+        Perform basic variable substitution in text.
+
+        Args:
+            text: The text to substitute variables in.
+            variables: The variables to use for substitution.
+
+        Returns:
+            The text with variables substituted.
+        """
         # Simple substitution - replace $VAR and ${VAR} patterns
 
         def replace_var(match):
@@ -4140,13 +4366,26 @@ class VariableManager:
 
 
 class JobExecutor:
-    """Executes individual jobs."""
+    """
+    Executes individual jobs.
+
+    Attributes:
+        variable_manager: The VariableManager instance for managing variables.
+    """
 
     def __init__(self, variable_manager: VariableManager):
         self.variable_manager = variable_manager
 
     def execute_job(self, job: JobConfig) -> None:
-        """Execute a single job."""
+        """
+        Execute a single job.
+
+        Args:
+            job: The job configuration.
+
+        Raises:
+            JobExecutionError: If the job fails to execute successfully.
+        """
         print(f"🔧 Running job: {job.name} (stage: {job.stage})")
 
         env = self.variable_manager.prepare_environment(job)
@@ -4173,7 +4412,16 @@ class JobExecutor:
             raise JobExecutionError(f"Job {job.name} failed with exit code {e.returncode}") from e
 
     def _execute_scripts(self, scripts: list[str], env: dict[str, str]) -> None:
-        """Execute a list of script commands."""
+        """
+        Execute a list of script commands.
+
+        Args:
+            scripts: The list of scripts to execute.
+            env: The environment variables for the scripts.
+
+        Raises:
+            subprocess.CalledProcessError: If a script exits with a non-zero code.
+        """
         for script in scripts:
             if not isinstance(script, str):
                 raise Exception(f"{script} is not a string")
@@ -4200,13 +4448,23 @@ class JobExecutor:
 
 
 class StageOrchestrator:
-    """Orchestrates job execution by stages."""
+    """
+    Orchestrates job execution by stages.
+
+    Attributes:
+        job_executor: The JobExecutor instance for executing jobs.
+    """
 
     def __init__(self, job_executor: JobExecutor):
         self.job_executor = job_executor
 
     def execute_pipeline(self, pipeline: PipelineConfig) -> None:
-        """Execute all jobs in the pipeline, organized by stages."""
+        """
+        Execute all jobs in the pipeline, organized by stages.
+
+        Args:
+            pipeline: The pipeline configuration.
+        """
         print("🚀 Starting GitLab CI pipeline execution")
         print(f"📋 Stages: {', '.join(pipeline.stages)}")
 
@@ -4226,7 +4484,15 @@ class StageOrchestrator:
         print("\n🎉 Pipeline completed successfully!")
 
     def _organize_jobs_by_stage(self, pipeline: PipelineConfig) -> dict[str, list[JobConfig]]:
-        """Organize jobs by their stages."""
+        """
+        Organize jobs by their stages.
+
+        Args:
+            pipeline: The pipeline configuration.
+
+        Returns:
+            A dictionary mapping stages to lists of jobs.
+        """
         jobs_by_stage: dict[str, Any] = {}
 
         for job in pipeline.jobs:
@@ -4239,7 +4505,14 @@ class StageOrchestrator:
 
 
 class LocalGitLabRunner:
-    """Main runner class that orchestrates the entire pipeline execution."""
+    """
+    Main runner class that orchestrates the entire pipeline execution.
+
+    Attributes:
+        base_path: The base path for resolving configuration files.
+        loader: The ConfigurationLoader instance for loading configurations.
+        processor: The PipelineProcessor instance for processing configurations.
+    """
 
     def __init__(self, base_path: Path | None = None):
         if not base_path:
@@ -4250,7 +4523,19 @@ class LocalGitLabRunner:
         self.processor = PipelineProcessor()
 
     def run_pipeline(self, config_path: Path | None = None) -> int:
-        """Run the complete pipeline."""
+        """
+        Run the complete pipeline.
+
+        Args:
+            config_path: Path to the pipeline configuration file.
+
+        Returns:
+            The exit code of the pipeline execution.
+
+        Raises:
+            GitLabCIError: If there is an error in the pipeline configuration.
+            Exception: For unexpected errors.
+        """
         try:
             # Load and process configuration
             raw_config = self.loader.load_config(config_path)
@@ -4296,6 +4581,7 @@ from __future__ import annotations
 import base64
 import logging
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from bash2gitlab.utils.utils import short_path
@@ -4426,9 +4712,14 @@ def is_target_unchanged(base_file: Path, hash_file: Path) -> bool | None:
 
 
 # --- Cleaning -----------------------------------------------------------------
+@dataclass(frozen=True)
+class CleanReport:
+    deleted_pairs: int
+    skipped_changed: int
+    skipped_invalid_hash: int
 
 
-def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
+def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
     """Delete generated target files (and their .hash files) under *root*.
 
     Only deletes when a valid pair exists **and** the base file content matches
@@ -4458,7 +4749,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
 
     if not seen_pairs:
         logger.info("No target pairs found under %s", short_path(root))
-        return (0, 0, 0)
+        return CleanReport(0, 0, 0)
 
     for base_file, hash_file in sorted(seen_pairs):
         status = is_target_unchanged(base_file, hash_file)
@@ -4493,7 +4784,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
         skipped_changed,
         skipped_invalid,
     )
-    return (deleted, skipped_changed, skipped_invalid)
+    return CleanReport(deleted_pairs=deleted, skipped_changed=skipped_changed, skipped_invalid_hash=skipped_invalid)
 
 
 # --- Optional: quick report helper -------------------------------------------
@@ -4523,229 +4814,6 @@ def report_targets(root: Path) -> list[Path]:
         logger.debug("Stray: %s", short_path(s))
     return strays
 ```
-## File: commands\clone2local.py
-```python
-"""A command to copy just some of a centralized repo's bash commands to a local repo for debugging."""
-
-from __future__ import annotations
-
-import logging
-import shutil
-import subprocess  # nosec: B404
-import tempfile
-import urllib.error
-import urllib.request
-import zipfile
-from pathlib import Path
-
-from bash2gitlab.utils.utils import short_path
-
-logger = logging.getLogger(__name__)
-
-__all__ = ["fetch_repository_archive", "clone_repository_ssh"]
-
-
-def fetch_repository_archive(
-    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
-) -> None:
-    """Fetches and extracts a specific directory from a repository archive.
-
-    This function avoids using Git by downloading the repository as a ZIP archive.
-    It unpacks the archive to a temporary location, copies the requested
-    source directory to the final destination, and cleans up all temporary
-    files upon completion or in case of an error.
-
-    Args:
-        repo_url: The base URL of the repository (e.g., 'https://github.com/user/repo').
-        branch: The name of the branch to download (e.g., 'main', 'develop').
-        source_dir: A single directory path (relative to the repo root) to
-            extract and copy to the clone_dir.
-        clone_dir: The destination directory. This directory must be empty.
-        dry_run: Simulate action
-
-    Raises:
-        FileExistsError: If the clone_dir exists and is not empty.
-        ConnectionError: If the specified branch archive cannot be found, accessed,
-            or if a network error occurs.
-        IOError: If the downloaded archive is empty or has an unexpected
-            file structure.
-        TypeError: If the repository URL does not use an http/https protocol.
-        Exception: Propagates other exceptions from network, file, or
-            archive operations after attempting to clean up.
-    """
-    clone_path = Path(clone_dir)
-    logger.debug(
-        "Fetching archive for repo %s (branch: %s) into %s with dir %s",
-        repo_url,
-        branch,
-        clone_path,
-        source_dir,
-    )
-
-    # 1. Validate that the destination directory is empty.
-    if clone_path.exists() and any(clone_path.iterdir()):
-        raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
-    # Ensure the directory exists, but don't error if it's already there (as long as it's empty)
-    if not dry_run:
-        clone_path.mkdir(parents=True, exist_ok=True)
-
-    try:
-        # Use a temporary directory that cleans itself up automatically.
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_path = Path(temp_dir)
-            archive_path = temp_path / "repo.zip"
-            unzip_root = temp_path / "unzipped"
-            if not dry_run:
-                unzip_root.mkdir()
-
-            # 2. Construct the archive URL and check for its existence.
-            archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
-            if not archive_url.startswith("http"):
-                raise TypeError(f"Expected http or https protocol, got {archive_url}")
-
-            try:
-                # Use a simple open to verify existence without a full download.
-                # URL is constructed from trusted inputs in this context.
-                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec: B310
-                    # The 'with' block itself confirms a 2xx status.
-                    logger.info("Confirmed repository archive exists at: %s", archive_url)
-            except urllib.error.HTTPError as e:
-                # Re-raise with a more specific message for clarity.
-                raise ConnectionError(
-                    f"Could not find archive for branch '{branch}' at '{archive_url}'. Please check the repository URL and branch name. (HTTP Status: {e.code})"
-                ) from e
-            except urllib.error.URLError as e:
-                raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
-
-            logger.info("Downloading archive to %s", archive_path)
-            # URL is validated above.
-            if not dry_run:
-                urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
-
-            # 3. Unzip the downloaded archive.
-            logger.info("Extracting archive to %s", unzip_root)
-            if dry_run:
-                # Nothing left meaningful to dry run
-                return
-
-            with zipfile.ZipFile(archive_path, "r") as zf:
-                zf.extractall(unzip_root)
-
-            # The archive usually extracts into a single sub-directory (e.g., 'repo-name-main').
-            # We need to find this directory to locate the source files.
-            extracted_items = list(unzip_root.iterdir())
-            if not extracted_items:
-                raise OSError("Archive is empty.")
-
-            # Find the single root directory within the extracted files.
-            source_repo_root = None
-            if len(extracted_items) == 1 and extracted_items[0].is_dir():
-                source_repo_root = extracted_items[0]
-            else:
-                # Fallback for archives that might not have a single root folder.
-                logger.warning("Archive does not contain a single root directory. Using extraction root.")
-                source_repo_root = unzip_root
-
-            # 4. Copy the specified directory to the final destination.
-            logger.info("Copying specified directories to final destination.")
-
-            repo_source_dir = source_repo_root / source_dir
-            dest_dir = clone_path
-
-            if repo_source_dir.is_dir():
-                logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
-                # FIX: Use the correct source path `repo_source_dir` for the copy operation.
-                shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
-            else:
-                logger.warning("Directory '%s' not found in repository archive, skipping.", repo_source_dir)
-
-    except Exception as e:
-        logger.error("Operation failed: %s. Cleaning up destination directory.", e)
-        # 5. Clean up the destination on any failure.
-        shutil.rmtree(clone_path, ignore_errors=True)
-        # Re-raise the exception to notify the caller of the failure.
-        raise
-
-    logger.info("Successfully fetched directories into %s", clone_path)
-
-
-def clone_repository_ssh(
-    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
-) -> None:
-    """Clones a repo via Git and copies a specific directory.
-
-    This function is designed for SSH or authenticated HTTPS URLs that require
-    local Git and credential management (e.g., SSH keys). It performs an
-    efficient, shallow clone of a specific branch into a temporary directory,
-    then copies the requested source directory to the final destination.
-
-    Args:
-        repo_url: The repository URL (e.g., 'git@github.com:user/repo.git').
-        branch: The name of the branch to check out (e.g., 'main', 'develop').
-        source_dir: A single directory path (relative to the repo root) to copy.
-        clone_dir: The destination directory. This directory must be empty.
-        dry_run: Simulate action
-
-    Raises:
-        FileExistsError: If the clone_dir exists and is not empty.
-        subprocess.CalledProcessError: If any Git command fails.
-        Exception: Propagates other exceptions from file operations after
-            attempting to clean up.
-    """
-    clone_path = Path(clone_dir)
-    logger.debug(
-        "Cloning repo %s (branch: %s) into %s with source dir %s",
-        repo_url,
-        branch,
-        clone_path,
-        source_dir,
-    )
-
-    # 1. Validate that the destination directory is empty.
-    if clone_path.exists() and any(clone_path.iterdir()):
-        raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
-    if not dry_run:
-        clone_path.mkdir(parents=True, exist_ok=True)
-
-    try:
-        # Use a temporary directory for the full clone, which will be auto-cleaned.
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_clone_path = Path(temp_dir)
-            logger.info("Cloning '%s' to temporary location: %s", repo_url, temp_clone_path)
-
-            # 2. Clone the repository.
-            # We clone the specific branch directly to be more efficient.
-            # repo_url is a variable, but is intended to be a trusted source.
-            command = ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)]
-            if dry_run:
-                logger.info(f"Would have run {' '.join(command)}")
-            else:
-                subprocess.run(  # nosec: B603, B607
-                    ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
-                    check=True,
-                    capture_output=True,  # Capture stdout/stderr to hide git's noisy output
-                )
-
-            logger.info("Clone successful. Copying specified directories.")
-            # 3. Copy the specified directory to the final destination.
-            repo_source_dir = temp_clone_path / source_dir
-            dest_dir = clone_path
-
-            if repo_source_dir.is_dir():
-                logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
-                shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
-            elif not dry_run:
-                logger.warning("Directory '%s' not found in repository, skipping.", source_dir)
-
-    except Exception as e:
-        logger.error("Operation failed: %s. Cleaning up destination directory.", e)
-        # 4. Clean up the destination on any failure.
-        shutil.rmtree(clone_path, ignore_errors=True)
-        # Re-raise the exception to notify the caller of the failure.
-        raise
-
-    logger.info("Successfully cloned directories into %s", short_path(clone_path))
-```
 ## File: commands\compile_all.py
 ```python
 """Command to inline bash or powershell into gitlab pipeline yaml."""
@@ -4758,6 +4826,7 @@ import io
 import logging
 import multiprocessing
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -5214,7 +5283,14 @@ def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to
     )
 
 
-def diff_stats(diff_text: str) -> tuple[int, int, int]:
+@dataclass(frozen=True)
+class DiffStats:
+    changed: int
+    insertions: int
+    deletions: int
+
+
+def diff_stats(diff_text: str) -> DiffStats:
     """Compute (changed_lines, insertions, deletions) from unified diff text.
 
     We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
@@ -5231,7 +5307,7 @@ def diff_stats(diff_text: str) -> tuple[int, int, int]:
             ins += 1
         elif line.startswith("-"):
             del_ += 1
-    return ins + del_, ins, del_
+    return DiffStats(changed=ins + del_, insertions=ins, deletions=del_)
 
 
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
@@ -5252,8 +5328,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             diff_text = unified_diff(
                 normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
             )
-            changed, ins, rem = diff_stats(diff_text)
-            logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
+            different = diff_stats(diff_text)
+            logger.info(
+                f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions})."
+            )
             logger.debug(diff_text)
             return True
         logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")
@@ -5331,13 +5409,13 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         diff_text = unified_diff(
             normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
         )
-        changed, ins, rem = diff_stats(diff_text)
+        different = diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
             short_path(output_file),
-            changed,
-            ins,
-            rem,
+            different.changed,
+            different.insertions,
+            different.deletions,
         )
         logger.debug(diff_text)
 
@@ -5484,6 +5562,7 @@ import re
 import sys
 from pathlib import Path
 
+from bash2gitlab.exceptions import Bash2GitlabError
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
 
@@ -5511,11 +5590,11 @@ PRAGMA_REGEX = re.compile(
 )
 
 
-class SourceSecurityError(RuntimeError):
+class SourceSecurityError(Bash2GitlabError):
     pass
 
 
-class PragmaError(ValueError):
+class PragmaError(Bash2GitlabError):
     """Custom exception for pragma parsing errors."""
 
 
@@ -5778,58 +5857,7 @@ def inline_bash_source(
 ```
 ## File: commands\compile_detct_last_change.py
 ```python
-# """Example integration of InputChangeDetector with run_compile_all function."""
-#
-# from pathlib import Path
-# import logging
-# from bash2gitlab.commands.input_change_detector import InputChangeDetector, needs_compilation, mark_compilation_complete
-#
-# logger = logging.getLogger(__name__)
 
-
-# # Command line integration example
-# def add_change_detection_args(parser):
-#     """Add change detection arguments to argument parser."""
-#     parser.add_argument(
-#         '--force',
-#         action='store_true',
-#         help='Force compilation even if no input changes detected'
-#     )
-#     parser.add_argument(
-#         '--check-only',
-#         action='store_true',
-#         help='Only check if compilation is needed, do not compile'
-#     )
-#     parser.add_argument(
-#         '--list-changed',
-#         action='store_true',
-#         help='List files that have changed since last compilation'
-#     )
-#
-#
-# def handle_change_detection_commands(args, uncompiled_path: Path) -> bool:
-#     """Handle change detection specific commands. Returns True if command was handled."""
-#
-#     if args.check_only:
-#         if needs_compilation(uncompiled_path):
-#             print("Compilation needed: input files have changed")
-#             return True
-#         else:
-#             print("No compilation needed: no input changes detected")
-#             return True
-#
-#     if args.list_changed:
-#         from bash2gitlab.commands.input_change_detector import get_changed_files
-#         changed = get_changed_files(uncompiled_path)
-#         if changed:
-#             print("Changed files since last compilation:")
-#             for file_path in changed:
-#                 print(f"  {file_path}")
-#         else:
-#             print("No files have changed since last compilation")
-#         return True
-#
-#     return False
 ```
 ## File: commands\compile_not_bash.py
 ```python
@@ -6094,6 +6122,225 @@ def maybe_inline_interpreter_command(line: str, scripts_root: Path) -> tuple[lis
     end_marker = "# <<< END inline"
     logger.debug("Inlining interpreter command '%s' (%d chars).", shown, len(code))
     return [begin_marker, inlined_cmd, end_marker], target_file
+```
+## File: commands\copy2local.py
+```python
+"""A command to copy just some of a centralized repo's bash commands to a local repo for debugging."""
+
+from __future__ import annotations
+
+import logging
+import shutil
+import subprocess  # nosec: B404
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
+from pathlib import Path
+
+from bash2gitlab.utils.utils import short_path
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["fetch_repository_archive", "clone_repository_ssh"]
+
+
+def fetch_repository_archive(
+    repo_url: str, branch: str, source_dir: Path, clone_path: Path, dry_run: bool = False
+) -> None:
+    """Fetches and extracts a specific directory from a repository archive.
+
+    This function avoids using Git by downloading the repository as a ZIP archive.
+    It unpacks the archive to a temporary location, copies the requested
+    source directory to the final destination, and cleans up all temporary
+    files upon completion or in case of an error.
+
+    Args:
+        repo_url: The base URL of the repository (e.g., 'https://github.com/user/repo').
+        branch: The name of the branch to download (e.g., 'main', 'develop').
+        source_dir: A single directory path (relative to the repo root) to
+            extract and copy to the clone_dir.
+        clone_path: The destination directory. This directory must be empty.
+        dry_run: Simulate action
+
+    Raises:
+        FileExistsError: If the clone_dir exists and is not empty.
+        ConnectionError: If the specified branch archive cannot be found, accessed,
+            or if a network error occurs.
+        IOError: If the downloaded archive is empty or has an unexpected
+            file structure.
+        TypeError: If the repository URL does not use an http/https protocol.
+        Exception: Propagates other exceptions from network, file, or
+            archive operations after attempting to clean up.
+    """
+    logger.debug(
+        "Fetching archive for repo %s (branch: %s) into %s with dir %s",
+        repo_url,
+        branch,
+        clone_path,
+        source_dir,
+    )
+
+    # 1. Validate that the destination directory is empty.
+    if clone_path.exists() and any(clone_path.iterdir()):
+        raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
+    # Ensure the directory exists, but don't error if it's already there (as long as it's empty)
+    if not dry_run:
+        clone_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Use a temporary directory that cleans itself up automatically.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            archive_path = temp_path / "repo.zip"
+            unzip_root = temp_path / "unzipped"
+            if not dry_run:
+                unzip_root.mkdir()
+
+            # 2. Construct the archive URL and check for its existence.
+            archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
+            if not archive_url.startswith("http"):
+                raise TypeError(f"Expected http or https protocol, got {archive_url}")
+
+            try:
+                # Use a simple open to verify existence without a full download.
+                # URL is constructed from trusted inputs in this context.
+                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec: B310
+                    # The 'with' block itself confirms a 2xx status.
+                    logger.info("Confirmed repository archive exists at: %s", archive_url)
+            except urllib.error.HTTPError as e:
+                # Re-raise with a more specific message for clarity.
+                raise ConnectionError(
+                    f"Could not find archive for branch '{branch}' at '{archive_url}'. Please check the repository URL and branch name. (HTTP Status: {e.code})"
+                ) from e
+            except urllib.error.URLError as e:
+                raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
+
+            logger.info("Downloading archive to %s", archive_path)
+            # URL is validated above.
+            if not dry_run:
+                urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
+
+            # 3. Unzip the downloaded archive.
+            logger.info("Extracting archive to %s", unzip_root)
+            if dry_run:
+                # Nothing left meaningful to dry run
+                return
+
+            with zipfile.ZipFile(archive_path, "r") as zf:
+                zf.extractall(unzip_root)
+
+            # The archive usually extracts into a single sub-directory (e.g., 'repo-name-main').
+            # We need to find this directory to locate the source files.
+            extracted_items = list(unzip_root.iterdir())
+            if not extracted_items:
+                raise OSError("Archive is empty.")
+
+            # Find the single root directory within the extracted files.
+            source_repo_root = None
+            if len(extracted_items) == 1 and extracted_items[0].is_dir():
+                source_repo_root = extracted_items[0]
+            else:
+                # Fallback for archives that might not have a single root folder.
+                logger.warning("Archive does not contain a single root directory. Using extraction root.")
+                source_repo_root = unzip_root
+
+            # 4. Copy the specified directory to the final destination.
+            logger.info("Copying specified directories to final destination.")
+
+            repo_source_dir = source_repo_root / source_dir
+            dest_dir = clone_path
+
+            if repo_source_dir.is_dir():
+                logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
+                # FIX: Use the correct source path `repo_source_dir` for the copy operation.
+                shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
+            else:
+                logger.warning("Directory '%s' not found in repository archive, skipping.", repo_source_dir)
+
+    except Exception as e:
+        logger.error("Operation failed: %s. Cleaning up destination directory.", e)
+        # 5. Clean up the destination on any failure.
+        shutil.rmtree(clone_path, ignore_errors=True)
+        # Re-raise the exception to notify the caller of the failure.
+        raise
+
+    logger.info("Successfully fetched directories into %s", clone_path)
+
+
+def clone_repository_ssh(repo_url: str, branch: str, source_dir: Path, clone_path: Path, dry_run: bool = False) -> None:
+    """Clones a repo via Git and copies a specific directory.
+
+    This function is designed for SSH or authenticated HTTPS URLs that require
+    local Git and credential management (e.g., SSH keys). It performs an
+    efficient, shallow clone of a specific branch into a temporary directory,
+    then copies the requested source directory to the final destination.
+
+    Args:
+        repo_url: The repository URL (e.g., 'git@github.com:user/repo.git').
+        branch: The name of the branch to check out (e.g., 'main', 'develop').
+        source_dir: A single directory path (relative to the repo root) to copy.
+        clone_path: The destination directory. This directory must be empty.
+        dry_run: Simulate action
+
+    Raises:
+        FileExistsError: If the clone_dir exists and is not empty.
+        subprocess.CalledProcessError: If any Git command fails.
+        Exception: Propagates other exceptions from file operations after
+            attempting to clean up.
+    """
+    logger.debug(
+        "Cloning repo %s (branch: %s) into %s with source dir %s",
+        repo_url,
+        branch,
+        clone_path,
+        source_dir,
+    )
+
+    # 1. Validate that the destination directory is empty.
+    if clone_path.exists() and any(clone_path.iterdir()):
+        raise FileExistsError(f"Destination directory '{clone_path}' exists and is not empty.")
+    if not dry_run:
+        clone_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        # Use a temporary directory for the full clone, which will be auto-cleaned.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_clone_path = Path(temp_dir)
+            logger.info("Cloning '%s' to temporary location: %s", repo_url, short_path(temp_clone_path))
+
+            # 2. Clone the repository.
+            # We clone the specific branch directly to be more efficient.
+            # repo_url is a variable, but is intended to be a trusted source.
+            command = ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)]
+            if dry_run:
+                logger.info(f"Would have run {' '.join(command)}")
+            else:
+                subprocess.run(  # nosec: B603, B607
+                    ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_clone_path)],
+                    check=True,
+                    capture_output=True,  # Capture stdout/stderr to hide git's noisy output
+                )
+
+            logger.info("Clone successful. Copying specified directories.")
+            # 3. Copy the specified directory to the final destination.
+            repo_source_dir = temp_clone_path / source_dir
+            dest_dir = clone_path
+
+            if repo_source_dir.is_dir():
+                logger.debug("Copying '%s' to '%s'", short_path(repo_source_dir), short_path(dest_dir))
+                shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
+            elif not dry_run:
+                logger.warning("Directory '%s' not found in repository, skipping.", short_path(source_dir))
+
+    except Exception as e:
+        logger.error("Operation failed: %s. Cleaning up destination directory.", e)
+        # 4. Clean up the destination on any failure.
+        shutil.rmtree(clone_path, ignore_errors=True)
+        # Re-raise the exception to notify the caller of the failure.
+        raise
+
+    logger.info("Successfully cloned directories into %s", short_path(clone_path))
 ```
 ## File: commands\decompile_all.py
 ```python
@@ -6866,27 +7113,42 @@ def run_detect_drift(
 ```python
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
 import re
 import shutil
 import subprocess  # nosec
 from pathlib import Path
 
-from bash2gitlab.commands.clean_all import list_stray_files as list_stray_output_files
-from bash2gitlab.commands.graph_all import find_script_references_in_node
+from bash2gitlab.commands.detect_drift import run_detect_drift
+from bash2gitlab.commands.doctor_checks import (
+    check_directory_overlap,
+    check_for_large_scripts,
+    check_lint_config_validity,
+    check_map_source_paths_exist,
+    check_precommit_hook_status,
+    list_active_plugins,
+)
+from bash2gitlab.commands.input_change_detector import needs_compilation
+from bash2gitlab.commands.map_commit import run_commit_map
 from bash2gitlab.config import config
 from bash2gitlab.utils.terminal_colors import Colors
-from bash2gitlab.utils.yaml_factory import get_yaml
+from bash2gitlab.utils.utils import short_path
+from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["run_doctor"]
 
 
-def check(message: str, success: bool) -> bool:
-    """Prints a formatted check message and returns the success status."""
+def check(message: str, success: bool, details: list[str] | None = None) -> bool:
+    """Prints a check message with a status and optional details."""
     status = f"{Colors.OKGREEN}✔ OK{Colors.ENDC}" if success else f"{Colors.FAIL}✖ FAILED{Colors.ENDC}"
     print(f"  [{status}] {message}")
+    if details:
+        for detail in details:
+            print(f"    {Colors.WARNING}  -> {detail}{Colors.ENDC}")
     return success
 
 
@@ -6902,62 +7164,75 @@ def get_command_version(cmd: str) -> str:
             check=True,
             timeout=5,
         )
-        # Get the first line of output and strip whitespace
         return result.stdout.splitlines()[0].strip()
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+    except Exception as e:
         logger.debug(f"Could not get version for {cmd}: {e}")
         return f"{Colors.FAIL}Error checking version{Colors.ENDC}"
 
 
-def find_unreferenced_source_files(uncompiled_path: Path) -> set[Path]:
-    """Finds script files in the source directory that are not referenced by any YAML."""
-    root_path = uncompiled_path.resolve()
-    all_scripts = set(root_path.rglob("*.sh")) | set(root_path.rglob("*.py"))
-    referenced_scripts: set[Path] = set()
-    # processed_scripts: set[Path] = set()  # To avoid cycles in script parsing
+def find_unreferenced_scripts(input_path: Path) -> list[Path]:
+    """
+    Finds script files in the input directory that do not appear to be referenced
+    by any YAML files.
+    """
+    if not input_path.is_dir():
+        return []
 
-    yaml_parser = get_yaml()
-    template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
+    all_yaml_content = ""
+    yaml_files = list(input_path.rglob("*.yml")) + list(input_path.rglob("*.yaml"))
+    for yaml_file in yaml_files:
+        all_yaml_content += yaml_file.read_text(encoding="utf-8")
 
-    # Build a set of all referenced scripts by adapting graph logic
-    for yaml_path in template_files:
-        try:
-            content = yaml_path.read_text("utf-8")
-            yaml_data = yaml_parser.load(content)
-            if yaml_data:
-                # Dummy graph, we only care about the side effect on referenced_scripts
-                dummy_graph: dict[Path, set[Path]] = {}
-                find_script_references_in_node(
-                    yaml_data, yaml_path, root_path, dummy_graph, processed_scripts=referenced_scripts
+    unreferenced = []
+    script_patterns = ["*.sh", "*.bash", "*.py", "*.rb", "*.js", "*.ps1"]
+    for pattern in script_patterns:
+        for script_file in input_path.rglob(pattern):
+            if script_file.name not in all_yaml_content:
+                unreferenced.append(script_file)
+
+    return unreferenced
+
+
+def check_yaml_validity(path: Path) -> list[str]:
+    """Validates all YAML files in a directory against the GitLab CI schema."""
+    if not path.is_dir():
+        return [f"Directory not found: {short_path(path)}"]
+
+    validator = GitLabCIValidator()
+    failures = []
+    yaml_files = list(path.rglob("*.yml")) + list(path.rglob("*.yaml"))
+
+    if not yaml_files:
+        return []
+
+    for yaml_file in yaml_files:
+        content = yaml_file.read_text("utf-8")
+        is_valid, errors = validator.validate_ci_config(content)
+        if not is_valid:
+            failures.append(f"Invalid schema in {short_path(yaml_file)}: {errors[0]}")
+    return failures
+
+
+def check_map_commit_status() -> list[str]:
+    """Performs a dry-run of 'commit-map' to find uncommitted changes."""
+    if not config.map_folders:
+        return []
+
+    output_capture = io.StringIO()
+    with contextlib.redirect_stdout(output_capture):
+        run_commit_map(config.map_folders, dry_run=True, force=False)
+
+    output = output_capture.getvalue()
+    uncommitted_changes = []
+    for line in output.splitlines():
+        if "Creating:" in line or "Updating:" in line:
+            match = re.search(r"(Creating|Updating): '([^']*)'", line)
+            if match:
+                uncommitted_changes.append(
+                    f"Uncommitted change in deployed file corresponding to {short_path(Path(match.group(2)))}"
                 )
 
-        except Exception:  # nosec
-            # Ignore parsing errors, focus is on finding valid references
-            pass
-
-    # The above only adds the top-level scripts. Now, find sourced scripts.
-    scripts_to_scan = list(referenced_scripts)
-    scanned_for_source: set[Path] = set()
-
-    while scripts_to_scan:
-        script = scripts_to_scan.pop(0)
-        if script in scanned_for_source or not script.is_file():
-            continue
-        scanned_for_source.add(script)
-        try:
-            content = script.read_text("utf-8")
-            for line in content.splitlines():
-                match = re.search(r"^\s*(?:source|\.)\s+([\w./\\-]+)", line)
-                if match:
-                    sourced_path = (script.parent / match.group(1)).resolve()
-                    if sourced_path.is_file() and sourced_path not in referenced_scripts:
-                        referenced_scripts.add(sourced_path)
-                        scripts_to_scan.append(sourced_path)
-
-        except Exception:  # nosec
-            pass
-
-    return all_scripts - referenced_scripts
+    return uncommitted_changes
 
 
 def run_doctor() -> int:
@@ -6965,63 +7240,275 @@ def run_doctor() -> int:
     print(f"{Colors.BOLD}🩺 Running bash2gitlab doctor...{Colors.ENDC}\n")
     issues_found = 0
 
+    def flag_issue():
+        nonlocal issues_found
+        issues_found += 1
+
     # --- Configuration Checks ---
     print(f"{Colors.BOLD}Configuration:{Colors.ENDC}")
     input_dir_str = config.input_dir
     output_dir_str = config.output_dir
 
-    if check("Input directory is configured", bool(input_dir_str)):
-        input_dir = Path(input_dir_str or "")
-        if not check(f"Input directory exists: '{input_dir}'", input_dir.is_dir()):
-            issues_found += 1
-    else:
-        issues_found += 1
+    if not check("Input directory is configured (`input_dir`)", bool(input_dir_str)):
+        flag_issue()
+    if not check("Output directory is configured (`output_dir`)", bool(output_dir_str)):
+        flag_issue()
 
-    if check("Output directory is configured", bool(output_dir_str)):
-        output_dir = Path(output_dir_str or "")
-        if not check(f"Output directory exists: '{output_dir}'", output_dir.is_dir()):
-            print(f"  {Colors.WARNING}  -> Note: This is not an error if you haven't compiled yet.{Colors.ENDC}")
-    else:
-        issues_found += 1
+    if issues_found > 0:
+        print(f"\n{Colors.FAIL}Core configuration missing. Halting further checks.{Colors.ENDC}")
+        return 1
 
-    # --- External Dependencies ---
-    print(f"\n{Colors.BOLD}External Dependencies:{Colors.ENDC}")
+    input_dir = Path(input_dir_str or "")
+    output_dir = Path(output_dir_str or "")
+
+    if not check(f"Input directory exists: '{short_path(input_dir)}'", input_dir.is_dir()):
+        flag_issue()
+    if not check(f"Output directory exists: '{short_path(output_dir)}'", output_dir.is_dir()):
+        print(f"  {Colors.WARNING}  -> Note: This is normal if you haven't compiled yet.{Colors.ENDC}")
+
+    overlap_warnings = check_directory_overlap(input_dir, output_dir)
+    if not check("Input and output directories do not overlap", not overlap_warnings, overlap_warnings):
+        flag_issue()
+
+    map_source_errors = check_map_source_paths_exist()
+    if not check("All 'map' source directories exist", not map_source_errors, map_source_errors):
+        flag_issue()
+
+    # --- Integrity and State Checks ---
+    print(f"\n{Colors.BOLD}Project State & Integrity:{Colors.ENDC}")
+
+    if needs_compilation(input_dir):
+        check(
+            "Source files are in sync with compiled output",
+            False,
+            ["Uncompiled changes detected. Run `bash2gitlab compile`."],
+        )
+        flag_issue()
+    else:
+        check("Source files are in sync with compiled output", True)
+
+    drift_code = run_detect_drift(output_dir)
+    if not check("No manual edits (drift) detected in output folder", drift_code == 0):
+        flag_issue()
+
+    uncommitted_map_changes = check_map_commit_status()
+    if not check("No uncommitted changes in mapped directories", not uncommitted_map_changes, uncommitted_map_changes):
+        flag_issue()
+
+    # --- Sanity Checks ---
+    print(f"\n{Colors.BOLD}Sanity Checks:{Colors.ENDC}")
+
+    unreferenced = find_unreferenced_scripts(input_dir)
+    details = [f"Script not referenced in any YAML: {short_path(p)}" for p in unreferenced]
+    if not check("All script files appear to be referenced", not unreferenced, details):
+        flag_issue()
+
+    large_script_warnings = check_for_large_scripts(input_dir)
+    if not check("No excessively large script files found", not large_script_warnings, large_script_warnings):
+        # This is a warning, not a failure
+        pass
+
+    input_yaml_errors = check_yaml_validity(input_dir)
+    if not check(
+        "Input directory YAML files are valid against GitLab schema", not input_yaml_errors, input_yaml_errors
+    ):
+        flag_issue()
+
+    output_yaml_errors = check_yaml_validity(output_dir)
+    if not check(
+        "Output directory YAML files are valid against GitLab schema", not output_yaml_errors, output_yaml_errors
+    ):
+        flag_issue()
+
+    # --- Environment Checks ---
+    print(f"\n{Colors.BOLD}Environment & Tooling:{Colors.ENDC}")
+
+    precommit_status, precommit_details = check_precommit_hook_status(Path.cwd())
+    if not check(
+        f"Pre-commit hook status: {precommit_status}",
+        precommit_status in ["Installed", "Not Installed"],
+        precommit_details,
+    ):
+        flag_issue()
+
+    lint_warnings = check_lint_config_validity()
+    if not check("Lint configuration is valid and reachable", not lint_warnings, lint_warnings):
+        flag_issue()
+
+    plugins = list_active_plugins()
+    check("Checking for active plugins", True, plugins if plugins else ["No third-party plugins found."])
+
     print(f"  - Bash version: {get_command_version('bash')}")
     print(f"  - Git version:  {get_command_version('git')}")
     print(f"  - PowerShell:   {get_command_version('pwsh')}")
-
-    # --- Project Health ---
-    print(f"\n{Colors.BOLD}Project Health:{Colors.ENDC}")
-    if input_dir_str and Path(input_dir_str).is_dir():
-        unreferenced_files = find_unreferenced_source_files(Path(input_dir_str))
-        if unreferenced_files:
-            issues_found += 1
-            check("No unreferenced script files in source directory", False)
-            for f in sorted(unreferenced_files):
-                print(f"    {Colors.WARNING}  -> Stray source file: {f.relative_to(input_dir_str)}{Colors.ENDC}")
-        else:
-            check("No unreferenced script files in source directory", True)
-
-    if output_dir_str and Path(output_dir_str).is_dir():
-        stray_files = list_stray_output_files(Path(output_dir_str))
-        if stray_files:
-            issues_found += 1
-            check("No unhashed/stray files in output directory", False)
-            for f in sorted(stray_files):
-                print(f"    {Colors.WARNING}  -> Stray output file: {f.relative_to(output_dir_str)}{Colors.ENDC}")
-        else:
-            check("No unhashed/stray files in output directory", True)
 
     # --- Summary ---
     print("-" * 40)
     if issues_found == 0:
         print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ All checks passed. Your project looks healthy!{Colors.ENDC}")
         return 0
+    else:
+        print(
+            f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
+        )
+        return 1
 
-    print(
-        f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
-    )
-    return 1
+
+if __name__ == "__main__":
+    run_doctor()
+```
+## File: commands\doctor_checks.py
+```python
+from __future__ import annotations
+
+import logging
+import os
+import urllib.error
+import urllib.request
+from pathlib import Path
+from typing import Literal
+
+from bash2gitlab.commands.precommit import HOOK_CONTENT, hook_hash, hook_path
+from bash2gitlab.config import config
+from bash2gitlab.plugins import get_pm
+from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.utils import short_path
+
+logger = logging.getLogger(__name__)
+
+# A reasonably large size that might cause issues with inlining.
+# Corresponds to MAX_INLINE_LEN in compile_not_bash.py
+LARGE_SCRIPT_THRESHOLD_BYTES = 16000
+
+PrecommitStatus = Literal["Installed", "Not Installed", "Foreign Hook", "Error"]
+
+
+def list_active_plugins() -> list[str]:
+    """
+    Lists the names of all registered pluggy plugins, excluding the built-in default.
+    """
+    pm = get_pm()
+    plugins = []
+    for plugin in pm.get_plugins():
+        name = getattr(plugin, "__name__", str(plugin))
+        # Exclude the built-in default plugin from the user-facing list
+        if name != "bash2gitlab.builtin_plugins.Defaults":
+            plugins.append(name)
+    return plugins
+
+
+def check_directory_overlap(input_dir: Path, output_dir: Path) -> list[str]:
+    """
+    Checks if the input and output directories overlap, which could cause issues.
+    """
+    warnings = []
+    try:
+        if is_relative_to(output_dir.resolve(), input_dir.resolve()):
+            warnings.append(f"Output directory '{short_path(output_dir)}' is inside the input directory.")
+        if is_relative_to(input_dir.resolve(), output_dir.resolve()):
+            warnings.append(f"Input directory '{short_path(input_dir)}' is inside the output directory.")
+    except Exception as e:
+        # This can happen if one of the paths doesn't exist, which is handled by another check.
+        logger.debug(f"Could not check directory overlap: {e}")
+    return warnings
+
+
+def check_precommit_hook_status(repo_root: Path) -> tuple[PrecommitStatus, list[str]]:
+    """
+    Checks the status of the bash2gitlab pre-commit hook.
+    """
+    try:
+        h_path = hook_path(repo_root)
+        if not h_path.exists():
+            return "Not Installed", []
+
+        content = h_path.read_text(encoding="utf-8")
+        if hook_hash(content) == hook_hash(HOOK_CONTENT):
+            return "Installed", [f"Hook found at: {short_path(h_path)}"]
+        else:
+            return "Foreign Hook", [
+                f"A non-bash2gitlab hook exists at: {short_path(h_path)}",
+                "Run `install-precommit --force` to overwrite it.",
+            ]
+    except Exception as e:
+        return "Error", [f"Could not check git hooks directory: {e}"]
+
+
+def check_map_source_paths_exist() -> list[str]:
+    """
+    Verifies that all source directories specified in the [tool.bash2gitlab.map]
+    configuration exist.
+    """
+    warnings = []
+    deployment_map = config.map_folders
+    if not deployment_map:
+        return []
+
+    for source_base in deployment_map.keys():
+        source_path = Path(source_base)
+        if not source_path.is_dir():
+            warnings.append(f"Source directory from 'map' config does not exist: {short_path(source_path)}")
+    return warnings
+
+
+def check_lint_config_validity() -> list[str]:
+    """
+    Validates the GitLab URL, project ID, and token for the lint command.
+    """
+    gitlab_url = config.lint_gitlab_url
+    project_id = config.lint_project_id
+    token = os.environ.get("GITLAB_PRIVATE_TOKEN")  # Tokens are often in env
+
+    if not project_id or not gitlab_url:
+        return ["Linting with `project_id` is recommended for better accuracy but is not configured."]
+
+    api_url = f"{gitlab_url.rstrip('/')}/api/v4/projects/{project_id}"
+    headers = {"User-Agent": "bash2gitlab-doctor/1.0"}
+    if token:
+        headers["PRIVATE-TOKEN"] = token
+
+    req = urllib.request.Request(api_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:  # nosec
+            if response.status == 200:
+                return []  # Success
+            else:
+                return [f"GitLab API returned status {response.status} for project {project_id}."]
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return [f"Project with ID '{project_id}' not found at {gitlab_url}."]
+        if e.code == 401:
+            return ["Authentication failed (401 Unauthorized). Check your token."]
+        return [f"GitLab API request failed with HTTP status {e.code}."]
+    except (urllib.error.URLError, TimeoutError) as e:
+        return [f"Could not connect to GitLab instance at '{gitlab_url}': {e}"]
+    except Exception as e:
+        return [f"An unexpected error occurred while checking GitLab connectivity: {e}"]
+
+
+def check_for_large_scripts(input_dir: Path) -> list[str]:
+    """
+    Scans for script files that are unusually large, which might cause performance
+    issues or hit YAML size limits when inlined.
+    """
+    warnings = []
+    if not input_dir.is_dir():
+        return []
+
+    script_patterns = ["*.sh", "*.bash", "*.py", "*.rb", "*.js", "*.ps1"]
+    for pattern in script_patterns:
+        for script_file in input_dir.rglob(pattern):
+            try:
+                size = script_file.stat().st_size
+                if size > LARGE_SCRIPT_THRESHOLD_BYTES:
+                    warnings.append(
+                        f"Large script file found: {short_path(script_file)} ({size / 1024:.1f} KB). "
+                        f"This may impact performance or YAML readability when inlined."
+                    )
+            except FileNotFoundError:
+                # File might be a broken symlink, ignore.
+                continue
+    return warnings
 ```
 ## File: commands\graph_all.py
 ```python
@@ -7030,16 +7517,19 @@ from __future__ import annotations
 import logging
 import os
 import webbrowser
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
 try:
-    import matplotlib.pyplot as plt
-    import networkx as nx
-    from graphviz import Source
-    from pyvis.network import Network
+    import matplotlib.pyplot as plt  # noqa
+    import networkx as nx  # noqa
+    from graphviz import Source  # noqa
+    from pyvis.network import Network  # noqa
 except ModuleNotFoundError:
-    pass
+    # Optional render backends; handled at runtime in _auto_pick / render_graph
+    pass  # nosec
+
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX
@@ -7052,6 +7542,36 @@ from bash2gitlab.utils.yaml_factory import get_yaml
 logger = logging.getLogger(__name__)
 
 __all__ = ["generate_dependency_graph", "find_script_references_in_node"]
+
+# =============================
+# Data model
+# =============================
+
+
+@dataclass
+class GraphModel:
+    """Container for all graph artifacts.
+
+    Attributes:
+        root_path: Project root where we scan for YAML and scripts.
+        graph: Mapping of source file → set of dependency Paths.
+        processed_scripts: Set of scripts that were recursively traced.
+        yaml_files: Set of YAML files discovered.
+        dot_output: DOT language string representing the dependency graph.
+        last_render_path: Path to the most recent rendered artifact (if any).
+    """
+
+    root_path: Path
+    graph: dict[Path, set[Path]] = field(default_factory=dict)
+    processed_scripts: set[Path] = field(default_factory=set)
+    yaml_files: set[Path] = field(default_factory=set)
+    dot_output: str | None = None
+    last_render_path: Path | None = None
+
+
+# =============================
+# DOT formatting
+# =============================
 
 
 def format_dot_output(graph: dict[Path, set[Path]], root_path: Path) -> str:
@@ -7104,6 +7624,11 @@ def format_dot_output(graph: dict[Path, set[Path]], root_path: Path) -> str:
     return "\n".join(dot_lines)
 
 
+# =============================
+# YAML/script parsing
+# =============================
+
+
 def parse_shell_script_dependencies(
     script_path: Path,
     root_path: Path,
@@ -7130,7 +7655,9 @@ def parse_shell_script_dependencies(
                 sourced_path = (script_path.parent / sourced_script_name).resolve()
 
                 if not is_relative_to(sourced_path, root_path):
-                    logger.error(f"Refusing to trace source '{sourced_path}': escapes allowed root '{root_path}'.")
+                    logger.error(
+                        f"Refusing to trace source '{short_path(sourced_path)}': escapes allowed root '{root_path}'."
+                    )
                     continue
 
                 graph[script_path].add(sourced_path)
@@ -7167,6 +7694,57 @@ def find_script_references_in_node(
             parse_shell_script_dependencies(script_path, root_path, graph, processed_scripts)
 
 
+# =============================
+# Build phase (no rendering)
+# =============================
+
+
+def build_graph(uncompiled_path: Path) -> GraphModel:
+    """Scan YAML + scripts and construct a :class:`GraphModel`.
+
+    This function performs *no* rendering. Use :func:`render_graph` to export.
+    """
+    yaml_parser = get_yaml()
+    root_path = uncompiled_path.resolve()
+
+    model = GraphModel(root_path=root_path)
+    logger.info("Starting dependency graph generation in: %s", short_path(root_path))
+
+    model.yaml_files = set(root_path.rglob("*.yml")) | set(root_path.rglob("*.yaml"))
+    if not model.yaml_files:
+        logger.warning("No YAML files found in %s", root_path)
+        model.dot_output = ""
+        return model
+
+    for yaml_path in sorted(model.yaml_files):
+        logger.debug("Parsing YAML file: %s", yaml_path)
+        model.graph.setdefault(yaml_path, set())
+        try:
+            content = yaml_path.read_text("utf-8")
+            yaml_data = yaml_parser.load(content)
+            if yaml_data:
+                find_script_references_in_node(yaml_data, yaml_path, root_path, model.graph, model.processed_scripts)
+        except YAMLError as e:
+            logger.error("Failed to parse YAML file %s: %s", yaml_path, e)
+        except Exception as e:  # pragma: no cover (filesystem/env dependent)
+            logger.error("An unexpected error occurred with %s: %s", yaml_path, e)
+
+    logger.info(
+        "Found %d source files and traced %d script dependencies.",
+        len(model.graph),
+        len(model.processed_scripts),
+    )
+
+    model.dot_output = format_dot_output(model.graph, model.root_path)
+    logger.info("Successfully generated DOT graph output.")
+    return model
+
+
+# =============================
+# Render phase (export artifact)
+# =============================
+
+
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
     src = Source(dot_output)
     out_file = src.render(
@@ -7180,6 +7758,7 @@ def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
 
 def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
     # Pure-Python interactive HTML (vis.js)
+    from pyvis.network import Network  # type: ignore
 
     html_path = Path.cwd() / f"{filename_base}.html"
     net = Network(height="750px", width="100%", directed=True, cdn_resources="in_line")
@@ -7211,6 +7790,9 @@ def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_b
 
 
 def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
+    import networkx as nx  # type: ignore
+    from matplotlib import pyplot as plt  # type: ignore
+
     out_path = Path.cwd() / f"{filename_base}.svg"
     G = nx.DiGraph()
 
@@ -7244,117 +7826,210 @@ def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filenam
     return out_path
 
 
+def _auto_pick_renderer() -> Literal["graphviz", "pyvis", "networkx", "none"]:
+    try:
+        import graphviz  # type: ignore  # noqa: F401
+
+        return "graphviz"
+    except Exception:
+        try:
+            import pyvis  # type: ignore  # noqa: F401
+
+            return "pyvis"
+        except Exception:
+            try:
+                import matplotlib  # type: ignore  # noqa: F401
+                import networkx  # type: ignore  # noqa: F401
+
+                return "networkx"
+            except Exception:
+                return "none"
+
+
+def render_graph(
+    model: GraphModel,
+    renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
+    *,
+    open_in_browser: bool = True,
+    filename_base: str | None = None,
+) -> Path:
+    """Render a :class:`GraphModel` to disk using the requested backend.
+
+    Returns the file path of the generated artifact.
+    """
+    if model.dot_output is None:
+        model.dot_output = format_dot_output(model.graph, model.root_path)
+
+    base = filename_base or f"dependency-graph-{model.root_path.name}".replace(" ", "_")
+    chosen: Literal["graphviz", "pyvis", "networkx", "none"]
+    chosen = _auto_pick_renderer() if renderer == "auto" else renderer  # type: ignore
+
+    try:
+        # pyvis needs utf-8 but doesn't explicitly set it so it fails on Windows.
+        with temporary_env_var("PYTHONUTF8", "1"):
+            if chosen == "graphviz":
+                out_path = _render_with_graphviz(model.dot_output, base)
+            elif chosen == "pyvis":
+                out_path = _render_with_pyvis(model.graph, model.root_path, base)
+            elif chosen == "networkx":
+                out_path = _render_with_networkx(model.graph, model.root_path, base)
+            else:
+                raise RuntimeError(
+                    "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
+                )
+        model.last_render_path = out_path
+        logger.info("Wrote graph to %s", short_path(out_path))
+        if open_in_browser and not os.environ.get("CI"):
+            webbrowser.open(out_path.as_uri())
+        return out_path
+    except Exception as e:  # pragma: no cover - env dependent
+        logger.error("Failed to render or open the graph: %s", e)
+        raise
+
+
+# =============================
+# Convenience wrapper (build + render)
+# =============================
+
+
 def generate_dependency_graph(
     uncompiled_path: Path,
     *,
     open_graph_in_browser: bool = True,
     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
-    attempts: int = 0,
-    renderers_attempted: set[str] | None = None,
 ) -> str:
     """
-    Analyze YAML + scripts to build a dependency graph.
+    Convenience one-shot that builds the graph, renders it, and returns DOT.
 
-    Args:
-        uncompiled_path: Root directory of the uncompiled source files.
-        open_graph_in_browser: If True, write a graph file to CWD and open it.
-        renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
-        attempts: how many renderers attempted
-        renderers_attempted: which were tried
-
-    Returns:
-        DOT graph as a string (stdout responsibility is left to the caller).
+    Note: This returns the DOT string (for stdout or further processing),
+    *and* writes an artifact to disk via :func:`render_graph` when possible.
+    To obtain the path to the artifact, use :func:`build_graph` +
+    :func:`render_graph` directly, or inspect ``GraphModel.last_render_path``.
     """
-    auto_mode = renderer == "auto"
-    graph: dict[Path, set[Path]] = {}
-    processed_scripts: set[Path] = set()
-    yaml_parser = get_yaml()
-    root_path = uncompiled_path.resolve()
+    model = build_graph(uncompiled_path)
+    dot_output = model.dot_output or ""
 
-    logger.info(f"Starting dependency graph generation in: {short_path(root_path)}")
-
-    template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
-    if not template_files:
-        logger.warning(f"No YAML files found in {root_path}")
-        return ""
-
-    for yaml_path in template_files:
-        logger.debug(f"Parsing YAML file: {yaml_path}")
-        graph.setdefault(yaml_path, set())
-        try:
-            content = yaml_path.read_text("utf-8")
-            yaml_data = yaml_parser.load(content)
-            if yaml_data:
-                find_script_references_in_node(yaml_data, yaml_path, root_path, graph, processed_scripts)
-        except YAMLError as e:
-            logger.error(f"Failed to parse YAML file {yaml_path}: {e}")
-        except Exception as e:
-            logger.error(f"An unexpected error occurred with {yaml_path}: {e}")
-
-    logger.info(f"Found {len(graph)} source files and traced {len(processed_scripts)} script dependencies.")
-
-    dot_output = format_dot_output(graph, root_path)
-    logger.info("Successfully generated DOT graph output.")
-
-    if open_graph_in_browser:
-        filename_base = f"dependency-graph-{root_path.name}".replace(" ", "_")
-
-        def _auto_pick() -> str:
-            try:
-                import graphviz  # noqa: F401
-
-                return "graphviz"
-            except Exception:
-                try:
-                    import pyvis  # noqa: F401
-
-                    return "pyvis"
-                except Exception:
-                    try:
-                        import matplotlib  # noqa: F401
-                        import networkx  # noqa: F401
-
-                        return "networkx"
-                    except Exception:
-                        return "none"
-
-        chosen = _auto_pick() if renderer == "auto" else renderer
-
-        try:
-            # pyvis needs utf-8 but doesn't explicitly set it so it fails on Windows.
-            with temporary_env_var("PYTHONUTF8", "1"):
-                if chosen == "graphviz":
-                    # best, but requires additional installation
-                    out_path = _render_with_graphviz(dot_output, filename_base)
-                elif chosen == "pyvis":
-                    # not at godo as graphviz
-                    out_path = _render_with_pyvis(graph, root_path, filename_base)
-                elif chosen == "networkx":
-                    # can be a messy diagram
-                    out_path = _render_with_networkx(graph, root_path, filename_base)
-                else:
-                    raise RuntimeError(
-                        "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
-                    )
-
-            logger.info("Wrote graph to %s", short_path(out_path))
-            if not os.environ.get("CI"):
-                webbrowser.open(out_path.as_uri())
-        except Exception as e:  # pragma: no cover - env dependent
-            logger.error("Failed to render or open the graph: %s", e)
-            if (1 < attempts < 4 and len(renderers_attempted or {}) < 3) or auto_mode:
-                if not renderers_attempted:
-                    renderers_attempted = set()
-                renderers_attempted.add(renderer)
-                attempts += 1
-                return generate_dependency_graph(
-                    uncompiled_path,
-                    open_graph_in_browser=open_graph_in_browser,
-                    attempts=attempts,
-                    renderers_attempted=renderers_attempted,
-                )
+    # Render as a side-effect, if requested
+    try:
+        render_graph(model, renderer=renderer, open_in_browser=open_graph_in_browser)
+    except Exception:
+        # Already logged; still return DOT for callers that only need text
+        pass  # nosec
 
     return dot_output
+
+
+# def generate_dependency_graph(
+#     uncompiled_path: Path,
+#     *,
+#     open_graph_in_browser: bool = True,
+#     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
+#     attempts: int = 0,
+#     renderers_attempted: set[str] | None = None,
+# ) -> str:
+#     """
+#     Analyze YAML + scripts to build a dependency graph.
+#
+#     Args:
+#         uncompiled_path: Root directory of the uncompiled source files.
+#         open_graph_in_browser: If True, write a graph file to CWD and open it.
+#         renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
+#         attempts: how many renderers attempted
+#         renderers_attempted: which were tried
+#
+#     Returns:
+#         DOT graph as a string (stdout responsibility is left to the caller).
+#     """
+#     auto_mode = renderer == "auto"
+#     graph: dict[Path, set[Path]] = {}
+#     processed_scripts: set[Path] = set()
+#     yaml_parser = get_yaml()
+#     root_path = uncompiled_path.resolve()
+#
+#     logger.info(f"Starting dependency graph generation in: {short_path(root_path)}")
+#
+#     template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
+#     if not template_files:
+#         logger.warning(f"No YAML files found in {root_path}")
+#         return ""
+#
+#     for yaml_path in template_files:
+#         logger.debug(f"Parsing YAML file: {yaml_path}")
+#         graph.setdefault(yaml_path, set())
+#         try:
+#             content = yaml_path.read_text("utf-8")
+#             yaml_data = yaml_parser.load(content)
+#             if yaml_data:
+#                 find_script_references_in_node(yaml_data, yaml_path, root_path, graph, processed_scripts)
+#         except YAMLError as e:
+#             logger.error(f"Failed to parse YAML file {yaml_path}: {e}")
+#         except Exception as e:
+#             logger.error(f"An unexpected error occurred with {yaml_path}: {e}")
+#
+#     logger.info(f"Found {len(graph)} source files and traced {len(processed_scripts)} script dependencies.")
+#
+#     dot_output = format_dot_output(graph, root_path)
+#     logger.info("Successfully generated DOT graph output.")
+#
+#     if open_graph_in_browser:
+#         filename_base = f"dependency-graph-{root_path.name}".replace(" ", "_")
+#
+#         def _auto_pick() -> str:
+#             try:
+#                 import graphviz  # noqa: F401
+#
+#                 return "graphviz"
+#             except Exception:
+#                 try:
+#                     import pyvis  # noqa: F401
+#
+#                     return "pyvis"
+#                 except Exception:
+#                     try:
+#                         import matplotlib  # noqa: F401
+#                         import networkx  # noqa: F401
+#
+#                         return "networkx"
+#                     except Exception:
+#                         return "none"
+#
+#         chosen = _auto_pick() if renderer == "auto" else renderer
+#
+#         try:
+#             # pyvis needs utf-8 but doesn't explicitly set it so it fails on Windows.
+#             with temporary_env_var("PYTHONUTF8", "1"):
+#                 if chosen == "graphviz":
+#                     # best, but requires additional installation
+#                     out_path = _render_with_graphviz(dot_output, filename_base)
+#                 elif chosen == "pyvis":
+#                     # not at godo as graphviz
+#                     out_path = _render_with_pyvis(graph, root_path, filename_base)
+#                 elif chosen == "networkx":
+#                     # can be a messy diagram
+#                     out_path = _render_with_networkx(graph, root_path, filename_base)
+#                 else:
+#                     raise RuntimeError(
+#                         "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
+#                     )
+#
+#             logger.info("Wrote graph to %s", short_path(out_path))
+#             if not os.environ.get("CI"):
+#                 webbrowser.open(out_path.as_uri())
+#         except Exception as e:  # pragma: no cover - env dependent
+#             logger.error("Failed to render or open the graph: %s", e)
+#             if (1 < attempts < 4 and len(renderers_attempted or {}) < 3) or auto_mode:
+#                 if not renderers_attempted:
+#                     renderers_attempted = set()
+#                 renderers_attempted.add(renderer)
+#                 attempts += 1
+#                 return generate_dependency_graph(
+#                     uncompiled_path,
+#                     open_graph_in_browser=open_graph_in_browser,
+#                     attempts=attempts,
+#                     renderers_attempted=renderers_attempted,
+#                 )
+#
+#     return dot_output
 ```
 ## File: commands\init_project.py
 ```python
@@ -8599,13 +9274,14 @@ import stat
 from pathlib import Path
 
 from bash2gitlab.config import config
+from bash2gitlab.exceptions import Bash2GitlabError
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["install", "uninstall", "PrecommitHookError", "hook_hash", "hook_path"]
 
 
-class PrecommitHookError(Exception):
+class PrecommitHookError(Bash2GitlabError):
     """Raised when pre-commit hook installation or removal fails."""
 
 
@@ -8616,7 +9292,7 @@ HOOK_NAME = "pre-commit"
 HOOK_CONTENT = """#!/bin/sh
 # Auto-generated by bash2gitlab: run `bash2gitlab compile` before committing.
 set -u
-
+export BASH2GITLAB_HIDE_CORE_HELP=1
 say() { printf '%s\\n' "$*"; }
 
 say "[pre-commit] Running bash2gitlab compile..."
@@ -8827,6 +9503,8 @@ def uninstall(repo_root: Path | None = None, *, force: bool = False) -> None:
 ```
 ## File: commands\show_config.py
 ```python
+"""Display current config"""
+
 from __future__ import annotations
 
 import logging
@@ -12731,7 +13409,7 @@ class Colors:
 
     @classmethod
     def enable(cls):
-        """Disable all color output."""
+        """Enable all color output."""
         cls.HEADER = "\033[95m"
         cls.OKBLUE = "\033[94m"
         cls.OKCYAN = "\033[96m"
@@ -13577,7 +14255,7 @@ def normalize_for_compare(text: str) -> str:
     return text.strip(" \n")
 
 
-def yaml_is_same(current_content: str, new_content: str):
+def yaml_is_same(current_content: str, new_content: str) -> bool:
     if current_content.strip("\n") == new_content.strip("\n"):
         # Simple match.
         return True

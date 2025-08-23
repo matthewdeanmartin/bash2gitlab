@@ -396,9 +396,9 @@ class InteractiveInterface:
 
         from bash2gitlab.__main__ import (
             clean_handler,
-            copy2local_handler,
             commit_map_handler,
             compile_handler,
+            copy2local_handler,
             decompile_handler,
             doctor_handler,
             drift_handler,

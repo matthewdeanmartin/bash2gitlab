@@ -8,6 +8,7 @@ import pytest
 # Assuming the code is in a file named 'file_hasher.py'
 # If your file has a different name, adjust the import
 from bash2gitlab.commands.clean_all import (
+    CleanReport,
     base_from_hash,
     clean_targets,
     is_target_unchanged,
@@ -15,7 +16,7 @@ from bash2gitlab.commands.clean_all import (
     list_stray_files,
     partner_hash_file,
     read_current_text,
-    read_hash_text, CleanReport,
+    read_hash_text,
 )
 
 # --- Test Data and Helpers ---------------------------------------------------

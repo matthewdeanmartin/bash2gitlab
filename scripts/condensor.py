@@ -1,11 +1,11 @@
 """Condense Python code for bot consumption."""
 
+import ast
 import logging
 import re
+import textwrap
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-import ast
-import textwrap
 
 LOGGER = logging.getLogger(__name__)
 

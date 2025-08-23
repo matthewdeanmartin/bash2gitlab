@@ -1,4 +1,5 @@
 """Default implementation of pluggy hooks"""
+
 from __future__ import annotations
 
 from pathlib import Path

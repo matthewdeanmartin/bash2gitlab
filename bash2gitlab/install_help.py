@@ -1,4 +1,5 @@
 """Let people know how to install bash2gitlab[all]"""
+
 import os
 
 from bash2gitlab import __about__

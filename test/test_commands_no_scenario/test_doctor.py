@@ -8,7 +8,6 @@ import pytest
 from bash2gitlab.commands import doctor as doctor_mod
 from bash2gitlab.config import _Config as ConfigClass
 
-
 # --------- helpers -----------------------------------------------------------
 
 

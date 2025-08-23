@@ -4,6 +4,7 @@ import base64
 from pathlib import Path
 
 from bash2gitlab.commands.clean_all import (
+    CleanReport,
     base_from_hash,
     clean_targets,
     is_target_unchanged,
@@ -11,7 +12,7 @@ from bash2gitlab.commands.clean_all import (
     list_stray_files,
     partner_hash_file,
     read_hash_text,
-    report_targets, CleanReport,
+    report_targets,
 )
 
 
@@ -117,7 +118,9 @@ def test_is_target_unchanged_states(tmp_path: Path):
 def test_clean_targets_dry_run_does_not_delete(tmp_path: Path):
     base, h = make_pair(tmp_path, "dr/file.txt", "D")
     report = clean_targets(tmp_path, dry_run=True)
-    assert CleanReport(report.deleted_pairs, report.skipped_changed,report.skipped_invalid_hash) == CleanReport(1, 0, 0)
+    assert CleanReport(report.deleted_pairs, report.skipped_changed, report.skipped_invalid_hash) == CleanReport(
+        1, 0, 0
+    )
     assert base.exists() and h.exists()
 
 

@@ -146,6 +146,7 @@ class JobConfig:
         before_script: Scripts to run before the main script.
         after_script: Scripts to run after the main script.
     """
+
     name: str
     stage: str = "test"
     script: list[str] = field(default_factory=list)
@@ -164,6 +165,7 @@ class DefaultConfig:
         after_script: Default scripts to run after job scripts.
         variables: Default environment variables for jobs.
     """
+
     before_script: list[str] = field(default_factory=list)
     after_script: list[str] = field(default_factory=list)
     variables: dict[str, str] = field(default_factory=dict)
@@ -180,6 +182,7 @@ class PipelineConfig:
         default: Default configuration for jobs.
         jobs: List of job configurations.
     """
+
     stages: list[str] = field(default_factory=lambda: ["test"])
     variables: dict[str, str] = field(default_factory=dict)
     default: DefaultConfig = field(default_factory=DefaultConfig)

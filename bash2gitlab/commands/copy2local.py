@@ -141,9 +141,7 @@ def fetch_repository_archive(
     logger.info("Successfully fetched directories into %s", clone_path)
 
 
-def clone_repository_ssh(
-    repo_url: str, branch: str, source_dir: Path, clone_path:  Path, dry_run: bool = False
-) -> None:
+def clone_repository_ssh(repo_url: str, branch: str, source_dir: Path, clone_path: Path, dry_run: bool = False) -> None:
     """Clones a repo via Git and copies a specific directory.
 
     This function is designed for SSH or authenticated HTTPS URLs that require

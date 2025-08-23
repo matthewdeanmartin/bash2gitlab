@@ -140,6 +140,7 @@ class CleanReport:
     skipped_changed: int
     skipped_invalid_hash: int
 
+
 def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
     """Delete generated target files (and their .hash files) under *root*.
 
@@ -205,7 +206,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
         skipped_changed,
         skipped_invalid,
     )
-    return CleanReport(deleted_pairs= deleted, skipped_changed= skipped_changed,skipped_invalid_hash= skipped_invalid)
+    return CleanReport(deleted_pairs=deleted, skipped_changed=skipped_changed, skipped_invalid_hash=skipped_invalid)
 
 
 # --- Optional: quick report helper -------------------------------------------
