@@ -11,8 +11,18 @@ from __future__ import annotations
 import logging
 import os
 import subprocess  # nosec
+import sys
 import threading
-import tkinter as tk
+
+from bash2gitlab.utils.missing_tkinter import check_for_python_3_13_0
+
+try:
+    import tkinter as tk
+except Exception:
+    if check_for_python_3_13_0():
+        # python 3.13.
+        sys.exit(99)
+    raise
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, Callable
 

@@ -11,6 +11,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -73,7 +74,7 @@ def fetch_repository_archive(
             # 2. Construct the archive URL and check for its existence.
             archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
             if not archive_url.startswith("http"):
-                raise TypeError(f"Expected http or https protocol, got {archive_url}")
+                raise Bash2GitlabError(f"Expected http or https protocol, got {archive_url}")
 
             try:
                 # Use a simple open to verify existence without a full download.

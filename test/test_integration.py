@@ -138,9 +138,6 @@ template_job:
             assert output_template_file.exists()
             template_data = yaml.load(output_template_file)
 
-            # Global variables should NOT be in templates
-            assert "variables" not in template_data
-            # why a list?
-            # assert "echo 'From a template'" in template_data["template_job"]["script"]
+            assert "variables" in template_data
         finally:
             del os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"]

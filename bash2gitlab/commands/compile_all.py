@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import base64
-import difflib
 import io
 import logging
 import multiprocessing
-import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +19,9 @@ from bash2gitlab.commands.compile_bash_reader import read_bash_script
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
 from bash2gitlab.commands.input_change_detector import mark_compilation_complete, needs_compilation
 from bash2gitlab.config import config
+from bash2gitlab.errors.exceptions import Bash2GitlabError, CompileError, ValidationFailed
 from bash2gitlab.plugins import get_pm
+from bash2gitlab.utils import diff_helpers
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
@@ -209,7 +208,9 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
-                raise Exception(f"Could not inline script '{script_path_str}': {e}. Preserving original line.") from e
+                raise Bash2GitlabError(
+                    f"Could not inline script '{script_path_str}': {e}. Preserving original line."
+                ) from e
             bash_lines = bash_code.splitlines()
             logger.debug(
                 "Inlining script '%s' (%d lines).",
@@ -281,11 +282,12 @@ def process_job(job_data: dict, scripts_root: Path) -> int:
 def has_must_inline_pragma(job_data: dict | str) -> bool:
     if isinstance(job_data, list):
         for item_id, _item in enumerate(job_data):
-            comment = job_data.ca.items.get(item_id)
-            if comment:
-                comment_value = comment[0].value
-                if "pragma" in comment_value.lower() and "must-inline" in comment_value.lower():
-                    return True
+            if hasattr(job_data, "ca"):
+                comment = job_data.ca.items.get(item_id)
+                if comment:
+                    comment_value = comment[0].value
+                    if "pragma" in comment_value.lower() and "must-inline" in comment_value.lower():
+                        return True
         for item in job_data:
             if "pragma" in item.lower() and "must-inline" in item.lower():
                 return True
@@ -314,15 +316,6 @@ def inline_gitlab_scripts(
     yaml = get_yaml()
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
-    # Merge global variables if provided
-    # if global_vars:
-    #     logger.debug("Merging global variables into the YAML configuration.")
-    #     existing_vars = data.get("variables", {})
-    #     merged_vars = global_vars.copy()
-    #     # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
-    #     merged_vars.update(existing_vars)
-    #     data["variables"] = merged_vars
-    #     inlined_count += 1
     if global_vars:
         logger.debug("Merging global variables into the YAML configuration.")
         existing_vars = data.get("variables", CommentedMap())
@@ -335,7 +328,6 @@ def inline_gitlab_scripts(
             merged_vars[k] = v
 
         data["variables"] = merged_vars
-        inlined_count += 1
 
     for name in ["after_script", "before_script"]:
         if name in data:
@@ -343,7 +335,6 @@ def inline_gitlab_scripts(
             result = process_script_list(data[name], scripts_root)
             if result != data[name]:
                 data[name] = result
-                inlined_count += 1
 
     # Process all jobs and top-level script lists (which are often used for anchors)
     for job_name, job_data in data.items():
@@ -441,55 +432,13 @@ def write_yaml_and_hash(
     validator = GitLabCIValidator()
     ok, problems = validator.validate_ci_config(new_content)
     if not ok:
-        raise Exception(problems)
+        raise ValidationFailed(problems)
     output_file.write_text(new_content, encoding="utf-8")
 
     # Store a base64 encoded copy of the exact content we just wrote.
     encoded_content = base64.b64encode(new_content.encode("utf-8")).decode("utf-8")
     hash_file.write_text(encoded_content, encoding="utf-8")
     logger.debug(f"Updated hash file: {short_path(hash_file)}")
-
-
-def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
-    """Return a unified diff between *old* and *new* content with filenames.
-
-    keepends=True preserves newline structure for line-accurate diffs in logs.
-    """
-    return "".join(
-        difflib.unified_diff(
-            old.splitlines(keepends=True),
-            new.splitlines(keepends=True),
-            fromfile=f"{path} ({from_label})",
-            tofile=f"{path} ({to_label})",
-        )
-    )
-
-
-@dataclass(frozen=True)
-class DiffStats:
-    changed: int
-    insertions: int
-    deletions: int
-
-
-def diff_stats(diff_text: str) -> DiffStats:
-    """Compute (changed_lines, insertions, deletions) from unified diff text.
-
-    We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
-    """
-    ins = del_ = 0
-    for line in diff_text.splitlines():
-        if not line:
-            continue
-        # Skip headers/hunks
-        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
-            continue
-        # Pure additions/deletions in unified diff start with '+' or '-'
-        if line.startswith("+"):
-            ins += 1
-        elif line.startswith("-"):
-            del_ += 1
-    return DiffStats(changed=ins + del_, insertions=ins, deletions=del_)
 
 
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
@@ -507,10 +456,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         current_content = output_file.read_text(encoding="utf-8")
 
         if not yaml_is_same(current_content, new_content):
-            diff_text = unified_diff(
+            diff_text = diff_helpers.unified_diff(
                 normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
             )
-            different = diff_stats(diff_text)
+            different = diff_helpers.diff_stats(diff_text)
             logger.info(
                 f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions})."
             )
@@ -530,7 +479,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     if not hash_file.exists():
         error_message = f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. Aborting to prevent data loss. If you want to regenerate this file, please remove it and run the script again."
         logger.error(error_message)
-        raise SystemExit(1)
+        raise CompileError()
 
     # Decode the last known content from the hash file
     last_known_base64 = hash_file.read_text(encoding="utf-8").strip()
@@ -539,7 +488,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     except (ValueError, TypeError) as e:
         error_message = f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\nError: {e}\nAborting to prevent data loss. Please remove the file and its .hash file to regenerate."
         logger.error(error_message)
-        raise SystemExit(1) from e
+        raise CompileError() from e
 
     current_content = output_file.read_text(encoding="utf-8")
 
@@ -553,7 +502,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             short_path(output_file),
             e,
         )
-        raise SystemExit(1) from e
+        raise CompileError() from e
 
     try:
         current_doc = yaml.load(current_content)
@@ -565,9 +514,9 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
 
     # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
     is_same = yaml_is_same(last_known_content, current_content)
-    # current_doc != last_known_doc
+
     if is_current_corrupt or (current_doc != last_known_doc and not is_same):
-        diff_text = unified_diff(
+        diff_text = diff_helpers.unified_diff(
             normalize_for_compare(last_known_content),
             normalize_for_compare(current_content),
             output_file,
@@ -581,17 +530,17 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         )
 
         error_message = f"\n--- MANUAL EDIT DETECTED ---\nCANNOT OVERWRITE: The destination file below has been modified:\n  {output_file}\n\n{corruption_warning}The script detected that its data no longer matches the last generated version.\nTo prevent data loss, the process has been stopped.\n\n--- DETECTED CHANGES ---\n{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n--- HOW TO RESOLVE ---\n1. Revert the manual changes in '{output_file}' and run this script again.\nOR\n2. If the manual changes are desired, incorporate them into the source files\n   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n   to regenerate it from the new base.\n"
-        # We use sys.exit to print the message directly and exit with an error code.
-        sys.exit(error_message)
+        print(error_message)
+        raise CompileError()
 
     # If we reach here, the current file is valid (or just reformatted).
     # Now, we check if the *newly generated* content is different from the current content.
     if not yaml_is_same(current_content, new_content):
         # NEW: log diff + counts before writing
-        diff_text = unified_diff(
+        diff_text = diff_helpers.unified_diff(
             normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
         )
-        different = diff_stats(diff_text)
+        different = diff_helpers.diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
             short_path(output_file),
@@ -664,7 +613,7 @@ def run_compile_all(
         print("Stray files in output folder, halting")
         for stray in strays:
             print(f"  {stray}")
-        sys.exit(200)
+        raise CompileError()
 
     total_inlined_count = 0
     written_files_count = 0
@@ -673,10 +622,11 @@ def run_compile_all(
         output_path.mkdir(parents=True, exist_ok=True)
 
     global_vars_path = uncompiled_path / "global_variables.sh"
+    global_vars_data = {}
     if global_vars_path.is_file():
         logger.info(f"Found and loading variables from {short_path(global_vars_path)}")
         content = global_vars_path.read_text(encoding="utf-8")
-        parse_env_file(content)
+        global_vars_data = parse_env_file(content)
         total_inlined_count += 1
 
     files_to_process: list[tuple[Path, Path, dict[str, str]]] = []
@@ -689,7 +639,7 @@ def run_compile_all(
         for template_path in template_files:
             relative_path = template_path.relative_to(uncompiled_path)
             output_file = output_path / relative_path
-            files_to_process.append((template_path, output_file, {}))
+            files_to_process.append((template_path, output_file, global_vars_data))
 
     total_files = len(files_to_process)
     max_workers = multiprocessing.cpu_count()

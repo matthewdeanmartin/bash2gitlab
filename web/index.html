@@ -1,0 +1,1058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>bash2gitlab - Accessible Web Interface</title>
+    <style>
+        :root {
+            --primary: #0066cc;
+            --success: #28a745;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --light: #f8f9fa;
+            --dark: #343a40;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background: var(--light);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .accessibility-bar {
+            background: var(--dark);
+            color: white;
+            padding: 0.5rem;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        .accessibility-bar button {
+            background: none;
+            border: 1px solid white;
+            color: white;
+            padding: 0.25rem 0.5rem;
+            margin: 0 0.25rem;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+
+        .accessibility-bar button:hover,
+        .accessibility-bar button:focus {
+            background: white;
+            color: var(--dark);
+        }
+
+        .main-content {
+            padding: 2rem;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: var(--dark);
+        }
+
+        input[type="text"],
+        input[type="file"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+        }
+
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        input[type="checkbox"] {
+            width: 1.2rem;
+            height: 1.2rem;
+            cursor: pointer;
+        }
+
+        .operation-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin: 2rem 0;
+        }
+
+        button {
+            padding: 1rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: var(--dark);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        button:hover, button:focus {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .output-section {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-top: 2rem;
+        }
+
+        .progress-container {
+            margin: 1rem 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--success);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 10px;
+        }
+
+        .output-log {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .live-region {
+            position: absolute;
+            left: -10000px;
+            top: auto;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            margin-left: 0.5rem;
+        }
+
+        .status-ready { background: #d4edda; color: #155724; }
+        .status-running { background: #fff3cd; color: #856404; }
+        .status-success { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+
+        /* High Contrast Mode Support */
+        @media (prefers-contrast: high) {
+            input, select, textarea {
+                border-width: 3px;
+            }
+
+            button {
+                border: 2px solid;
+            }
+        }
+
+        /* Dark Mode Support */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #1a202c;
+                color: #e2e8f0;
+            }
+
+            .container {
+                background: #2d3748;
+            }
+
+            input, select, textarea {
+                background: #4a5568;
+                border-color: #718096;
+                color: #e2e8f0;
+            }
+
+            .output-section {
+                background: #1a202c;
+                border-color: #4a5568;
+            }
+        }
+
+        /* Animation for better feedback */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .running {
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="accessibility-bar" role="banner">
+            <span>Accessibility Options:</span>
+            <button onclick="toggleHighContrast()" aria-label="Toggle High Contrast Mode">High Contrast</button>
+            <button onclick="increaseFontSize()" aria-label="Increase Font Size">A+</button>
+            <button onclick="decreaseFontSize()" aria-label="Decrease Font Size">A-</button>
+            <button onclick="toggleScreenReader()" aria-label="Toggle Screen Reader Announcements" id="srToggle">
+                🔊 Screen Reader: ON
+            </button>
+        </div>
+
+        <header>
+            <h1>bash2gitlab</h1>
+            <p>Accessible Web Interface for GitLab CI Template Management</p>
+        </header>
+
+        <main class="main-content">
+            <form id="bash2gitlab-form" role="form" aria-label="bash2gitlab Configuration">
+                <div class="form-grid">
+                    <!-- Left Column -->
+                    <div>
+                        <h2>📁 Configuration</h2>
+
+                        <div class="form-group">
+                            <label for="input-dir">
+                                Input Directory
+                                <span class="status-indicator status-ready" id="input-status">Required</span>
+                            </label>
+                            <input
+                                type="text"
+                                id="input-dir"
+                                placeholder="./src"
+                                aria-describedby="input-dir-help"
+                                required
+                            >
+                            <small id="input-dir-help">Directory containing your source .gitlab-ci.yml templates</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="output-dir">
+                                Output Directory
+                                <span class="status-indicator status-ready" id="output-status">Required</span>
+                            </label>
+                            <input
+                                type="text"
+                                id="output-dir"
+                                placeholder="./output"
+                                aria-describedby="output-dir-help"
+                                required
+                            >
+                            <small id="output-dir-help">Where compiled GitLab CI files will be saved</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="language">Interface Language / Idioma</label>
+                            <select id="language" onchange="changeLanguage()">
+                                <option value="en">🇺🇸 English</option>
+                                <option value="es">🇪🇸 Español</option>
+                                <option value="fr">🇫🇷 Français</option>
+                                <option value="de">🇩🇪 Deutsch</option>
+                                <option value="zh">🇨🇳 中文</option>
+                                <option value="ja">🇯🇵 日本語</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div>
+                        <h2>⚙️ Options</h2>
+
+                        <div class="form-group">
+                            <fieldset>
+                                <legend>Operation Type</legend>
+                                <div class="checkbox-group" role="radiogroup" aria-label="Select operation type">
+                                    <div class="checkbox-item">
+                                        <input type="radio" id="op-compile" name="operation" value="compile" checked>
+                                        <label for="op-compile">🔨 Compile</label>
+                                    </div>
+                                    <div class="checkbox-item">
+                                        <input type="radio" id="op-lint" name="operation" value="lint">
+                                        <label for="op-lint">✅ Lint</label>
+                                    </div>
+                                    <div class="checkbox-item">
+                                        <input type="radio" id="op-clean" name="operation" value="clean">
+                                        <label for="op-clean">🧹 Clean</label>
+                                    </div>
+                                    <div class="checkbox-item">
+                                        <input type="radio" id="op-decompile" name="operation" value="decompile">
+                                        <label for="op-decompile">📤 Decompile</label>
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+
+                        <div class="form-group">
+                            <fieldset>
+                                <legend>Additional Options</legend>
+                                <div class="checkbox-group">
+                                    <div class="checkbox-item">
+                                        <input type="checkbox" id="dry-run">
+                                        <label for="dry-run">🔍 Dry Run (Preview Only)</label>
+                                    </div>
+                                    <div class="checkbox-item">
+                                        <input type="checkbox" id="force">
+                                        <label for="force">💪 Force Overwrite</label>
+                                    </div>
+                                    <div class="checkbox-item">
+                                        <input type="checkbox" id="verbose">
+                                        <label for="verbose">📢 Verbose Output</label>
+                                    </div>
+                                    <div class="checkbox-item">
+                                        <input type="checkbox" id="audio-feedback" checked>
+                                        <label for="audio-feedback">🔊 Audio Feedback</label>
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="operation-buttons">
+                    <button type="button" class="btn-primary" onclick="runOperation()" id="run-btn">
+                        ▶️ Run Operation
+                    </button>
+                    <button type="button" class="btn-danger" onclick="stopOperation()" id="stop-btn" disabled>
+                        ⏹️ Stop
+                    </button>
+                    <button type="button" class="btn-warning" onclick="validateConfig()" id="validate-btn">
+                        🔍 Validate Config
+                    </button>
+                    <button type="button" class="btn-success" onclick="saveConfig()" id="save-btn">
+                        💾 Save Config
+                    </button>
+                </div>
+            </form>
+
+            <div class="output-section">
+                <h2>📊 Output & Progress</h2>
+
+                <div class="progress-container">
+                    <label for="progress-bar">Operation Progress:</label>
+                    <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div aria-live="polite" aria-atomic="true" id="progress-text">Ready to start</div>
+                </div>
+
+                <div class="output-log"
+                     id="output-log"
+                     aria-live="polite"
+                     aria-label="Operation output log"
+                     tabindex="0">Welcome to bash2gitlab Web Interface!
+Ready to process your GitLab CI templates.
+
+Use Tab to navigate, Enter to activate buttons.
+Enable audio feedback for spoken notifications.
+                </div>
+
+                <button type="button" onclick="copyOutput()" style="margin-top: 1rem;">
+                    📋 Copy Output to Clipboard
+                </button>
+            </div>
+        </main>
+    </div>
+
+    <!-- Screen Reader Live Regions -->
+    <div aria-live="assertive" aria-atomic="true" class="live-region" id="announcements"></div>
+    <div aria-live="polite" aria-atomic="true" class="live-region" id="status-updates"></div>
+
+    <script>
+        // Global state
+        let currentOperation = null;
+        let screenReaderEnabled = true;
+        let audioFeedbackEnabled = true;
+        let currentLanguage = 'en';
+
+        // Translations
+        const translations = {
+            en: {
+                operationStarted: "Operation started",
+                operationComplete: "Operation completed successfully",
+                operationFailed: "Operation failed",
+                configSaved: "Configuration saved",
+                configValid: "Configuration is valid",
+                configInvalid: "Configuration has errors"
+            },
+            es: {
+                operationStarted: "Operación iniciada",
+                operationComplete: "Operación completada exitosamente",
+                operationFailed: "Operación falló",
+                configSaved: "Configuración guardada",
+                configValid: "Configuración es válida",
+                configInvalid: "Configuración tiene errores"
+            },
+            fr: {
+                operationStarted: "Opération démarrée",
+                operationComplete: "Opération terminée avec succès",
+                operationFailed: "Opération échouée",
+                configSaved: "Configuration sauvegardée",
+                configValid: "Configuration valide",
+                configInvalid: "Configuration invalide"
+            }
+        };
+
+        // Accessibility Functions
+        function announce(message, priority = 'polite') {
+            if (!screenReaderEnabled) return;
+
+            const region = priority === 'assertive' ?
+                document.getElementById('announcements') :
+                document.getElementById('status-updates');
+
+            region.textContent = message;
+
+            // Clear after announcement to allow re-announcement
+            setTimeout(() => region.textContent = '', 1000);
+
+            // Optional audio feedback
+            if (audioFeedbackEnabled && document.getElementById('audio-feedback').checked) {
+                speak(message);
+            }
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.rate = 0.8;
+                utterance.volume = 0.7;
+                speechSynthesis.speak(utterance);
+            }
+        }
+
+        function toggleScreenReader() {
+            screenReaderEnabled = !screenReaderEnabled;
+            const btn = document.getElementById('srToggle');
+            btn.textContent = screenReaderEnabled ? '🔊 Screen Reader: ON' : '🔇 Screen Reader: OFF';
+
+            announce(screenReaderEnabled ?
+                "Screen reader announcements enabled" :
+                "Screen reader announcements disabled", 'assertive');
+        }
+
+        // Font size adjustment
+        let currentFontSize = 16;
+        function increaseFontSize() {
+            currentFontSize = Math.min(currentFontSize + 2, 24);
+            document.body.style.fontSize = currentFontSize + 'px';
+            announce(`Font size increased to ${currentFontSize} pixels`);
+        }
+
+        function decreaseFontSize() {
+            currentFontSize = Math.max(currentFontSize - 2, 12);
+            document.body.style.fontSize = currentFontSize + 'px';
+            announce(`Font size decreased to ${currentFontSize} pixels`);
+        }
+
+        // High contrast mode
+        function toggleHighContrast() {
+            document.body.classList.toggle('high-contrast');
+            const isHighContrast = document.body.classList.contains('high-contrast');
+            announce(isHighContrast ?
+                "High contrast mode enabled" :
+                "High contrast mode disabled");
+        }
+
+        // Language switching
+        function changeLanguage() {
+            const select = document.getElementById('language');
+            currentLanguage = select.value;
+            announce(`Language changed to ${select.options[select.selectedIndex].text}`);
+
+            // In a real implementation, this would update all UI text
+            updateUILanguage(currentLanguage);
+        }
+
+        function updateUILanguage(lang) {
+            // This would update all translatable text in the UI
+            // For demo purposes, just announce the change
+            console.log(`UI language updated to: ${lang}`);
+        }
+
+        function getTranslation(key) {
+            return translations[currentLanguage]?.[key] || translations.en[key] || key;
+        }
+
+        // API Configuration
+        const API_BASE_URL = 'http://localhost:8000';
+
+        // Main Operations
+        async function runOperation() {
+            const operation = document.querySelector('input[name="operation"]:checked').value;
+            const inputDir = document.getElementById('input-dir').value;
+            const outputDir = document.getElementById('output-dir').value;
+            const dryRun = document.getElementById('dry-run').checked;
+            const verbose = document.getElementById('verbose').checked;
+            const force = document.getElementById('force').checked;
+
+            // Validation
+            if (!inputDir || !outputDir) {
+                announce("Please specify both input and output directories", 'assertive');
+                return;
+            }
+
+            // Update UI state
+            setOperationRunning(true);
+            const log = document.getElementById('output-log');
+            log.textContent = '';
+
+            announce(getTranslation('operationStarted') + `: ${operation}`, 'assertive');
+
+            try {
+                // Call actual API
+                await executeOperation(operation, {
+                    inputDir, outputDir, dryRun, verbose, force
+                });
+
+                announce(getTranslation('operationComplete'), 'assertive');
+
+            } catch (error) {
+                log.textContent += `\nERROR: ${error.message}\n`;
+                announce(getTranslation('operationFailed') + `: ${error.message}`, 'assertive');
+            } finally {
+                setOperationRunning(false);
+            }
+        }
+
+
+        // API Communication Functions
+        async function apiCall(endpoint, method = 'GET', data = null) {
+            const url = `${API_BASE_URL}${endpoint}`;
+            const options = {
+                method,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            };
+
+            if (data) {
+                options.body = JSON.stringify(data);
+            }
+
+            try {
+                const response = await fetch(url, options);
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    throw new Error('Cannot connect to bash2gitlab API at localhost:8000. Please ensure the API server is running.');
+                }
+                throw error;
+            }
+        }
+
+        async function executeOperation(operation, config) {
+            const log = document.getElementById('output-log');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+
+            // Start the operation
+            const startResponse = await apiCall(`/api/v1/${operation}`, 'POST', config);
+            const taskId = startResponse.task_id;
+
+            log.textContent += `[${new Date().toLocaleTimeString()}] Starting ${operation} operation (Task ID: ${taskId})\n`;
+
+            if (config.dryRun) {
+                log.textContent += "[DRY RUN MODE] No files will be modified\n";
+            }
+
+            // Poll for progress updates
+            let isComplete = false;
+            let lastProgress = 0;
+
+            while (!isComplete) {
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+
+                try {
+                    const status = await apiCall(`/api/v1/status/${taskId}`);
+
+                    // Update progress
+                    const progress = status.progress || 0;
+                    progressFill.style.width = progress + '%';
+                    progressText.textContent = status.current_step || `${Math.round(progress)}% complete`;
+
+                    // Announce progress milestones
+                    if (progress >= lastProgress + 25 && progress > 0) {
+                        announce(`${Math.round(progress)}% complete`);
+                        lastProgress = Math.floor(progress / 25) * 25;
+                    }
+
+                    // Update log with new messages
+                    if (status.messages && status.messages.length > 0) {
+                        status.messages.forEach(msg => {
+                            log.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+                        });
+                        log.scrollTop = log.scrollHeight;
+                    }
+
+                    // Check if operation is complete
+                    if (status.status === 'completed') {
+                        isComplete = true;
+                        progressText.textContent = "Complete";
+
+                        // Get final results
+                        const results = await apiCall(`/api/v1/results/${taskId}`);
+
+                        log.textContent += `\n✅ ${operation} operation completed successfully!\n`;
+
+                        if (results.summary) {
+                            log.textContent += `Summary: ${results.summary}\n`;
+                        }
+
+                        if (results.files_processed) {
+                            log.textContent += `Files processed: ${results.files_processed}\n`;
+                        }
+
+                    } else if (status.status === 'failed') {
+                        isComplete = true;
+                        throw new Error(status.error || 'Operation failed');
+
+                    } else if (status.status === 'cancelled') {
+                        isComplete = true;
+                        throw new Error('Operation was cancelled');
+                    }
+
+                } catch (pollError) {
+                    // If polling fails, the operation might still be running
+                    // Log the error but continue trying
+                    console.warn('Polling error:', pollError);
+                    log.textContent += `[${new Date().toLocaleTimeString()}] Warning: ${pollError.message}\n`;
+                }
+            }
+        }
+
+        async function simulateOperation(operation, config) {
+            // Fallback simulation if API is not available - kept for development
+            const log = document.getElementById('output-log');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+
+            log.textContent += `[${new Date().toLocaleTimeString()}] API not available - running in simulation mode\n`;
+
+            const steps = getOperationSteps(operation);
+
+            for (let i = 0; i < steps.length; i++) {
+                const step = steps[i];
+                const progress = ((i + 1) / steps.length) * 100;
+
+                progressFill.style.width = progress + '%';
+                progressText.textContent = `${step} (${Math.round(progress)}%)`;
+
+                log.textContent += `[${new Date().toLocaleTimeString()}] ${step}\n`;
+                log.scrollTop = log.scrollHeight;
+
+                if (progress === 25 || progress === 50 || progress === 75) {
+                    announce(`${Math.round(progress)}% complete`);
+                }
+
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            progressText.textContent = "Complete";
+            log.textContent += `\n✅ ${operation} operation completed successfully!\n`;
+
+            if (config.dryRun) {
+                log.textContent += "\n🔍 DRY RUN - No files were actually modified\n";
+            }
+        }
+
+        function getOperationSteps(operation) {
+            const steps = {
+                compile: [
+                    "Scanning input directory...",
+                    "Processing .gitlab-ci.yml files...",
+                    "Extracting script blocks...",
+                    "Generating output files...",
+                    "Validating output structure..."
+                ],
+                lint: [
+                    "Connecting to GitLab API...",
+                    "Validating YAML syntax...",
+                    "Checking CI/CD configuration...",
+                    "Running lint checks...",
+                    "Generating report..."
+                ],
+                clean: [
+                    "Scanning output directory...",
+                    "Identifying generated files...",
+                    "Checking file modifications...",
+                    "Removing unmodified files...",
+                    "Updating file registry..."
+                ],
+                decompile: [
+                    "Reading compiled YAML...",
+                    "Extracting inline scripts...",
+                    "Creating script files...",
+                    "Updating YAML references...",
+                    "Validating structure..."
+                ]
+            };
+
+            return steps[operation] || ["Processing..."];
+        }
+
+        function stopOperation() {
+            if (currentOperation) {
+                // Cancel the current API operation
+                apiCall(`/api/v1/cancel/${currentOperation}`, 'POST')
+                    .then(() => {
+                        announce("Operation cancelled successfully", 'assertive');
+                    })
+                    .catch(error => {
+                        console.error('Failed to cancel operation:', error);
+                        announce("Failed to cancel operation: " + error.message, 'assertive');
+                    });
+
+                currentOperation = null;
+                setOperationRunning(false);
+            }
+        }
+
+        function setOperationRunning(running) {
+            const runBtn = document.getElementById('run-btn');
+            const stopBtn = document.getElementById('stop-btn');
+
+            runBtn.disabled = running;
+            stopBtn.disabled = !running;
+
+            if (running) {
+                runBtn.classList.add('running');
+            } else {
+                runBtn.classList.remove('running');
+                document.getElementById('progress-fill').style.width = '0%';
+                document.getElementById('progress-text').textContent = 'Ready to start';
+            }
+        }
+
+        async function validateConfig() {
+            const inputDir = document.getElementById('input-dir').value;
+            const outputDir = document.getElementById('output-dir').value;
+
+            const log = document.getElementById('output-log');
+
+            try {
+                // Call API validation endpoint
+                const validation = await apiCall('/api/v1/validate', 'POST', {
+                    inputDir,
+                    outputDir
+                });
+
+                if (validation.valid) {
+                    log.textContent += `\n✅ ${getTranslation('configValid')}\n`;
+
+                    if (validation.details) {
+                        log.textContent += `Details: ${validation.details}\n`;
+                    }
+
+                    if (validation.warnings && validation.warnings.length > 0) {
+                        log.textContent += "Warnings:\n";
+                        validation.warnings.forEach(warning => {
+                            log.textContent += `  ⚠️ ${warning}\n`;
+                        });
+                    }
+
+                    announce(getTranslation('configValid'));
+                } else {
+                    log.textContent += `\n❌ ${getTranslation('configInvalid')}:\n`;
+
+                    if (validation.errors) {
+                        validation.errors.forEach(error => {
+                            log.textContent += `  • ${error}\n`;
+                        });
+                    }
+
+                    announce(getTranslation('configInvalid'), 'assertive');
+                }
+
+            } catch (error) {
+                // Fallback to client-side validation
+                let isValid = true;
+                let errors = [];
+
+                if (!inputDir.trim()) {
+                    errors.push("Input directory is required");
+                    isValid = false;
+                }
+
+                if (!outputDir.trim()) {
+                    errors.push("Output directory is required");
+                    isValid = false;
+                }
+
+                if (isValid) {
+                    log.textContent += `\n✅ ${getTranslation('configValid')} (client-side validation)\n`;
+                    log.textContent += `Note: Server validation failed: ${error.message}\n`;
+                    announce(getTranslation('configValid'));
+                } else {
+                    log.textContent += `\n❌ ${getTranslation('configInvalid')} (client-side validation):\n`;
+                    errors.forEach(error => {
+                        log.textContent += `  • ${error}\n`;
+                    });
+                    announce(getTranslation('configInvalid'), 'assertive');
+                }
+            }
+
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function saveConfig() {
+            const config = {
+                inputDir: document.getElementById('input-dir').value,
+                outputDir: document.getElementById('output-dir').value,
+                operation: document.querySelector('input[name="operation"]:checked').value,
+                dryRun: document.getElementById('dry-run').checked,
+                force: document.getElementById('force').checked,
+                verbose: document.getElementById('verbose').checked,
+                audioFeedback: document.getElementById('audio-feedback').checked,
+                language: document.getElementById('language').value
+            };
+
+            const log = document.getElementById('output-log');
+
+            try {
+                // Save to API server
+                await apiCall('/api/v1/config', 'POST', config);
+
+                log.textContent += `\n💾 ${getTranslation('configSaved')} (server)\n`;
+                announce(getTranslation('configSaved'));
+
+            } catch (error) {
+                // Fallback to localStorage
+                localStorage.setItem('bash2gitlab-config', JSON.stringify(config));
+
+                log.textContent += `\n💾 ${getTranslation('configSaved')} (local storage)\n`;
+                log.textContent += `Note: Server save failed: ${error.message}\n`;
+                announce(getTranslation('configSaved'));
+            }
+
+            log.scrollTop = log.scrollHeight;
+        }
+
+        async function loadConfig() {
+            try {
+                // Try to load from API server first
+                const serverConfig = await apiCall('/api/v1/config');
+
+                if (serverConfig) {
+                    applyConfig(serverConfig);
+                    announce("Server configuration loaded");
+                    return;
+                }
+            } catch (error) {
+                console.log('Server config not available, trying local storage');
+            }
+
+            // Fallback to localStorage
+            try {
+                const saved = localStorage.getItem('bash2gitlab-config');
+                if (saved) {
+                    const config = JSON.parse(saved);
+                    applyConfig(config);
+                    announce("Local configuration loaded");
+                }
+            } catch (e) {
+                console.error('Failed to load config:', e);
+            }
+        }
+
+        function applyConfig(config) {
+            // Restore form values
+            document.getElementById('input-dir').value = config.inputDir || '';
+            document.getElementById('output-dir').value = config.outputDir || '';
+
+            if (config.operation) {
+                const operationRadio = document.querySelector(`input[name="operation"][value="${config.operation}"]`);
+                if (operationRadio) operationRadio.checked = true;
+            }
+
+            document.getElementById('dry-run').checked = config.dryRun || false;
+            document.getElementById('force').checked = config.force || false;
+            document.getElementById('verbose').checked = config.verbose || false;
+            document.getElementById('audio-feedback').checked = config.audioFeedback !== false;
+            document.getElementById('language').value = config.language || 'en';
+
+            // Update language if changed
+            if (config.language && config.language !== currentLanguage) {
+                currentLanguage = config.language;
+                updateUILanguage(currentLanguage);
+            }
+        }
+
+        function copyOutput() {
+            const log = document.getElementById('output-log');
+            navigator.clipboard.writeText(log.textContent).then(() => {
+                announce("Output copied to clipboard");
+            }).catch(() => {
+                announce("Failed to copy to clipboard", 'assertive');
+            });
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+Enter to run operation
+            if (e.ctrlKey && e.key === 'Enter') {
+                e.preventDefault();
+                if (!document.getElementById('run-btn').disabled) {
+                    runOperation();
+                }
+            }
+
+            // Ctrl+S to save config
+            if (e.ctrlKey && e.key === 's') {
+                e.preventDefault();
+                saveConfig();
+            }
+
+            // Escape to stop operation
+            if (e.key === 'Escape') {
+                if (!document.getElementById('stop-btn').disabled) {
+                    stopOperation();
+                }
+            }
+        });
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadConfig();
+
+            // Check API connectivity
+            try {
+                await apiCall('/api/v1/health');
+                const log = document.getElementById('output-log');
+                log.textContent = 'bash2gitlab API connected successfully!\nReady to process your GitLab CI templates.\n\nUse Tab to navigate, Enter to activate buttons.\nEnable audio feedback for spoken notifications.\n';
+                announce("bash2gitlab web interface loaded with API connectivity. Use keyboard shortcuts: Ctrl+Enter to run, Ctrl+S to save, Escape to stop.");
+            } catch (error) {
+                const log = document.getElementById('output-log');
+                log.textContent = `⚠️ API Connection Warning: ${error.message}\n\nWeb interface loaded in offline mode.\nSome features may not be available.\n\nUse Tab to navigate, Enter to activate buttons.\nEnable audio feedback for spoken notifications.\n`;
+                announce("bash2gitlab web interface loaded in offline mode. API server at localhost:8000 is not available.");
+            }
+        });
+
+        // Add focus management for better keyboard navigation
+        document.addEventListener('focusin', (e) => {
+            // Announce focused element for screen readers
+            if (screenReaderEnabled && e.target.tagName) {
+                const label = e.target.getAttribute('aria-label') ||
+                             e.target.getAttribute('title') ||
+                             e.target.closest('label')?.textContent?.trim();
+
+                if (label && Math.random() < 0.1) { // Occasional announcement to avoid spam
+                    setTimeout(() => announce(`Focused: ${label}`), 100);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

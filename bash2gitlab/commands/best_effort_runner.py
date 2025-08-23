@@ -15,7 +15,7 @@ from typing import Any, Union
 
 from ruamel.yaml import YAML
 
-from bash2gitlab.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 
 # Copy of the base environment variables
 BASE_ENV = os.environ.copy()
@@ -72,14 +72,16 @@ def run_colored(script: str, env=None, cwd=None) -> int:
 
     # Determine the bash executable based on the operating system
     if os.name == "nt":
-        bash = r"C:\Program Files\Git\bin\bash.exe"
+        bash = [r"C:\Program Files\Git\bin\bash.exe"]
     else:
-        bash = "bash"
+        bash = ["bash"]
 
+    if os.environ.get("BASH2GITLAB_RUN_LOAD_BASHRC"):
+        bash.append("-l")
     # Start the subprocess
     process = subprocess.Popen(  # nosec
         # , "-l"  # -l loads .bashrc and make it really, really slow.
-        [bash],  # bash reads script from stdin
+        bash,  # bash reads script from stdin
         env=env,
         cwd=cwd,
         stdin=subprocess.PIPE,
@@ -189,11 +191,11 @@ class PipelineConfig:
     jobs: list[JobConfig] = field(default_factory=list)
 
 
-class GitLabCIError(Bash2GitlabError):
+class GitlabRunnerError(Bash2GitlabError):
     """Base exception for GitLab CI runner errors."""
 
 
-class JobExecutionError(GitLabCIError):
+class JobExecutionError(GitlabRunnerError):
     """Raised when a job fails to execute successfully."""
 
 
@@ -230,7 +232,7 @@ class ConfigurationLoader:
             config_path = self.base_path / ".gitlab-ci.yml"
 
         if not config_path.exists():
-            raise GitLabCIError(f"Configuration file not found: {config_path}")
+            raise GitlabRunnerError(f"Configuration file not found: {config_path}")
 
         config = self._load_yaml_file(config_path)
         config = self._process_includes(config, config_path.parent)
@@ -254,39 +256,49 @@ class ConfigurationLoader:
             with open(file_path) as f:
                 return self.yaml.load(f) or {}
         except Exception as e:
-            raise GitLabCIError(f"Failed to load YAML file {file_path}: {e}") from e
+            raise GitlabRunnerError(f"Failed to load YAML file {file_path}: {e}") from e
 
-    def _process_includes(self, config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
+    def _process_includes(
+        self, config: dict[str, Any], base_dir: Path, seen_files: set[Path] | None = None
+    ) -> dict[str, Any]:
         """
-        Process include directives for local files only.
+        Recursively process 'include' directives from a GitLab-style YAML config.
 
         Args:
-            config: The main configuration dictionary.
-            base_dir: The base directory for resolving includes.
+            config: The configuration dictionary to process.
+            base_dir: The base path to resolve relative includes.
+            seen_files: Tracks already-included files to avoid infinite recursion.
 
         Returns:
-            The configuration with includes merged.
+            The merged configuration.
         """
-        includes = config.pop("include", [])
-        if not includes:
-            return config
+        seen_files = seen_files or set()
 
+        includes = config.pop("include", [])
         if isinstance(includes, (str, dict)):
             includes = [includes]
 
-        for include_item in includes:
-            if isinstance(include_item, str):
-                # Simple local file include
-                include_path = base_dir / include_item
-                included_config = self._load_yaml_file(include_path)
-                config = self._merge_configs(config, included_config)
-            elif isinstance(include_item, dict) and "local" in include_item:
-                # Local file with explicit local key
-                include_path = base_dir / include_item["local"]
-                included_config = self._load_yaml_file(include_path)
-                config = self._merge_configs(config, included_config)
+        merged_config: dict[str, Any] = {}
 
-        return config
+        for include in includes:
+            if isinstance(include, str):
+                include_path = (base_dir / include).resolve()
+            elif isinstance(include, dict) and "local" in include:
+                include_path = (base_dir / include["local"]).resolve()
+            else:
+                continue  # Unsupported include type
+
+            if include_path in seen_files:
+                continue  # Skip already processed files to prevent recursion
+
+            seen_files.add(include_path)
+            included_config = self._load_yaml_file(include_path)
+            included_config = self._process_includes(included_config, include_path.parent, seen_files)
+            merged_config = self._merge_configs(merged_config, included_config)
+
+        # The current config overrides any previously merged includes
+        merged_config = self._merge_configs(merged_config, config)
+        return merged_config
 
     def _merge_configs(self, base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
         """
@@ -489,6 +501,7 @@ class VariableManager:
 
         # Match $VAR or ${VAR}
         pattern = r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)"
+        # Fails on echo "FOO"BAR"
         return re.sub(pattern, replace_var, text)
 
 
@@ -518,6 +531,7 @@ class JobExecutor:
         env = self.variable_manager.prepare_environment(job)
 
         try:
+            # Don't have a way for variable declared in before to exist in middle or after.
             # Execute before_script
             if job.before_script:
                 print("  📋 Running before_script...")
@@ -528,15 +542,15 @@ class JobExecutor:
                 print("  🚀 Running script...")
                 self._execute_scripts(job.script, env)
 
+        except subprocess.CalledProcessError as e:
+            raise JobExecutionError(f"Job {job.name} failed with exit code {e.returncode}") from e
+        finally:
             # Execute after_script
             if job.after_script:
                 print("  📋 Running after_script...")
                 self._execute_scripts(job.after_script, env)
 
-            print(f"✅ Job {job.name} completed successfully")
-
-        except subprocess.CalledProcessError as e:
-            raise JobExecutionError(f"Job {job.name} failed with exit code {e.returncode}") from e
+        print(f"✅ Job {job.name} completed successfully")
 
     def _execute_scripts(self, scripts: list[str], env: dict[str, str]) -> None:
         """
@@ -549,29 +563,28 @@ class JobExecutor:
         Raises:
             subprocess.CalledProcessError: If a script exits with a non-zero code.
         """
+        lines = []
         for script in scripts:
             if not isinstance(script, str):
-                raise Exception(f"{script} is not a string")
+                raise Bash2GitlabError(f"{script} is not a string")
             if not script.strip():
                 continue
 
             # Substitute variables in the script
             script = self.variable_manager.substitute_variables(script, env)
+            lines.append(script)
 
-            print(f"    $ {script}")
+        full_script = "\n".join(lines)
+        print(f"    $ {full_script}")
 
-            # Execute using bash
-            # command = ['"/c/Program Files/Git/bin/bash.exe"', '-c', shlex.quote(script).strip('\'')]
-            # command = shlex.split(script)
+        returncode = run_colored(
+            full_script,
+            env=env,
+            cwd=Path.cwd(),
+        )
 
-            returncode = run_colored(
-                script,
-                env=env,
-                cwd=Path.cwd(),
-            )
-
-            if returncode != 0:
-                raise subprocess.CalledProcessError(returncode, script)
+        if returncode != 0:
+            raise subprocess.CalledProcessError(returncode, full_script)
 
 
 class StageOrchestrator:
@@ -649,7 +662,7 @@ class LocalGitLabRunner:
         self.loader = ConfigurationLoader(base_path)
         self.processor = PipelineProcessor()
 
-    def run_pipeline(self, config_path: Path | None = None) -> int:
+    def run_pipeline(self, config_path: Path | None = None) -> None:
         """
         Run the complete pipeline.
 
@@ -663,32 +676,23 @@ class LocalGitLabRunner:
             GitLabCIError: If there is an error in the pipeline configuration.
             Exception: For unexpected errors.
         """
-        try:
-            # Load and process configuration
-            raw_config = self.loader.load_config(config_path)
-            pipeline = self.processor.process_config(raw_config)
+        # Load and process configuration
+        raw_config = self.loader.load_config(config_path)
+        pipeline = self.processor.process_config(raw_config)
 
-            # Set up execution components
-            variable_manager = VariableManager(pipeline.variables)
-            job_executor = JobExecutor(variable_manager)
-            orchestrator = StageOrchestrator(job_executor)
+        # Set up execution components
+        variable_manager = VariableManager(pipeline.variables)
+        job_executor = JobExecutor(variable_manager)
+        orchestrator = StageOrchestrator(job_executor)
 
-            # Execute pipeline
-            orchestrator.execute_pipeline(pipeline)
-
-        except GitLabCIError as e:
-            print(f"❌ GitLab CI Error: {e}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"❌ Unexpected error: {e}")
-            sys.exit(1)
-        return 0
+        # Execute pipeline
+        orchestrator.execute_pipeline(pipeline)
 
 
-def best_efforts_run(config_path: Path) -> int:
+def best_efforts_run(config_path: Path) -> None:
     """Main entry point for the best-efforts-run command."""
     runner = LocalGitLabRunner()
-    return runner.run_pipeline(config_path)
+    runner.run_pipeline(config_path)
 
 
 if __name__ == "__main__":

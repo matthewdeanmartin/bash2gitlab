@@ -15,7 +15,7 @@ import stat
 from pathlib import Path
 
 from bash2gitlab.config import config
-from bash2gitlab.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 
 logger = logging.getLogger(__name__)
 

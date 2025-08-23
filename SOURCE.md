@@ -22,7 +22,9 @@
 │   ├── precommit.py
 │   └── show_config.py
 ├── config.py
-├── exceptions.py
+├── errors/
+│   ├── exceptions.py
+│   └── exit_codes.py
 ├── gui.py
 ├── hookspecs.py
 ├── install_help.py
@@ -35,8 +37,10 @@
 ├── utils/
 │   ├── check_interactive.py
 │   ├── cli_suggestions.py
+│   ├── diff_helpers.py
 │   ├── dotenv.py
 │   ├── logging_config.py
+│   ├── missing_tkinter.py
 │   ├── mock_ci_vars.py
 │   ├── parse_bash.py
 │   ├── pathlib_polyfills.py
@@ -89,6 +93,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any, TypeVar
 
+from bash2gitlab.errors.exceptions import ConfigInvalid
 from bash2gitlab.utils.utils import short_path
 
 if sys.version_info >= (3, 11):
@@ -167,10 +172,10 @@ class _Config:
 
         except tomllib.TOMLDecodeError as e:
             logger.error(f"Error decoding TOML file {short_path(config_path)}: {e}")
-            return {}
+            raise ConfigInvalid() from e
         except OSError as e:
             logger.error(f"Error reading file {short_path(config_path)}: {e}")
-            return {}
+            raise ConfigInvalid() from e
 
     def load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
@@ -213,9 +218,9 @@ class _Config:
             if target_type is bool and isinstance(value, str):
                 return value.lower() in ("true", "1", "t", "y", "yes")  # type: ignore[return-value]
             return target_type(value)  # type: ignore[return-value,call-arg]
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
             logger.warning(f"Config value for '{key}' is not a valid {target_type.__name__}. Ignoring.")
-            return None
+            raise ConfigInvalid() from e
 
     def get_str(self, key: str, section: str | None = None) -> str | None:
         value, _ = self._get_value(key, section)
@@ -388,14 +393,6 @@ def reset_for_testing(config_path_override: Path | None = None) -> _Config:
     config = _Config(config_path_override=config_path_override)
     return config
 ```
-## File: exceptions.py
-```python
-"""Exceptions shared across entire library"""
-
-
-class Bash2GitlabError(Exception):
-    """Base error for all errors defined in bash2gitlab"""
-```
 ## File: gui.py
 ```python
 #!/usr/bin/env python3
@@ -411,8 +408,18 @@ from __future__ import annotations
 import logging
 import os
 import subprocess  # nosec
+import sys
 import threading
-import tkinter as tk
+
+from bash2gitlab.utils.missing_tkinter import check_for_python_3_13_0
+
+try:
+    import tkinter as tk
+except Exception:
+    if check_for_python_3_13_0():
+        # python 3.13.
+        sys.exit(99)
+    raise
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Any, Callable
 
@@ -1350,7 +1357,14 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from rich import box
+from bash2gitlab.install_help import print_install_help
+
+try:
+    from rich import box
+except (NameError, ModuleNotFoundError):
+    print_install_help()
+    sys.exit(111)
+
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
@@ -1907,7 +1921,14 @@ import subprocess  # nosec
 import sys
 from typing import Any
 
-from textual import on, work
+from bash2gitlab.install_help import print_install_help
+
+try:
+    from textual import on, work
+except (NameError, ModuleNotFoundError):
+    print_install_help()
+    sys.exit(111)
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
@@ -3057,6 +3078,8 @@ from urllib import error as _urlerror
 
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.input_change_detector import needs_compilation
+from bash2gitlab.errors.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
 from bash2gitlab.install_help import print_install_help
 
 try:
@@ -3097,6 +3120,7 @@ try:
     from bash2gitlab.watch_files import start_watch
 except ModuleNotFoundError:
     check_for_updates = None  # type: ignore[assignment]
+    start_watch = None  # type: ignore[assignment]
 
 # emoji support
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -3197,6 +3221,10 @@ def compile_handler(args: argparse.Namespace) -> int:
     dry_run = bool(args.dry_run)
     force = bool(args.force)
     parallelism = args.parallelism
+
+    if args.watch and not start_watch:  # type: ignore[truthy-function]
+        print_install_help()
+        sys.exit(ExitCode.UNINSTALLED_DEPENDENCIES)
 
     if args.watch:
         start_watch(
@@ -3380,9 +3408,9 @@ def show_config_handler(args: argparse.Namespace) -> int:
     return run_show_config()
 
 
-def best_effort_run_handler(args: argparse.Namespace) -> int:
+def best_effort_run_handler(args: argparse.Namespace) -> None:
     """Handler for the 'run' command."""
-    return best_efforts_run(Path(args.input_file))
+    best_efforts_run(Path(args.input_file))
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -3851,19 +3879,47 @@ def main() -> int:
         log_level = "INFO"
     logging.config.dictConfig(generate_config(level=log_level))
 
-    for _ in get_pm().hook.before_command(args=args):
-        pass
-    # Execute the appropriate handler
+    return run_cli(args)
+
+
+def run_cli(args: argparse.Namespace) -> ExitCode:
+
     try:
+        for _ in get_pm().hook.before_command(args=args):
+            pass
+        # Execute the appropriate handler
+
         rc = args.func(args)
         for _ in get_pm().hook.after_command(result=rc, args=args):
             pass
-    except NameError:
-        # logger.error(ex)
-        print_install_help()
-        return 111
 
-    return rc
+        return ExitCode.OK
+
+    except Bash2GitlabError as e:
+        if args.debug:
+            raise
+        # Domain error: short, human message; details in debug logs
+        msg = str(e)
+        print(f"error: {msg}", file=sys.stderr)
+        # if e.detail:
+        #     logger.debug("detail: %s", e.detail)
+        logger.debug("trace:", exc_info=e)
+        return resolve_exit_code(e)
+
+    except NameError:
+        print_install_help()
+        return ExitCode.UNINSTALLED_DEPENDENCIES
+
+    except KeyboardInterrupt:
+        print("Interrupted.", file=sys.stderr)
+        return ExitCode.INTERRUPTED
+
+    except Exception as e:  # unexpected bug
+        if args.debug:
+            raise
+        print("unexpected error; run with --debug for details", file=sys.stderr)
+        logger.exception("unhandled exception: %s", e)
+        return resolve_exit_code(e)
 
 
 if __name__ == "__main__":
@@ -3888,7 +3944,7 @@ from typing import Any, Union
 
 from ruamel.yaml import YAML
 
-from bash2gitlab.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 
 # Copy of the base environment variables
 BASE_ENV = os.environ.copy()
@@ -3945,14 +4001,16 @@ def run_colored(script: str, env=None, cwd=None) -> int:
 
     # Determine the bash executable based on the operating system
     if os.name == "nt":
-        bash = r"C:\Program Files\Git\bin\bash.exe"
+        bash = [r"C:\Program Files\Git\bin\bash.exe"]
     else:
-        bash = "bash"
+        bash = ["bash"]
 
+    if os.environ.get("BASH2GITLAB_RUN_LOAD_BASHRC"):
+        bash.append("-l")
     # Start the subprocess
     process = subprocess.Popen(  # nosec
         # , "-l"  # -l loads .bashrc and make it really, really slow.
-        [bash],  # bash reads script from stdin
+        bash,  # bash reads script from stdin
         env=env,
         cwd=cwd,
         stdin=subprocess.PIPE,
@@ -4062,11 +4120,11 @@ class PipelineConfig:
     jobs: list[JobConfig] = field(default_factory=list)
 
 
-class GitLabCIError(Bash2GitlabError):
+class GitlabRunnerError(Bash2GitlabError):
     """Base exception for GitLab CI runner errors."""
 
 
-class JobExecutionError(GitLabCIError):
+class JobExecutionError(GitlabRunnerError):
     """Raised when a job fails to execute successfully."""
 
 
@@ -4103,7 +4161,7 @@ class ConfigurationLoader:
             config_path = self.base_path / ".gitlab-ci.yml"
 
         if not config_path.exists():
-            raise GitLabCIError(f"Configuration file not found: {config_path}")
+            raise GitlabRunnerError(f"Configuration file not found: {config_path}")
 
         config = self._load_yaml_file(config_path)
         config = self._process_includes(config, config_path.parent)
@@ -4127,39 +4185,49 @@ class ConfigurationLoader:
             with open(file_path) as f:
                 return self.yaml.load(f) or {}
         except Exception as e:
-            raise GitLabCIError(f"Failed to load YAML file {file_path}: {e}") from e
+            raise GitlabRunnerError(f"Failed to load YAML file {file_path}: {e}") from e
 
-    def _process_includes(self, config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
+    def _process_includes(
+        self, config: dict[str, Any], base_dir: Path, seen_files: set[Path] | None = None
+    ) -> dict[str, Any]:
         """
-        Process include directives for local files only.
+        Recursively process 'include' directives from a GitLab-style YAML config.
 
         Args:
-            config: The main configuration dictionary.
-            base_dir: The base directory for resolving includes.
+            config: The configuration dictionary to process.
+            base_dir: The base path to resolve relative includes.
+            seen_files: Tracks already-included files to avoid infinite recursion.
 
         Returns:
-            The configuration with includes merged.
+            The merged configuration.
         """
-        includes = config.pop("include", [])
-        if not includes:
-            return config
+        seen_files = seen_files or set()
 
+        includes = config.pop("include", [])
         if isinstance(includes, (str, dict)):
             includes = [includes]
 
-        for include_item in includes:
-            if isinstance(include_item, str):
-                # Simple local file include
-                include_path = base_dir / include_item
-                included_config = self._load_yaml_file(include_path)
-                config = self._merge_configs(config, included_config)
-            elif isinstance(include_item, dict) and "local" in include_item:
-                # Local file with explicit local key
-                include_path = base_dir / include_item["local"]
-                included_config = self._load_yaml_file(include_path)
-                config = self._merge_configs(config, included_config)
+        merged_config: dict[str, Any] = {}
 
-        return config
+        for include in includes:
+            if isinstance(include, str):
+                include_path = (base_dir / include).resolve()
+            elif isinstance(include, dict) and "local" in include:
+                include_path = (base_dir / include["local"]).resolve()
+            else:
+                continue  # Unsupported include type
+
+            if include_path in seen_files:
+                continue  # Skip already processed files to prevent recursion
+
+            seen_files.add(include_path)
+            included_config = self._load_yaml_file(include_path)
+            included_config = self._process_includes(included_config, include_path.parent, seen_files)
+            merged_config = self._merge_configs(merged_config, included_config)
+
+        # The current config overrides any previously merged includes
+        merged_config = self._merge_configs(merged_config, config)
+        return merged_config
 
     def _merge_configs(self, base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
         """
@@ -4362,6 +4430,7 @@ class VariableManager:
 
         # Match $VAR or ${VAR}
         pattern = r"\$\{([^}]+)\}|\$([A-Za-z_][A-Za-z0-9_]*)"
+        # Fails on echo "FOO"BAR"
         return re.sub(pattern, replace_var, text)
 
 
@@ -4391,6 +4460,7 @@ class JobExecutor:
         env = self.variable_manager.prepare_environment(job)
 
         try:
+            # Don't have a way for variable declared in before to exist in middle or after.
             # Execute before_script
             if job.before_script:
                 print("  📋 Running before_script...")
@@ -4401,15 +4471,15 @@ class JobExecutor:
                 print("  🚀 Running script...")
                 self._execute_scripts(job.script, env)
 
+        except subprocess.CalledProcessError as e:
+            raise JobExecutionError(f"Job {job.name} failed with exit code {e.returncode}") from e
+        finally:
             # Execute after_script
             if job.after_script:
                 print("  📋 Running after_script...")
                 self._execute_scripts(job.after_script, env)
 
-            print(f"✅ Job {job.name} completed successfully")
-
-        except subprocess.CalledProcessError as e:
-            raise JobExecutionError(f"Job {job.name} failed with exit code {e.returncode}") from e
+        print(f"✅ Job {job.name} completed successfully")
 
     def _execute_scripts(self, scripts: list[str], env: dict[str, str]) -> None:
         """
@@ -4422,29 +4492,28 @@ class JobExecutor:
         Raises:
             subprocess.CalledProcessError: If a script exits with a non-zero code.
         """
+        lines = []
         for script in scripts:
             if not isinstance(script, str):
-                raise Exception(f"{script} is not a string")
+                raise Bash2GitlabError(f"{script} is not a string")
             if not script.strip():
                 continue
 
             # Substitute variables in the script
             script = self.variable_manager.substitute_variables(script, env)
+            lines.append(script)
 
-            print(f"    $ {script}")
+        full_script = "\n".join(lines)
+        print(f"    $ {full_script}")
 
-            # Execute using bash
-            # command = ['"/c/Program Files/Git/bin/bash.exe"', '-c', shlex.quote(script).strip('\'')]
-            # command = shlex.split(script)
+        returncode = run_colored(
+            full_script,
+            env=env,
+            cwd=Path.cwd(),
+        )
 
-            returncode = run_colored(
-                script,
-                env=env,
-                cwd=Path.cwd(),
-            )
-
-            if returncode != 0:
-                raise subprocess.CalledProcessError(returncode, script)
+        if returncode != 0:
+            raise subprocess.CalledProcessError(returncode, full_script)
 
 
 class StageOrchestrator:
@@ -4522,7 +4591,7 @@ class LocalGitLabRunner:
         self.loader = ConfigurationLoader(base_path)
         self.processor = PipelineProcessor()
 
-    def run_pipeline(self, config_path: Path | None = None) -> int:
+    def run_pipeline(self, config_path: Path | None = None) -> None:
         """
         Run the complete pipeline.
 
@@ -4536,32 +4605,23 @@ class LocalGitLabRunner:
             GitLabCIError: If there is an error in the pipeline configuration.
             Exception: For unexpected errors.
         """
-        try:
-            # Load and process configuration
-            raw_config = self.loader.load_config(config_path)
-            pipeline = self.processor.process_config(raw_config)
+        # Load and process configuration
+        raw_config = self.loader.load_config(config_path)
+        pipeline = self.processor.process_config(raw_config)
 
-            # Set up execution components
-            variable_manager = VariableManager(pipeline.variables)
-            job_executor = JobExecutor(variable_manager)
-            orchestrator = StageOrchestrator(job_executor)
+        # Set up execution components
+        variable_manager = VariableManager(pipeline.variables)
+        job_executor = JobExecutor(variable_manager)
+        orchestrator = StageOrchestrator(job_executor)
 
-            # Execute pipeline
-            orchestrator.execute_pipeline(pipeline)
-
-        except GitLabCIError as e:
-            print(f"❌ GitLab CI Error: {e}")
-            sys.exit(1)
-        except Exception as e:
-            print(f"❌ Unexpected error: {e}")
-            sys.exit(1)
-        return 0
+        # Execute pipeline
+        orchestrator.execute_pipeline(pipeline)
 
 
-def best_efforts_run(config_path: Path) -> int:
+def best_efforts_run(config_path: Path) -> None:
     """Main entry point for the best-efforts-run command."""
     runner = LocalGitLabRunner()
-    return runner.run_pipeline(config_path)
+    runner.run_pipeline(config_path)
 
 
 if __name__ == "__main__":
@@ -4821,12 +4881,9 @@ def report_targets(root: Path) -> list[Path]:
 from __future__ import annotations
 
 import base64
-import difflib
 import io
 import logging
 import multiprocessing
-import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -4840,7 +4897,9 @@ from bash2gitlab.commands.compile_bash_reader import read_bash_script
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
 from bash2gitlab.commands.input_change_detector import mark_compilation_complete, needs_compilation
 from bash2gitlab.config import config
+from bash2gitlab.errors.exceptions import Bash2GitlabError, CompileError, ValidationFailed
 from bash2gitlab.plugins import get_pm
+from bash2gitlab.utils import diff_helpers
 from bash2gitlab.utils.dotenv import parse_env_file
 from bash2gitlab.utils.parse_bash import extract_script_path
 from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
@@ -5027,7 +5086,9 @@ def process_script_list(
                 bash_code = read_bash_script(script_path)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
-                raise Exception(f"Could not inline script '{script_path_str}': {e}. Preserving original line.") from e
+                raise Bash2GitlabError(
+                    f"Could not inline script '{script_path_str}': {e}. Preserving original line."
+                ) from e
             bash_lines = bash_code.splitlines()
             logger.debug(
                 "Inlining script '%s' (%d lines).",
@@ -5099,11 +5160,12 @@ def process_job(job_data: dict, scripts_root: Path) -> int:
 def has_must_inline_pragma(job_data: dict | str) -> bool:
     if isinstance(job_data, list):
         for item_id, _item in enumerate(job_data):
-            comment = job_data.ca.items.get(item_id)
-            if comment:
-                comment_value = comment[0].value
-                if "pragma" in comment_value.lower() and "must-inline" in comment_value.lower():
-                    return True
+            if hasattr(job_data, "ca"):
+                comment = job_data.ca.items.get(item_id)
+                if comment:
+                    comment_value = comment[0].value
+                    if "pragma" in comment_value.lower() and "must-inline" in comment_value.lower():
+                        return True
         for item in job_data:
             if "pragma" in item.lower() and "must-inline" in item.lower():
                 return True
@@ -5132,15 +5194,6 @@ def inline_gitlab_scripts(
     yaml = get_yaml()
     data = yaml.load(io.StringIO(gitlab_ci_yaml))
 
-    # Merge global variables if provided
-    # if global_vars:
-    #     logger.debug("Merging global variables into the YAML configuration.")
-    #     existing_vars = data.get("variables", {})
-    #     merged_vars = global_vars.copy()
-    #     # Update with existing vars, so YAML-defined vars overwrite global ones on conflict.
-    #     merged_vars.update(existing_vars)
-    #     data["variables"] = merged_vars
-    #     inlined_count += 1
     if global_vars:
         logger.debug("Merging global variables into the YAML configuration.")
         existing_vars = data.get("variables", CommentedMap())
@@ -5153,7 +5206,6 @@ def inline_gitlab_scripts(
             merged_vars[k] = v
 
         data["variables"] = merged_vars
-        inlined_count += 1
 
     for name in ["after_script", "before_script"]:
         if name in data:
@@ -5161,7 +5213,6 @@ def inline_gitlab_scripts(
             result = process_script_list(data[name], scripts_root)
             if result != data[name]:
                 data[name] = result
-                inlined_count += 1
 
     # Process all jobs and top-level script lists (which are often used for anchors)
     for job_name, job_data in data.items():
@@ -5259,55 +5310,13 @@ def write_yaml_and_hash(
     validator = GitLabCIValidator()
     ok, problems = validator.validate_ci_config(new_content)
     if not ok:
-        raise Exception(problems)
+        raise ValidationFailed(problems)
     output_file.write_text(new_content, encoding="utf-8")
 
     # Store a base64 encoded copy of the exact content we just wrote.
     encoded_content = base64.b64encode(new_content.encode("utf-8")).decode("utf-8")
     hash_file.write_text(encoded_content, encoding="utf-8")
     logger.debug(f"Updated hash file: {short_path(hash_file)}")
-
-
-def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
-    """Return a unified diff between *old* and *new* content with filenames.
-
-    keepends=True preserves newline structure for line-accurate diffs in logs.
-    """
-    return "".join(
-        difflib.unified_diff(
-            old.splitlines(keepends=True),
-            new.splitlines(keepends=True),
-            fromfile=f"{path} ({from_label})",
-            tofile=f"{path} ({to_label})",
-        )
-    )
-
-
-@dataclass(frozen=True)
-class DiffStats:
-    changed: int
-    insertions: int
-    deletions: int
-
-
-def diff_stats(diff_text: str) -> DiffStats:
-    """Compute (changed_lines, insertions, deletions) from unified diff text.
-
-    We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
-    """
-    ins = del_ = 0
-    for line in diff_text.splitlines():
-        if not line:
-            continue
-        # Skip headers/hunks
-        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
-            continue
-        # Pure additions/deletions in unified diff start with '+' or '-'
-        if line.startswith("+"):
-            ins += 1
-        elif line.startswith("-"):
-            del_ += 1
-    return DiffStats(changed=ins + del_, insertions=ins, deletions=del_)
 
 
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
@@ -5325,10 +5334,10 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         current_content = output_file.read_text(encoding="utf-8")
 
         if not yaml_is_same(current_content, new_content):
-            diff_text = unified_diff(
+            diff_text = diff_helpers.unified_diff(
                 normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
             )
-            different = diff_stats(diff_text)
+            different = diff_helpers.diff_stats(diff_text)
             logger.info(
                 f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions})."
             )
@@ -5348,7 +5357,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     if not hash_file.exists():
         error_message = f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. Aborting to prevent data loss. If you want to regenerate this file, please remove it and run the script again."
         logger.error(error_message)
-        raise SystemExit(1)
+        raise CompileError()
 
     # Decode the last known content from the hash file
     last_known_base64 = hash_file.read_text(encoding="utf-8").strip()
@@ -5357,7 +5366,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     except (ValueError, TypeError) as e:
         error_message = f"ERROR: Could not decode the .hash file for '{short_path(output_file)}'. It may be corrupted.\nError: {e}\nAborting to prevent data loss. Please remove the file and its .hash file to regenerate."
         logger.error(error_message)
-        raise SystemExit(1) from e
+        raise CompileError() from e
 
     current_content = output_file.read_text(encoding="utf-8")
 
@@ -5371,7 +5380,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             short_path(output_file),
             e,
         )
-        raise SystemExit(1) from e
+        raise CompileError() from e
 
     try:
         current_doc = yaml.load(current_content)
@@ -5383,9 +5392,9 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
 
     # An edit is detected if the current file is corrupt OR the parsed YAML documents are not identical.
     is_same = yaml_is_same(last_known_content, current_content)
-    # current_doc != last_known_doc
+
     if is_current_corrupt or (current_doc != last_known_doc and not is_same):
-        diff_text = unified_diff(
+        diff_text = diff_helpers.unified_diff(
             normalize_for_compare(last_known_content),
             normalize_for_compare(current_content),
             output_file,
@@ -5399,17 +5408,17 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         )
 
         error_message = f"\n--- MANUAL EDIT DETECTED ---\nCANNOT OVERWRITE: The destination file below has been modified:\n  {output_file}\n\n{corruption_warning}The script detected that its data no longer matches the last generated version.\nTo prevent data loss, the process has been stopped.\n\n--- DETECTED CHANGES ---\n{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n--- HOW TO RESOLVE ---\n1. Revert the manual changes in '{output_file}' and run this script again.\nOR\n2. If the manual changes are desired, incorporate them into the source files\n   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n   to regenerate it from the new base.\n"
-        # We use sys.exit to print the message directly and exit with an error code.
-        sys.exit(error_message)
+        print(error_message)
+        raise CompileError()
 
     # If we reach here, the current file is valid (or just reformatted).
     # Now, we check if the *newly generated* content is different from the current content.
     if not yaml_is_same(current_content, new_content):
         # NEW: log diff + counts before writing
-        diff_text = unified_diff(
+        diff_text = diff_helpers.unified_diff(
             normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
         )
-        different = diff_stats(diff_text)
+        different = diff_helpers.diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
             short_path(output_file),
@@ -5482,7 +5491,7 @@ def run_compile_all(
         print("Stray files in output folder, halting")
         for stray in strays:
             print(f"  {stray}")
-        sys.exit(200)
+        raise CompileError()
 
     total_inlined_count = 0
     written_files_count = 0
@@ -5491,10 +5500,11 @@ def run_compile_all(
         output_path.mkdir(parents=True, exist_ok=True)
 
     global_vars_path = uncompiled_path / "global_variables.sh"
+    global_vars_data = {}
     if global_vars_path.is_file():
         logger.info(f"Found and loading variables from {short_path(global_vars_path)}")
         content = global_vars_path.read_text(encoding="utf-8")
-        parse_env_file(content)
+        global_vars_data = parse_env_file(content)
         total_inlined_count += 1
 
     files_to_process: list[tuple[Path, Path, dict[str, str]]] = []
@@ -5507,7 +5517,7 @@ def run_compile_all(
         for template_path in template_files:
             relative_path = template_path.relative_to(uncompiled_path)
             output_file = output_path / relative_path
-            files_to_process.append((template_path, output_file, {}))
+            files_to_process.append((template_path, output_file, global_vars_data))
 
     total_files = len(files_to_process)
     max_workers = multiprocessing.cpu_count()
@@ -5559,14 +5569,13 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sys
 from pathlib import Path
 
-from bash2gitlab.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
 
-__all__ = ["read_bash_script"]
+__all__ = ["read_bash_script", "SourceSecurityError", "PragmaError"]
 
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
@@ -5647,7 +5656,7 @@ def read_bash_script(path: Path) -> str:
     content = inline_bash_source(path)
 
     if not content.strip():
-        raise ValueError(f"Script is empty or only contains whitespace: {path}")
+        raise Bash2GitlabError(f"Script is empty or only contains whitespace: {path}")
 
     # The returned content is now final.
     return content
@@ -5815,9 +5824,7 @@ def inline_bash_source(
                             short_path(main_script_path),
                             e,
                         )
-                        if "PYTEST_CURRENT_TEST" in os.environ:
-                            raise
-                        sys.exit(105)
+                        raise
 
                     logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
                     inlined = inline_bash_source(
@@ -5848,7 +5855,7 @@ def inline_bash_source(
         logger.exception(e)
         if "PYTEST_CURRENT_TEST" in os.environ:
             raise
-        sys.exit(106)
+        raise Bash2GitlabError() from e
 
     final = "".join(final_content_lines)
     if not final.endswith("\n"):
@@ -5881,6 +5888,8 @@ import re
 from pathlib import Path
 
 __all__ = ["maybe_inline_interpreter_command"]
+
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 
 logger = logging.getLogger(__name__)
 
@@ -6016,14 +6025,14 @@ def resolve_interpreter_target(
     """
     if module:
         if normalize_interp(interp) != "python":
-            raise ValueError(f"-m is only supported for python, got: {interp}")
+            raise Bash2GitlabError(f"-m is only supported for python, got: {interp}")
         rel = Path(module.replace(".", "/") + ".py")
         return scripts_root / rel, f"python -m {module}"
     if path_str:
         rel_str = Path(path_str.strip()).as_posix().lstrip("./")
         shown = f"{interp} {Path(rel_str).as_posix()}"
         return scripts_root / rel_str, shown
-    raise ValueError("Neither module nor path provided.")
+    raise Bash2GitlabError("Neither module nor path provided.")
 
 
 def is_reasonable_ext(interp: str, file: Path) -> bool:
@@ -6138,6 +6147,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -6200,7 +6210,7 @@ def fetch_repository_archive(
             # 2. Construct the archive URL and check for its existence.
             archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
             if not archive_url.startswith("http"):
-                raise TypeError(f"Expected http or https protocol, got {archive_url}")
+                raise Bash2GitlabError(f"Expected http or https protocol, got {archive_url}")
 
             try:
                 # Use a simple open to verify existence without a full download.
@@ -6371,6 +6381,7 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.config import config
+from bash2gitlab.errors.exceptions import ValidationFailed
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
@@ -6830,7 +6841,7 @@ def run_decompile_gitlab_file(
                 validator = GitLabCIValidator()
                 ok, problems = validator.validate_ci_config(new_content)
                 if not ok:
-                    raise Exception(problems)
+                    raise ValidationFailed(problems)
     else:
         logger.info("No script or variable blocks found to decompile.")
 
@@ -6896,13 +6907,13 @@ useful for integration into CI/CD pipelines to prevent unintended changes.
 from __future__ import annotations
 
 import base64
-import difflib
 import logging
 from collections.abc import Generator
 from pathlib import Path
 
 __all__ = ["run_detect_drift"]
 
+from bash2gitlab.utils.diff_helpers import generate_pretty_diff
 from bash2gitlab.utils.terminal_colors import Colors
 from bash2gitlab.utils.utils import short_path
 
@@ -6953,39 +6964,6 @@ def get_source_file_from_hash(hash_file: Path) -> Path:
     if s.endswith(".hash"):
         return Path(s[: -len(".hash")])
     return Path(s)
-
-
-def generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
-    """
-    Generates a colorized (if enabled), unified diff string between two content strings.
-
-    Args:
-        source_content: The current content of the file.
-        decoded_content: The original content from the hash.
-        source_file_path: The path to the source file (for labeling the diff).
-
-    Returns:
-        A formatted and colorized diff string.
-    """
-    diff_lines = difflib.unified_diff(
-        decoded_content.splitlines(),
-        source_content.splitlines(),
-        fromfile=f"{source_file_path} (from hash)",
-        tofile=f"{source_file_path} (current, with manual edits)",
-        lineterm="",
-    )
-
-    colored_diff = []
-    for line in diff_lines:
-        if line.startswith("+"):
-            colored_diff.append(f"{Colors.OKGREEN}{line}{Colors.ENDC}")
-        elif line.startswith("-"):
-            colored_diff.append(f"{Colors.FAIL}{line}{Colors.ENDC}")
-        elif line.startswith("@@"):
-            colored_diff.append(f"{Colors.OKCYAN}{line}{Colors.ENDC}")
-        else:
-            colored_diff.append(line)
-    return "\n".join(colored_diff)
 
 
 def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
@@ -9274,7 +9252,7 @@ import stat
 from pathlib import Path
 
 from bash2gitlab.config import config
-from bash2gitlab.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 
 logger = logging.getLogger(__name__)
 
@@ -9683,6 +9661,109 @@ def run_show_config() -> int:
             print(f"  {key_padded} = {value_str} {source_str}")
 
     return 0
+```
+## File: errors\exceptions.py
+```python
+"""Exceptions shared across entire library"""
+
+
+class Bash2GitlabError(Exception):
+    """Base error for all errors defined in bash2gitlab"""
+
+
+class NotFound(Bash2GitlabError): ...
+
+
+class ConfigInvalid(Bash2GitlabError): ...
+
+
+class PermissionDenied(Bash2GitlabError): ...
+
+
+class NetworkIssue(Bash2GitlabError): ...
+
+
+class ValidationFailed(Bash2GitlabError): ...
+
+
+class CompileError(Bash2GitlabError): ...
+```
+## File: errors\exit_codes.py
+```python
+from __future__ import annotations
+
+from enum import IntEnum
+from subprocess import CalledProcessError  # nosec
+
+from bash2gitlab.commands.best_effort_runner import GitlabRunnerError
+from bash2gitlab.commands.compile_bash_reader import PragmaError, SourceSecurityError
+from bash2gitlab.errors.exceptions import (
+    Bash2GitlabError,
+    CompileError,
+    ConfigInvalid,
+    NetworkIssue,
+    NotFound,
+    PermissionDenied,
+    ValidationFailed,
+)
+
+
+class ExitCode(IntEnum):
+    OK = 0
+    USAGE = 2  # argparse-like
+    NOT_FOUND = 3
+    CONFIG_ERROR = 4
+    PERMISSION_DENIED = 6
+    NETWORK_ERROR = 5
+    VALIDATION_ERROR = 7
+    UNINSTALLED_DEPENDENCIES = 8
+
+    # Bash2Gitlab domain errors
+    COMMAND_ERROR = 30
+    PRAGMA_ERROR = 31
+    SOURCE_SECURITY_ERROR = 32
+    GITLAB_RUNNER_ERROR = 33
+    COMPILE_ERROR = 34
+
+    # Generic python
+    FILE_EXISTS = (80,)
+    EXTERNAL_COMMAND_ERROR = 81
+
+    INTERRUPTED = 130  # 128 + SIGINT
+    UNEXPECTED = 70  # similar to sysexits EX_SOFTWARE
+
+
+ERROR_CODE_MAP: dict[type[BaseException], ExitCode] = {
+    NotFound: ExitCode.NOT_FOUND,
+    ConfigInvalid: ExitCode.CONFIG_ERROR,
+    PermissionDenied: ExitCode.PERMISSION_DENIED,
+    NetworkIssue: ExitCode.NETWORK_ERROR,
+    ValidationFailed: ExitCode.VALIDATION_ERROR,
+    GitlabRunnerError: ExitCode.GITLAB_RUNNER_ERROR,
+    SourceSecurityError: ExitCode.SOURCE_SECURITY_ERROR,
+    PragmaError: ExitCode.PRAGMA_ERROR,
+    CompileError: ExitCode.COMPILE_ERROR,
+    # You can add Python built-ins too if you want:
+    FileNotFoundError: ExitCode.NOT_FOUND,
+    PermissionError: ExitCode.PERMISSION_DENIED,
+    FileExistsError: ExitCode.FILE_EXISTS,
+    CalledProcessError: ExitCode.EXTERNAL_COMMAND_ERROR,
+    ConnectionError: ExitCode.NETWORK_ERROR,
+}
+
+
+def resolve_exit_code(exc: BaseException) -> ExitCode:
+    """
+    Find the first matching mapping by walking the exception's MRO.
+    This lets subclass relationships work naturally.
+    """
+    for cls in type(exc).mro():
+        if cls in ERROR_CODE_MAP:
+            return ERROR_CODE_MAP[cls]
+    # Domain "expected" but unmapped → treat as runtime error bucket
+    if isinstance(exc, Bash2GitlabError):
+        return ExitCode.COMMAND_ERROR
+    return ExitCode.UNEXPECTED
 ```
 ## File: schemas\gitlab_ci_schema.json
 ```json
@@ -12868,6 +12949,89 @@ def cli(argv=None):
 if __name__ == "__main__":
     cli()
 ```
+## File: utils\diff_helpers.py
+```python
+from __future__ import annotations
+
+import difflib
+from dataclasses import dataclass
+from pathlib import Path
+
+from bash2gitlab.utils.terminal_colors import Colors
+
+
+def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
+    """Return a unified diff between *old* and *new* content with filenames."""
+    # keepends=True preserves newline structure for line-accurate diffs in logs.
+    return "".join(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            new.splitlines(keepends=True),
+            fromfile=f"{path} ({from_label})",
+            tofile=f"{path} ({to_label})",
+        )
+    )
+
+
+@dataclass(frozen=True)
+class DiffStats:
+    changed: int
+    insertions: int
+    deletions: int
+
+
+def diff_stats(diff_text: str) -> DiffStats:
+    """Compute (changed_lines, insertions, deletions) from unified diff text.
+
+    We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
+    """
+    ins = del_ = 0
+    for line in diff_text.splitlines():
+        if not line:
+            continue
+        # Skip headers/hunks
+        if line.startswith("+++") or line.startswith("---") or line.startswith("@@"):
+            continue
+        # Pure additions/deletions in unified diff start with '+' or '-'
+        if line.startswith("+"):
+            ins += 1
+        elif line.startswith("-"):
+            del_ += 1
+    return DiffStats(changed=ins + del_, insertions=ins, deletions=del_)
+
+
+def generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
+    """
+    Generates a colorized (if enabled), unified diff string between two content strings.
+
+    Args:
+        source_content: The current content of the file.
+        decoded_content: The original content from the hash.
+        source_file_path: The path to the source file (for labeling the diff).
+
+    Returns:
+        A formatted and colorized diff string.
+    """
+    diff_lines = difflib.unified_diff(
+        decoded_content.splitlines(),
+        source_content.splitlines(),
+        fromfile=f"{source_file_path} (from hash)",
+        tofile=f"{source_file_path} (current, with manual edits)",
+        lineterm="",
+    )
+
+    colored_diff = []
+    for line in diff_lines:
+        if line.startswith("+"):
+            colored_diff.append(f"{Colors.OKGREEN}{line}{Colors.ENDC}")
+        elif line.startswith("-"):
+            colored_diff.append(f"{Colors.FAIL}{line}{Colors.ENDC}")
+        elif line.startswith("@@"):
+            colored_diff.append(f"{Colors.OKCYAN}{line}{Colors.ENDC}")
+        else:
+            colored_diff.append(line)
+    return "\n".join(colored_diff)
+```
 ## File: utils\dotenv.py
 ```python
 """.env file support with descriptions"""
@@ -13120,6 +13284,40 @@ def generate_config(level: str = "DEBUG") -> dict[str, Any]:
         config["handlers"]["default"]["formatter"] = "standard"
 
     return config
+```
+## File: utils\missing_tkinter.py
+```python
+import platform
+import sys
+import textwrap
+
+
+def check_for_python_3_13_0() -> bool:
+    """
+    Check if the running interpreter is Python 3.13.0.
+    If so, advise the user to upgrade to 3.13.1+.
+    """
+    version_info = sys.version_info
+    if (version_info.major, version_info.minor, version_info.micro) == (3, 13, 0):
+        msg = textwrap.dedent(
+            f"""
+        ⚠️ You are running Python {platform.python_version()}.
+
+        This is an initial release of Python 3.13 and has known bugs.
+        You should upgrade to 3.13.1 or newer.
+
+        Suggested upgrade methods:
+          • Windows (python.org installer): download the latest 3.13.x from https://www.python.org/downloads/windows/
+          • macOS (Homebrew):    brew upgrade python@3.13
+          • Linux (Debian/Ubuntu): sudo apt update && sudo apt install python3.13
+          • Linux (Fedora/RHEL): sudo dnf upgrade python3.13
+          • Universal (pyenv):   pyenv install 3.13.1 && pyenv global 3.13.1
+
+        """
+        ).strip()
+        print(msg)
+        return True
+    return False
 ```
 ## File: utils\mock_ci_vars.py
 ```python

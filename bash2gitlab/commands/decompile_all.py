@@ -25,6 +25,7 @@ from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import FoldedScalarString
 
 from bash2gitlab.config import config
+from bash2gitlab.errors.exceptions import ValidationFailed
 from bash2gitlab.utils.mock_ci_vars import generate_mock_ci_variables_script
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
@@ -484,7 +485,7 @@ def run_decompile_gitlab_file(
                 validator = GitLabCIValidator()
                 ok, problems = validator.validate_ci_config(new_content)
                 if not ok:
-                    raise Exception(problems)
+                    raise ValidationFailed(problems)
     else:
         logger.info("No script or variable blocks found to decompile.")
 

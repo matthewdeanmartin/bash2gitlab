@@ -17,13 +17,13 @@ useful for integration into CI/CD pipelines to prevent unintended changes.
 from __future__ import annotations
 
 import base64
-import difflib
 import logging
 from collections.abc import Generator
 from pathlib import Path
 
 __all__ = ["run_detect_drift"]
 
+from bash2gitlab.utils.diff_helpers import generate_pretty_diff
 from bash2gitlab.utils.terminal_colors import Colors
 from bash2gitlab.utils.utils import short_path
 
@@ -74,39 +74,6 @@ def get_source_file_from_hash(hash_file: Path) -> Path:
     if s.endswith(".hash"):
         return Path(s[: -len(".hash")])
     return Path(s)
-
-
-def generate_pretty_diff(source_content: str, decoded_content: str, source_file_path: Path) -> str:
-    """
-    Generates a colorized (if enabled), unified diff string between two content strings.
-
-    Args:
-        source_content: The current content of the file.
-        decoded_content: The original content from the hash.
-        source_file_path: The path to the source file (for labeling the diff).
-
-    Returns:
-        A formatted and colorized diff string.
-    """
-    diff_lines = difflib.unified_diff(
-        decoded_content.splitlines(),
-        source_content.splitlines(),
-        fromfile=f"{source_file_path} (from hash)",
-        tofile=f"{source_file_path} (current, with manual edits)",
-        lineterm="",
-    )
-
-    colored_diff = []
-    for line in diff_lines:
-        if line.startswith("+"):
-            colored_diff.append(f"{Colors.OKGREEN}{line}{Colors.ENDC}")
-        elif line.startswith("-"):
-            colored_diff.append(f"{Colors.FAIL}{line}{Colors.ENDC}")
-        elif line.startswith("@@"):
-            colored_diff.append(f"{Colors.OKCYAN}{line}{Colors.ENDC}")
-        else:
-            colored_diff.append(line)
-    return "\n".join(colored_diff)
 
 
 def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:

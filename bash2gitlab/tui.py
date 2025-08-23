@@ -11,7 +11,14 @@ import subprocess  # nosec
 import sys
 from typing import Any
 
-from textual import on, work
+from bash2gitlab.install_help import print_install_help
+
+try:
+    from textual import on, work
+except (NameError, ModuleNotFoundError):
+    print_install_help()
+    sys.exit(111)
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll

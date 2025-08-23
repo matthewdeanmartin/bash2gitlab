@@ -19,6 +19,8 @@ from pathlib import Path
 
 __all__ = ["maybe_inline_interpreter_command"]
 
+from bash2gitlab.errors.exceptions import Bash2GitlabError
+
 logger = logging.getLogger(__name__)
 
 # Maximum *quoted* payload length to inline. Large payloads risk hitting ARG_MAX
@@ -153,14 +155,14 @@ def resolve_interpreter_target(
     """
     if module:
         if normalize_interp(interp) != "python":
-            raise ValueError(f"-m is only supported for python, got: {interp}")
+            raise Bash2GitlabError(f"-m is only supported for python, got: {interp}")
         rel = Path(module.replace(".", "/") + ".py")
         return scripts_root / rel, f"python -m {module}"
     if path_str:
         rel_str = Path(path_str.strip()).as_posix().lstrip("./")
         shown = f"{interp} {Path(rel_str).as_posix()}"
         return scripts_root / rel_str, shown
-    raise ValueError("Neither module nor path provided.")
+    raise Bash2GitlabError("Neither module nor path provided.")
 
 
 def is_reasonable_ext(interp: str, file: Path) -> bool:

@@ -8,7 +8,8 @@ import pytest
 from ruamel.yaml import YAML
 
 import bash2gitlab.commands.compile_all as m
-from bash2gitlab.commands.compile_all import diff_stats, unified_diff, write_compiled_file
+from bash2gitlab.commands.compile_all import write_compiled_file
+from bash2gitlab.utils.diff_helpers import diff_stats, unified_diff
 
 # --- Helpers used in monkeypatching -------------------------------------------------
 

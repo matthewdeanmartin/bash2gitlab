@@ -1,0 +1,15 @@
+# requirements-api.txt
+# Additional requirements for the bash2gitlab API server
+
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.4.0
+python-multipart>=0.0.6
+
+# For CORS support (already included in fastapi)
+# For async operations (already in Python 3.7+)
+
+# Optional: For production deployment
+# gunicorn>=21.2.0
+
+

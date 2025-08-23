@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.2] - 2025-08-23
+
+### Fixed
+
+- Bash style error handling in CLI code with sys.exit + numeric error code, python exceptions everywhere else.
+- Better error reporting when running gui/tui/interactive without installing `[all]`
+
 ## [0.9.1] - 2025-08-22
 
 ### Fixed

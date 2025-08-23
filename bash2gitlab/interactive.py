@@ -10,7 +10,14 @@ from __future__ import annotations
 import sys
 from typing import Any
 
-from rich import box
+from bash2gitlab.install_help import print_install_help
+
+try:
+    from rich import box
+except (NameError, ModuleNotFoundError):
+    print_install_help()
+    sys.exit(111)
+
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel

@@ -7,6 +7,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Any, TypeVar
 
+from bash2gitlab.errors.exceptions import ConfigInvalid
 from bash2gitlab.utils.utils import short_path
 
 if sys.version_info >= (3, 11):
@@ -85,10 +86,10 @@ class _Config:
 
         except tomllib.TOMLDecodeError as e:
             logger.error(f"Error decoding TOML file {short_path(config_path)}: {e}")
-            return {}
+            raise ConfigInvalid() from e
         except OSError as e:
             logger.error(f"Error reading file {short_path(config_path)}: {e}")
-            return {}
+            raise ConfigInvalid() from e
 
     def load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
@@ -131,9 +132,9 @@ class _Config:
             if target_type is bool and isinstance(value, str):
                 return value.lower() in ("true", "1", "t", "y", "yes")  # type: ignore[return-value]
             return target_type(value)  # type: ignore[return-value,call-arg]
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as e:
             logger.warning(f"Config value for '{key}' is not a valid {target_type.__name__}. Ignoring.")
-            return None
+            raise ConfigInvalid() from e
 
     def get_str(self, key: str, section: str | None = None) -> str | None:
         value, _ = self._get_value(key, section)

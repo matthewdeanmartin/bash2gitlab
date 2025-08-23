@@ -5,14 +5,13 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sys
 from pathlib import Path
 
-from bash2gitlab.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
 
-__all__ = ["read_bash_script"]
+__all__ = ["read_bash_script", "SourceSecurityError", "PragmaError"]
 
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
@@ -93,7 +92,7 @@ def read_bash_script(path: Path) -> str:
     content = inline_bash_source(path)
 
     if not content.strip():
-        raise ValueError(f"Script is empty or only contains whitespace: {path}")
+        raise Bash2GitlabError(f"Script is empty or only contains whitespace: {path}")
 
     # The returned content is now final.
     return content
@@ -261,9 +260,7 @@ def inline_bash_source(
                             short_path(main_script_path),
                             e,
                         )
-                        if "PYTEST_CURRENT_TEST" in os.environ:
-                            raise
-                        sys.exit(105)
+                        raise
 
                     logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
                     inlined = inline_bash_source(
@@ -294,7 +291,7 @@ def inline_bash_source(
         logger.exception(e)
         if "PYTEST_CURRENT_TEST" in os.environ:
             raise
-        sys.exit(106)
+        raise Bash2GitlabError() from e
 
     final = "".join(final_content_lines)
     if not final.endswith("\n"):

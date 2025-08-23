@@ -37,6 +37,8 @@ from urllib import error as _urlerror
 
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.input_change_detector import needs_compilation
+from bash2gitlab.errors.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
 from bash2gitlab.install_help import print_install_help
 
 try:
@@ -77,6 +79,7 @@ try:
     from bash2gitlab.watch_files import start_watch
 except ModuleNotFoundError:
     check_for_updates = None  # type: ignore[assignment]
+    start_watch = None  # type: ignore[assignment]
 
 # emoji support
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -177,6 +180,10 @@ def compile_handler(args: argparse.Namespace) -> int:
     dry_run = bool(args.dry_run)
     force = bool(args.force)
     parallelism = args.parallelism
+
+    if args.watch and not start_watch:  # type: ignore[truthy-function]
+        print_install_help()
+        sys.exit(ExitCode.UNINSTALLED_DEPENDENCIES)
 
     if args.watch:
         start_watch(
@@ -360,9 +367,9 @@ def show_config_handler(args: argparse.Namespace) -> int:
     return run_show_config()
 
 
-def best_effort_run_handler(args: argparse.Namespace) -> int:
+def best_effort_run_handler(args: argparse.Namespace) -> None:
     """Handler for the 'run' command."""
-    return best_efforts_run(Path(args.input_file))
+    best_efforts_run(Path(args.input_file))
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -831,19 +838,47 @@ def main() -> int:
         log_level = "INFO"
     logging.config.dictConfig(generate_config(level=log_level))
 
-    for _ in get_pm().hook.before_command(args=args):
-        pass
-    # Execute the appropriate handler
+    return run_cli(args)
+
+
+def run_cli(args: argparse.Namespace) -> ExitCode:
+
     try:
+        for _ in get_pm().hook.before_command(args=args):
+            pass
+        # Execute the appropriate handler
+
         rc = args.func(args)
         for _ in get_pm().hook.after_command(result=rc, args=args):
             pass
-    except NameError:
-        # logger.error(ex)
-        print_install_help()
-        return 111
 
-    return rc
+        return ExitCode.OK
+
+    except Bash2GitlabError as e:
+        if args.debug:
+            raise
+        # Domain error: short, human message; details in debug logs
+        msg = str(e)
+        print(f"error: {msg}", file=sys.stderr)
+        # if e.detail:
+        #     logger.debug("detail: %s", e.detail)
+        logger.debug("trace:", exc_info=e)
+        return resolve_exit_code(e)
+
+    except NameError:
+        print_install_help()
+        return ExitCode.UNINSTALLED_DEPENDENCIES
+
+    except KeyboardInterrupt:
+        print("Interrupted.", file=sys.stderr)
+        return ExitCode.INTERRUPTED
+
+    except Exception as e:  # unexpected bug
+        if args.debug:
+            raise
+        print("unexpected error; run with --debug for details", file=sys.stderr)
+        logger.exception("unhandled exception: %s", e)
+        return resolve_exit_code(e)
 
 
 if __name__ == "__main__":
