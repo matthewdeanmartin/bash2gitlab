@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Literal
 
@@ -43,13 +43,9 @@ def check_directory_overlap(input_dir: Path, output_dir: Path) -> list[str]:
     warnings = []
     try:
         if is_relative_to(output_dir.resolve(), input_dir.resolve()):
-            warnings.append(
-                f"Output directory '{short_path(output_dir)}' is inside the input directory."
-            )
+            warnings.append(f"Output directory '{short_path(output_dir)}' is inside the input directory.")
         if is_relative_to(input_dir.resolve(), output_dir.resolve()):
-            warnings.append(
-                f"Input directory '{short_path(input_dir)}' is inside the output directory."
-            )
+            warnings.append(f"Input directory '{short_path(input_dir)}' is inside the output directory.")
     except Exception as e:
         # This can happen if one of the paths doesn't exist, which is handled by another check.
         logger.debug(f"Could not check directory overlap: {e}")
@@ -90,9 +86,7 @@ def check_map_source_paths_exist() -> list[str]:
     for source_base in deployment_map.keys():
         source_path = Path(source_base)
         if not source_path.is_dir():
-            warnings.append(
-                f"Source directory from 'map' config does not exist: {short_path(source_path)}"
-            )
+            warnings.append(f"Source directory from 'map' config does not exist: {short_path(source_path)}")
     return warnings
 
 
@@ -114,7 +108,7 @@ def check_lint_config_validity() -> list[str]:
 
     req = urllib.request.Request(api_url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=5) as response:  # nosec
             if response.status == 200:
                 return []  # Success
             else:

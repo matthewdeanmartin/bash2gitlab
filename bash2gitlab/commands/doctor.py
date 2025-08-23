@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import contextlib
 import io
 import logging
 import re
 import shutil
-import subprocess
-import contextlib
+import subprocess  # nosec
 from pathlib import Path
 
 from bash2gitlab.commands.detect_drift import run_detect_drift
@@ -31,11 +31,7 @@ __all__ = ["run_doctor"]
 
 def check(message: str, success: bool, details: list[str] | None = None) -> bool:
     """Prints a check message with a status and optional details."""
-    status = (
-        f"{Colors.OKGREEN}✔ OK{Colors.ENDC}"
-        if success
-        else f"{Colors.FAIL}✖ FAILED{Colors.ENDC}"
-    )
+    status = f"{Colors.OKGREEN}✔ OK{Colors.ENDC}" if success else f"{Colors.FAIL}✖ FAILED{Colors.ENDC}"
     print(f"  [{status}] {message}")
     if details:
         for detail in details:
@@ -48,7 +44,7 @@ def get_command_version(cmd: str) -> str:
     if not shutil.which(cmd):
         return f"{Colors.WARNING}not found{Colors.ENDC}"
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec
             [cmd, "--version"],
             capture_output=True,
             text=True,
@@ -169,8 +165,11 @@ def run_doctor() -> int:
     print(f"\n{Colors.BOLD}Project State & Integrity:{Colors.ENDC}")
 
     if needs_compilation(input_dir):
-        check("Source files are in sync with compiled output", False,
-              ["Uncompiled changes detected. Run `bash2gitlab compile`."])
+        check(
+            "Source files are in sync with compiled output",
+            False,
+            ["Uncompiled changes detected. Run `bash2gitlab compile`."],
+        )
         flag_issue()
     else:
         check("Source files are in sync with compiled output", True)
@@ -197,21 +196,26 @@ def run_doctor() -> int:
         pass
 
     input_yaml_errors = check_yaml_validity(input_dir)
-    if not check("Input directory YAML files are valid against GitLab schema", not input_yaml_errors,
-                 input_yaml_errors):
+    if not check(
+        "Input directory YAML files are valid against GitLab schema", not input_yaml_errors, input_yaml_errors
+    ):
         flag_issue()
 
     output_yaml_errors = check_yaml_validity(output_dir)
-    if not check("Output directory YAML files are valid against GitLab schema", not output_yaml_errors,
-                 output_yaml_errors):
+    if not check(
+        "Output directory YAML files are valid against GitLab schema", not output_yaml_errors, output_yaml_errors
+    ):
         flag_issue()
 
     # --- Environment Checks ---
     print(f"\n{Colors.BOLD}Environment & Tooling:{Colors.ENDC}")
 
     precommit_status, precommit_details = check_precommit_hook_status(Path.cwd())
-    if not check(f"Pre-commit hook status: {precommit_status}", precommit_status in ["Installed", "Not Installed"],
-                 precommit_details):
+    if not check(
+        f"Pre-commit hook status: {precommit_status}",
+        precommit_status in ["Installed", "Not Installed"],
+        precommit_details,
+    ):
         flag_issue()
 
     lint_warnings = check_lint_config_validity()
@@ -232,8 +236,10 @@ def run_doctor() -> int:
         return 0
     else:
         print(
-            f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}")
+            f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
+        )
         return 1
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     run_doctor()
