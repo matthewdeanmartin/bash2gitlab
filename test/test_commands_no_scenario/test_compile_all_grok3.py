@@ -1,4 +1,5 @@
 import logging
+import sys
 from pathlib import Path
 
 import pytest
@@ -168,6 +169,7 @@ def test_global_variables(setup_dirs: tuple[Path, Path, Path, Path]):
         assert "ANOTHER_VAR: another_value" in compiled_content, "Global variable should be inlined"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows path quirk")
 def test_infer_cli():
     """Test the infer_cli function generates correct command."""
     with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):

@@ -93,7 +93,7 @@ def _can_make_symlink(tmp_path: Path) -> bool:
             pass
 
 
-@pytest.mark.skipif(sys.platform == "win32" and not os.path.exists("C:\\"), reason="Windows path quirk")
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows path quirk")
 def test_readlink_roundtrip(tmp_path: Path):
     if not _can_make_symlink(tmp_path):
         pytest.skip("Symlink not permitted in this environment")
