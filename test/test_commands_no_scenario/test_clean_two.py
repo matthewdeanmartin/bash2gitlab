@@ -15,7 +15,7 @@ from bash2gitlab.commands.clean_all import (
     list_stray_files,
     partner_hash_file,
     read_current_text,
-    read_hash_text,
+    read_hash_text, CleanReport,
 )
 
 # --- Test Data and Helpers ---------------------------------------------------
@@ -167,5 +167,5 @@ def test_is_target_unchanged_invalid_hash(tmp_path: Path):
 def test_clean_targets_no_pairs(tmp_path: Path):
     """Tests that cleaning an empty or stray-only directory does nothing."""
     (tmp_path / "stray.txt").touch()
-    assert clean_targets(tmp_path) == (0, 0, 0)
+    assert clean_targets(tmp_path) == CleanReport(0, 0, 0)
     assert (tmp_path / "stray.txt").exists()

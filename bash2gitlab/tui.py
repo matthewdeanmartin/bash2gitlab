@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Textual TUI for bash2gitlab - Interactive terminal interface
 """

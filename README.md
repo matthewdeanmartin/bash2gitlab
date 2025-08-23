@@ -147,13 +147,15 @@ Run with
 
 ### Diagnostics
 
-| Command | Description |
-|:---------------|:-----------------------------------------------------------------|
-| `lint` | Call gitlab APIs to lint you yaml |
-| `detect-drift` | Report what unexpected changes were made to the generated files. |
-| `show-config` | Display config after cascade |
-| `doctor` | Look for environment problems |
-| `graph` | Generate graph inline relationships |
+| Command | Description                                                                         |
+|:---------------|:------------------------------------------------------------------------------------|
+| `lint` | Call gitlab APIs to lint you yaml                                                   |
+| `detect-drift` | Report what unexpected changes were made to the generated files.                    |
+| `show-config` | Display config after cascade                                                        |
+| `doctor` | Look for environment problems                                                       |
+| `graph` | Generate graph inline relationships                                                 |
+| `detect-uncompiled` | Detect if you forgot to compile                                                     |
+| `run` | Best efforts to run bash in a .gitlab-ci.yml file in similar order as a real runner |
 
 For detailed options on any command, run `bash2gitlab <command> --help`.
 

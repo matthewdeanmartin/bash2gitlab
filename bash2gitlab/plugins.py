@@ -1,3 +1,4 @@
+"""Pluggy related code"""
 import os
 
 import pluggy
@@ -8,6 +9,7 @@ _pm = None
 
 
 def get_pm() -> pluggy.PluginManager:
+    """Get a singleton plugin manager"""
     global _pm
     if _pm is None:
         _pm = pluggy.PluginManager("bash2gitlab")

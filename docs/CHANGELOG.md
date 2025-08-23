@@ -148,7 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Now support inlining a much larger list of script languages using variations on `intepreter -c "..."`
+- Now support inlining a much larger list of script languages using variations on `interpreter -c "..."`
 
 ## [0.8.10] - 2025-08-11
 

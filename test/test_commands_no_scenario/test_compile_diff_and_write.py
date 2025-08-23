@@ -63,11 +63,11 @@ def test_diff_stats_counts_insertions_deletions():
 +d: 3
 -zz: 9
 """
-    changed, ins, rem = diff_stats(diff_text)
+    different = diff_stats(diff_text)
     # Lines starting '+' or '-' excluding headers/hunks:
     # +b: 1, +d: 3  => 2 insertions
     # -a: 1, -zz: 9 => 2 deletions
-    assert (changed, ins, rem) == (4, 2, 2)
+    assert (different.changed, different.insertions, different.deletions) == (4, 2, 2)
 
 
 # --- write_compiled_file tests -------------------------------------------------------

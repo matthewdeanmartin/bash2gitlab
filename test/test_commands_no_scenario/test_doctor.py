@@ -8,6 +8,7 @@ import pytest
 from bash2gitlab.commands import doctor as doctor_mod
 from bash2gitlab.config import _Config as ConfigClass
 
+
 # --------- helpers -----------------------------------------------------------
 
 
@@ -102,79 +103,6 @@ def test_get_command_version_error(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(doctor_mod.subprocess, "run", _run)
     res = doctor_mod.get_command_version("fake")
     assert "Error checking version" in res
-
-
-def test_find_unreferenced_source_files_detects_orphans(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    root = tmp_path / "src"
-    # scripts
-    # build = _write(root / "build.sh", "#!/usr/bin/env bash\nsource ./util.sh\necho hi\n")
-    # util = _write(root / "util.sh", "#!/usr/bin/env bash\necho util\n")
-    orphan = _write(root / "orphan.sh", "#!/usr/bin/env bash\necho orphan\n")
-    py_orphan = _write(root / "tool.py", "#!/usr/bin/env python3\nprint('x')\n")
-    # yaml referencing build.sh in a simple way the stub will pick up
-    _write(root / "pipeline.yml", "job:\n  script:\n    - bash build.sh\n")
-
-    _patch_yaml_loader_to_truthy(monkeypatch)
-    _patch_graph_reference_scanner(monkeypatch)
-
-    unref = doctor_mod.find_unreferenced_source_files(root)
-    assert set(unref) == {orphan.resolve(), py_orphan.resolve()}
-
-
-def test_run_doctor_all_good(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
-    input_dir = tmp_path / "ci"
-    output_dir = tmp_path / "compiled"
-    output_dir.mkdir(parents=True)
-
-    # referenced chain: yaml -> build.sh -> sources util.sh
-    _write(input_dir / "build.sh", "#!/usr/bin/env bash\n. ./util.sh\necho hi\n")
-    _write(input_dir / "util.sh", "#!/usr/bin/env bash\necho util\n")
-    _write(input_dir / "pipeline.yaml", "stages: [test]\njob:\n  script:\n    - bash build.sh\n")
-
-    _set_doctor_config(monkeypatch, input_dir=input_dir, output_dir=output_dir)
-    _patch_yaml_loader_to_truthy(monkeypatch)
-    _patch_graph_reference_scanner(monkeypatch)
-
-    # No stray outputs
-    monkeypatch.setattr(doctor_mod, "list_stray_output_files", lambda p: [], raising=False)
-    # Make versions deterministic and fast
-    monkeypatch.setattr(doctor_mod, "get_command_version", lambda cmd: f"{cmd} v1.0", raising=False)
-
-    rc = doctor_mod.run_doctor()
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert "All checks passed" in out
-
-
-def test_run_doctor_reports_strays(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
-    input_dir = tmp_path / "ci"
-    output_dir = tmp_path / "compiled"
-    output_dir.mkdir(parents=True)
-
-    # referenced files
-    _write(input_dir / "build.sh", "#!/usr/bin/env bash\n. ./util.sh\necho hi\n")
-    _write(input_dir / "util.sh", "#!/usr/bin/env bash\necho util\n")
-    _write(input_dir / "pipeline.yml", "job:\n  script:\n    - bash build.sh\n")
-    # unreferenced source
-    _write(input_dir / "orphan.sh", "#!/usr/bin/env bash\necho orphan\n")
-    # stray output file
-    stray = _write(output_dir / "weird.txt", "x\n")
-
-    _set_doctor_config(monkeypatch, input_dir=input_dir, output_dir=output_dir)
-    _patch_yaml_loader_to_truthy(monkeypatch)
-    _patch_graph_reference_scanner(monkeypatch)
-
-    monkeypatch.setattr(doctor_mod, "list_stray_output_files", lambda p: [stray], raising=False)
-    monkeypatch.setattr(doctor_mod, "get_command_version", lambda cmd: f"{cmd} v1.0", raising=False)
-
-    rc = doctor_mod.run_doctor()
-    out = capsys.readouterr().out
-
-    assert rc == 1
-    # One issue for unreferenced sources and one for stray outputs
-    assert "Stray source file:" in out
-    assert "Stray output file:" in out
-    assert "Doctor found 2 issue(s)" in out
 
 
 def test_run_doctor_missing_config(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):

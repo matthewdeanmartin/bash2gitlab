@@ -31,41 +31,52 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.config
-import os
 import sys
 from pathlib import Path
 from urllib import error as _urlerror
 
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
+from bash2gitlab.commands.input_change_detector import needs_compilation
 from bash2gitlab.install_help import print_install_help
-from bash2gitlab.utils.check_interactive import detect_environment
 
 try:
     import argcomplete
 except ModuleNotFoundError:
     argcomplete = None  # type: ignore[assignment]
 
+# Core
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.commands.clean_all import clean_targets
-from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
 from bash2gitlab.commands.detect_drift import run_detect_drift
-from bash2gitlab.commands.doctor import run_doctor
-from bash2gitlab.commands.graph_all import generate_dependency_graph
-from bash2gitlab.commands.init_project import run_init
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
-from bash2gitlab.commands.map_commit import run_commit_map
-from bash2gitlab.commands.map_deploy import run_map_deploy
-from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
 from bash2gitlab.commands.show_config import run_show_config
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
-from bash2gitlab.utils.update_checker import check_for_updates
-from bash2gitlab.watch_files import start_watch
+from bash2gitlab.commands.input_change_detector import get_changed_files
+
+try:
+    import argcomplete
+except ModuleNotFoundError:
+    argcomplete = None  # type: ignore[assignment]
+
+# Interactive
+try:
+    from bash2gitlab.commands.copy2local import clone_repository_ssh, fetch_repository_archive
+    from bash2gitlab.commands.doctor import run_doctor
+    from bash2gitlab.commands.graph_all import generate_dependency_graph
+    from bash2gitlab.commands.init_project import run_init
+    from bash2gitlab.commands.map_commit import run_commit_map
+    from bash2gitlab.commands.map_deploy import run_map_deploy
+    from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
+    from bash2gitlab.utils.update_checker import check_for_updates
+    from bash2gitlab.watch_files import start_watch
+except ModuleNotFoundError:
+    check_for_updates = None  # type: ignore[assignment]
 
 # emoji support
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -140,9 +151,9 @@ def init_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-def clone2local_handler(args: argparse.Namespace) -> int:
+def copy2local_handler(args: argparse.Namespace) -> int:
     """
-    Argparse handler for the clone2local command.
+    Argparse handler for the copy2local command.
 
     This handler remains compatible with the new archive-based fetch function.
     """
@@ -150,9 +161,9 @@ def clone2local_handler(args: argparse.Namespace) -> int:
     dry_run = bool(args.dry_run)
 
     if str(args.repo_url).startswith("ssh"):
-        clone_repository_ssh(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+        clone_repository_ssh(args.repo_url, args.branch, Path(args.source_dir), Path(args.copy_dir), dry_run)
     else:
-        fetch_repository_archive(args.repo_url, args.branch, args.source_dir, args.copy_dir, dry_run)
+        fetch_repository_archive(args.repo_url, args.branch, Path(args.source_dir), Path(args.copy_dir), dry_run)
     return 0
 
 
@@ -349,7 +360,7 @@ def show_config_handler(args: argparse.Namespace) -> int:
     return run_show_config()
 
 
-def best_efforts_run_handler(args: argparse.Namespace) -> int:
+def best_effort_run_handler(args: argparse.Namespace) -> int:
     """Handler for the 'run' command."""
     return best_efforts_run(Path(args.input_file))
 
@@ -366,16 +377,32 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
 
+def handle_change_detection_commands(args, uncompiled_path: Path) -> bool:
+    """Handle change detection specific commands. Returns True if command was handled."""
+    if args.check_only:
+        if needs_compilation(uncompiled_path):
+            print("Compilation needed: input files have changed")
+            return True
+        else:
+            print("No compilation needed: no input changes detected")
+            return True
+
+    if args.list_changed:
+        changed = get_changed_files(uncompiled_path)
+        if changed:
+            print("Changed files since last compilation:")
+            for file_path in changed:
+                print(f"  {file_path}")
+        else:
+            print("No files have changed since last compilation")
+        return True
+
+    return False
+
 def main() -> int:
     """Main CLI entry point."""
-    if (
-        argcomplete is None
-        and detect_environment == "interactive"
-        and not os.environ.get("BASH2GITLAB_HIDE_CORE_ALL_HELP")
-    ):
-        print_install_help()
-
-    check_for_updates(__about__.__title__, __about__.__version__)
+    if check_for_updates:  # type: ignore[truthy-function]
+        check_for_updates(__about__.__title__, __about__.__version__)
 
     parser = SmartParser(
         prog=__about__.__title__,
@@ -510,7 +537,7 @@ def main() -> int:
         help="Directory to include in the copy.",
     )
     add_common_arguments(copy2local_parser)
-    copy2local_parser.set_defaults(func=clone2local_handler)
+    copy2local_parser.set_defaults(func=copy2local_handler)
 
     # Init Parser
     # Init Parser
@@ -712,8 +739,31 @@ def main() -> int:
         help="Path to `.gitlab-ci.yml`, defaults to current directory",
     )
 
+    # --- Detect Uncompiled ----
+    detect_uncompiled_parser = subparsers.add_parser("detect-uncompiled", help="Detect if input files have changed since last compilation")
+    """Add change detection arguments to argument parser."""
+    detect_uncompiled_parser.add_argument(
+        '--check-only',
+        action='store_true',
+        help='Only check if compilation is needed, do not compile'
+    )
+    detect_uncompiled_parser.add_argument(
+        '--list-changed',
+        action='store_true',
+        help='List files that have changed since last compilation'
+    )
+    detect_uncompiled_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=not bool(config.compile_input_dir),
+        help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
+    )
+    detect_uncompiled_parser.set_defaults(func=handle_change_detection_commands)
+
+
+
     add_common_arguments(run_parser)
-    run_parser.set_defaults(func=best_efforts_run_handler)
+    run_parser.set_defaults(func=best_effort_run_handler)
 
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
@@ -787,9 +837,15 @@ def main() -> int:
     for _ in get_pm().hook.before_command(args=args):
         pass
     # Execute the appropriate handler
-    rc = args.func(args)
-    for _ in get_pm().hook.after_command(result=rc, args=args):
-        pass
+    try:
+        rc = args.func(args)
+        for _ in get_pm().hook.after_command(result=rc, args=args):
+            pass
+    except NameError:
+        # logger.error(ex)
+        print_install_help()
+        return 111
+
     return rc
 
 

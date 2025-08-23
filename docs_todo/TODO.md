@@ -1,9 +1,14 @@
 # TODO
 
+## Errors
+
+- Defaults to stack trace on compile when can't find the script.
+- Blows up on inlining script in .sh file, should suggest adding `Pragma: do-not-inline`
+
 ## Core/All installation
 
-- Default to core
-- Require installing with "all"
+- seems to want tomlkit when it core mode to run `--version`, but didn't happen in local testing! This probably affects
+  all optional packages
 
 ## Best effort runner
 
@@ -67,7 +72,7 @@ variables:
 
 ## Doctor
 
-- Needs major attention 
+- Needs major attention
 - blows up checking if a file is in a subfolder "stray source file: ... f.relative_to..."
 - Warning about *Every* single .sh script in src, "Dependency not found and will be skipped..." - What?
 
@@ -96,7 +101,8 @@ variables:
 - test of variables with description
 
 ## Core/CI build
-- options: 
-  - force everyone to pick core/all
-  - Split library
-  - Default to core, tell people how to install on 1st attempt to use a fancy feature
+
+- options:
+    - force everyone to pick core/all
+    - Split library
+    - Default to core, tell people how to install on 1st attempt to use a fancy feature

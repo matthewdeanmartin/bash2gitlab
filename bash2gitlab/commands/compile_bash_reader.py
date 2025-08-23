@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 from pathlib import Path
 
+from bash2gitlab.exceptions import Bash2GitlabError
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
 
@@ -34,11 +36,11 @@ PRAGMA_REGEX = re.compile(
 )
 
 
-class SourceSecurityError(RuntimeError):
+class SourceSecurityError(Bash2GitlabError):
     pass
 
 
-class PragmaError(ValueError):
+class PragmaError(Bash2GitlabError):
     """Custom exception for pragma parsing errors."""
 
 
@@ -254,9 +256,14 @@ def inline_bash_source(
                         )
                     except (FileNotFoundError, SourceSecurityError) as e:
                         logger.error(
-                            "Blocked/missing source '%s' from '%s': %s", sourced_script_name, main_script_path, e
+                            "Blocked/missing source '%s' from '%s': %s",
+                            short_path(Path(sourced_script_name)),
+                            short_path(main_script_path),
+                            e,
                         )
-                        raise
+                        if "PYTEST_CURRENT_TEST" in os.environ:
+                            raise
+                        sys.exit(105)
 
                     logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
                     inlined = inline_bash_source(
@@ -279,12 +286,15 @@ def inline_bash_source(
                     final_content_lines.append(line)
 
         if in_do_not_inline_block:
-            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {main_script_path}")
+            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {short_path(main_script_path)}")
 
-    except Exception:
+    except Exception as e:
         # Propagate after logging context
-        logger.exception("Failed to read or process %s", main_script_path)
-        raise
+        logger.exception("Failed to read or process %s", short_path(main_script_path))
+        logger.exception(e)
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            raise
+        sys.exit(106)
 
     final = "".join(final_content_lines)
     if not final.endswith("\n"):

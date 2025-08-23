@@ -396,7 +396,7 @@ class InteractiveInterface:
 
         from bash2gitlab.__main__ import (
             clean_handler,
-            clone2local_handler,
+            copy2local_handler,
             commit_map_handler,
             compile_handler,
             decompile_handler,
@@ -421,7 +421,7 @@ class InteractiveInterface:
             "clean": clean_handler,
             "lint": lint_handler,
             "init": init_handler,
-            "copy2local": clone2local_handler,
+            "copy2local": copy2local_handler,
             "map-deploy": map_deploy_handler,
             "commit-map": commit_map_handler,
             "detect-drift": drift_handler,

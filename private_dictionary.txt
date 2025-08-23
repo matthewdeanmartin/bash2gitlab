@@ -93,3 +93,17 @@ repo
 abc'def
 keepends
 validator
+cwd
+zsh
+YAMLError
+PID
+cron
+backend
+pluggy
+stdin
+stderr
+cmd
+Cygwin
+WSL
+insensitive
+case-insensitive

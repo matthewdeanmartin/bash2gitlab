@@ -32,7 +32,7 @@ test: clean uv.lock install_plugins
 	# $(VENV) pytest --doctest-modules bash2gitlab
 	# $(VENV) python -m unittest discover
 	$(VENV) py.test test -vv -n 2 --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
-	$(VENV) bash basic_checks.sh
+	$(VENV) bash ./scripts/basic_checks.sh
 #	$(VENV) bash basic_test_with_logging.sh
 
 
@@ -125,9 +125,9 @@ check_changelog:
 
 check_all_docs: check_docs check_md check_spelling check_changelog
 
-check_own_ver:
+check_self:
 	# Can it verify itself?
-	$(VENV) ./dog_food.sh
+	$(VENV) ./scripts/dog_food.sh
 
 #audit:
 #	# $(VENV) python -m bash2gitlab audit
@@ -141,4 +141,5 @@ issues:
 	echo "N/A"
 
 core_all_tests:
-	./tools/exercise_core_all.sh bash2gitlab "compile --in examples/compile/src --out examples/compile/out --dry-run"
+	./scripts/exercise_core_all.sh bash2gitlab "compile --in examples/compile/src --out examples/compile/out --dry-run"
+	uv sync --all-extras

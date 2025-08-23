@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.1] - 2025-08-22
+
+### Fixed
+
+- Core mode less likely to fail in import errors. Install help is now vertically more compact.
+- `doctor` command should be fixed now.
+
 ## [0.9.0] - 2025-08-22
 
 ### Changed
@@ -148,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Now support inlining a much larger list of script languages using variations on `intepreter -c "..."`
+- Now support inlining a much larger list of script languages using variations on `interpreter -c "..."`
 
 ## [0.8.10] - 2025-08-11
 

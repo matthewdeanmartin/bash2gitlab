@@ -8,6 +8,7 @@ import io
 import logging
 import multiprocessing
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -463,8 +464,13 @@ def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to
         )
     )
 
+@dataclass(frozen=True)
+class DiffStats:
+    changed: int
+    insertions: int
+    deletions: int
 
-def diff_stats(diff_text: str) -> tuple[int, int, int]:
+def diff_stats(diff_text: str) -> DiffStats:
     """Compute (changed_lines, insertions, deletions) from unified diff text.
 
     We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
@@ -481,7 +487,10 @@ def diff_stats(diff_text: str) -> tuple[int, int, int]:
             ins += 1
         elif line.startswith("-"):
             del_ += 1
-    return ins + del_, ins, del_
+    return DiffStats(
+        changed=ins + del_,
+        insertions=ins,
+        deletions=del_)
 
 
 def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
@@ -502,8 +511,8 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             diff_text = unified_diff(
                 normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
             )
-            changed, ins, rem = diff_stats(diff_text)
-            logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {changed} lines changed (+{ins}, -{rem}).")
+            different = diff_stats(diff_text)
+            logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions}).")
             logger.debug(diff_text)
             return True
         logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")
@@ -581,13 +590,13 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         diff_text = unified_diff(
             normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
         )
-        changed, ins, rem = diff_stats(diff_text)
+        different = diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
             short_path(output_file),
-            changed,
-            ins,
-            rem,
+            different.changed,
+            different.insertions,
+            different.deletions,
         )
         logger.debug(diff_text)
 

@@ -43,6 +43,7 @@
 │   ├── update_checker.py
 │   ├── utils.py
 │   ├── validate_pipeline.py
+│   ├── what_shell.py
 │   ├── yaml_factory.py
 │   └── yaml_file_same.py
 ├── watch_files.py
@@ -1274,82 +1275,52 @@ def after_command(result: int, args: argparse.Namespace) -> None:
 ```
 ## File: install_help.py
 ```python
+import os
+
 from bash2gitlab import __about__
 from bash2gitlab.utils.check_interactive import detect_environment
+from bash2gitlab.utils.what_shell import supports_underline
 
 APP = __about__.__title__
-HELP = f"""
-To unlock the *full* experience of this {APP}, you should install the [all] extra.
-By default, `pip install {APP}` only gives you the minimal core.
-
-Here are the most common ways to install `{APP}[all]`:
-
-─────────────────────────────
-Command line (pip):
-─────────────────────────────
-    pip install "{APP}[all]"
-    pip install "{APP}[all]" --upgrade
-    python -m pip install "{APP}[all]"
-
-─────────────────────────────
-Command line (uv / pipx / poetry run):
-─────────────────────────────
-    uv pip install "{APP}[all]"
-    pipx install "{APP}[all]"
-    pipx install {APP} --pip-args='.[all]'
-    poetry run pip install "{APP}[all]"
-
-─────────────────────────────
-requirements.txt:
-─────────────────────────────
-Add one of these lines:
-    {APP}[all]
-    {APP}[all]==1.2.3        # pin a version
-    {APP}[all]>=1.2.0,<2.0   # version range
-
-─────────────────────────────
-pyproject.toml (PEP 621 / Poetry / Hatch / uv):
-─────────────────────────────
-[tool.poetry.dependencies]
-{APP} = {{ version = "1.2.3", extras = ["all"] }}
-
-# or for PEP 621 (uv, hatchling, setuptools):
-[project]
-dependencies = [
-    "{APP}[all]>=1.2.3",
-]
-
-─────────────────────────────
-setup.cfg (setuptools):
-─────────────────────────────
-[options]
-install_requires =
-    {APP}[all]
-
-─────────────────────────────
-environment.yml (conda/mamba):
-─────────────────────────────
-dependencies:
-  - pip
-  - pip:
-      - {APP}[all]
-
-─────────────────────────────
-Other notes:
-─────────────────────────────
-- Quoting is sometimes required: "{APP}[all]"
-- If you already installed core, run: pip install --upgrade "{APP}[all]"
-- Wheels/conda may not provide all extras; fall back to pip if needed.
-
-Summary:
-▶ Default install = minimal.
-▶ `{APP}[all]` = full, recommended.
-"""
 
 
-def print_install_help():
-    if detect_environment() == "interactive":
-        print(HELP)
+def print_install_help() -> None:
+    """Prints recommendation to install bash2gitlab[all]"""
+    if detect_environment() == "interactive" and not os.environ.get("BASH2GITLAB_HIDE_CORE_ALL_HELP"):
+        if supports_underline():
+            u = "\033[4m"
+            r = "\033[0m"
+        else:
+            u = ""
+            r = ""
+
+        help_text = f"""To use interactive commands of {APP}, you should install the [all] extra.
+
+        {u}Command line (pip):{r}
+            pip install "{APP}[all]"
+
+        {u}Command line (uv / pipx / poetry run):{r}
+            uv pip install "{APP}[all]"
+            pipx install "{APP}[all]"
+            poetry run pip install "{APP}[all]"
+
+        {u}pyproject.toml (PEP 621 / Poetry / Hatch / uv):{r}
+        [tool.poetry.dependencies]
+        {APP} = {{ version = ">={__about__.__version__}", extras = ["all"] }}
+
+        # or for PEP 621 (uv, hatchling, setuptools):
+        [project]
+        dependencies = [
+            "{APP}[all]>={__about__.__version__}",
+        ]
+
+        Select your preferred installation style above."""
+
+        print(help_text)
+
+
+if __name__ == "__main__":
+    print_install_help()
 ```
 ## File: interactive.py
 ```python
@@ -3021,7 +2992,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -3078,27 +3049,38 @@ try:
 except ModuleNotFoundError:
     argcomplete = None  # type: ignore[assignment]
 
+# Core
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.commands.clean_all import clean_targets
-from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
 from bash2gitlab.commands.detect_drift import run_detect_drift
-from bash2gitlab.commands.doctor import run_doctor
-from bash2gitlab.commands.graph_all import generate_dependency_graph
-from bash2gitlab.commands.init_project import run_init
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
-from bash2gitlab.commands.map_commit import run_commit_map
-from bash2gitlab.commands.map_deploy import run_map_deploy
-from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
 from bash2gitlab.commands.show_config import run_show_config
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
-from bash2gitlab.utils.update_checker import check_for_updates
-from bash2gitlab.watch_files import start_watch
+
+try:
+    import argcomplete
+except ModuleNotFoundError:
+    argcomplete = None  # type: ignore[assignment]
+
+# Interactive
+try:
+    from bash2gitlab.commands.clone2local import clone_repository_ssh, fetch_repository_archive
+    from bash2gitlab.commands.doctor import run_doctor
+    from bash2gitlab.commands.graph_all import generate_dependency_graph
+    from bash2gitlab.commands.init_project import run_init
+    from bash2gitlab.commands.map_commit import run_commit_map
+    from bash2gitlab.commands.map_deploy import run_map_deploy
+    from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
+    from bash2gitlab.utils.update_checker import check_for_updates
+    from bash2gitlab.watch_files import start_watch
+except ModuleNotFoundError:
+    check_for_updates = None  # type: ignore[assignment]
 
 # emoji support
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -3384,8 +3366,7 @@ def show_config_handler(args: argparse.Namespace) -> int:
 
 def best_efforts_run_handler(args: argparse.Namespace) -> int:
     """Handler for the 'run' command."""
-
-    return best_efforts_run(Path(args.in_file))
+    return best_efforts_run(Path(args.input_file))
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -3402,14 +3383,9 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 def main() -> int:
     """Main CLI entry point."""
-    if (
-        argcomplete is None
-        and detect_environment == "interactive"
-        and not os.environ.get("BASH2GITLAB_HIDE_CORE_ALL_HELP")
-    ):
-        print_install_help()
 
-    check_for_updates(__about__.__title__, __about__.__version__)
+    if check_for_updates:  # type: ignore[truthy-function]
+        check_for_updates(__about__.__title__, __about__.__version__)
 
     parser = SmartParser(
         prog=__about__.__title__,
@@ -3821,9 +3797,14 @@ def main() -> int:
     for _ in get_pm().hook.before_command(args=args):
         pass
     # Execute the appropriate handler
-    rc = args.func(args)
-    for _ in get_pm().hook.after_command(result=rc, args=args):
-        pass
+    try:
+        rc = args.func(args)
+        for _ in get_pm().hook.after_command(result=rc, args=args):
+            pass
+    except NameError:
+        print_install_help()
+        return 111
+
     return rc
 
 
@@ -5500,6 +5481,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import sys
 from pathlib import Path
 
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
@@ -5749,9 +5731,14 @@ def inline_bash_source(
                         )
                     except (FileNotFoundError, SourceSecurityError) as e:
                         logger.error(
-                            "Blocked/missing source '%s' from '%s': %s", sourced_script_name, main_script_path, e
+                            "Blocked/missing source '%s' from '%s': %s",
+                            short_path(Path(sourced_script_name)),
+                            short_path(main_script_path),
+                            e,
                         )
-                        raise
+                        if "PYTEST_CURRENT_TEST" in os.environ:
+                            raise
+                        sys.exit(105)
 
                     logger.info("Inlining sourced file: %s -> %s", sourced_script_name, short_path(sourced_script_path))
                     inlined = inline_bash_source(
@@ -5774,12 +5761,15 @@ def inline_bash_source(
                     final_content_lines.append(line)
 
         if in_do_not_inline_block:
-            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {main_script_path}")
+            raise PragmaError(f"Unclosed 'start-do-not-inline' pragma in file: {short_path(main_script_path)}")
 
-    except Exception:
+    except Exception as e:
         # Propagate after logging context
-        logger.exception("Failed to read or process %s", main_script_path)
-        raise
+        logger.exception("Failed to read or process %s", short_path(main_script_path))
+        logger.exception(e)
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            raise
+        sys.exit(106)
 
     final = "".join(final_content_lines)
     if not final.endswith("\n"):
@@ -13451,6 +13441,71 @@ def validate_gitlab_ci_yaml(yaml_content: str, cache_dir: str | None = None) -> 
     """
     validator = GitLabCIValidator(cache_dir=cache_dir)
     return validator.validate_ci_config(yaml_content)
+```
+## File: utils\what_shell.py
+```python
+import os
+import platform
+from pathlib import Path
+
+
+def detect_shell() -> str:
+    """
+    Basic shell detection that works on Linux, macOS, WSL, Git Bash, Cygwin, etc.
+
+    Returns:
+        str: shell name ("bash", "zsh", "fish", "cmd", "powershell", "unknown")
+    """
+    # If SHELL is set (typical on POSIX, Git Bash, Cygwin, MSYS2), prefer it
+    shell = os.environ.get("SHELL")
+    if shell:
+        return Path(shell).name.lower()
+
+    system = platform.system().lower()
+
+    # Windows native (no SHELL set)
+    if system == "windows":
+        comspec = os.environ.get("COMSPEC", "").lower()
+        if "powershell" in comspec:
+            return "powershell"
+        if "cmd" in comspec:
+            return "cmd"
+        return Path(comspec).stem if comspec else "cmd"
+
+    return "unknown"
+
+
+def supports_underline() -> bool:
+    """
+    Guess whether the current terminal supports ANSI underline.
+
+    Uses detect_shell() and env vars. Conservative: return False if unsure.
+    """
+    if os.getenv("NO_COLOR"):
+        return False
+
+    shell = detect_shell()
+    system = platform.system().lower()
+
+    # Windows cases
+    if system == "windows":
+        # Git Bash / Cygwin / MSYS2 → these export SHELL=/usr/bin/bash
+        if shell in {"bash", "zsh", "fish"}:
+            return True
+        # Windows Terminal (env var set)
+        if os.environ.get("WT_SESSION"):
+            return True
+        if shell == "powershell":
+            return True
+        # Classic cmd.exe
+        return False
+
+    # POSIX cases (Linux, macOS, WSL)
+    term = os.environ.get("TERM", "")
+    if term in ("dumb", ""):
+        return False
+
+    return True
 ```
 ## File: utils\yaml_factory.py
 ```python

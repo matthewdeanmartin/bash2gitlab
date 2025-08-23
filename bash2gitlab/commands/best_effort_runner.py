@@ -15,6 +15,9 @@ from typing import Any, Union
 
 from ruamel.yaml import YAML
 
+from bash2gitlab.exceptions import Bash2GitlabError
+
+# Copy of the base environment variables
 BASE_ENV = os.environ.copy()
 
 
@@ -34,17 +37,31 @@ def merge_env(env=None):
     return BASE_ENV
 
 
-# ANSI color codes
+# ANSI color codes for terminal output
 GREEN = "\033[92m"
 RED = "\033[91m"
 RESET = "\033[0m"
 
-# Disable colors if NO_COLOR is set
+# Disable colors if NO_COLOR is set in the environment
 if os.getenv("NO_COLOR"):
     GREEN = RED = RESET = ""
 
 
 def run_colored(script: str, env=None, cwd=None) -> int:
+    """
+    Run a script in a subprocess with colored output for stdout and stderr.
+
+    Args:
+        script: The script to execute.
+        env: Optional environment variables for the subprocess.
+        cwd: Optional working directory for the subprocess.
+
+    Returns:
+        The return code of the subprocess.
+
+    Raises:
+        subprocess.CalledProcessError: If the subprocess exits with a non-zero code.
+    """
     env = merge_env(env)
 
     # Disable colors if NO_COLOR is set
@@ -52,10 +69,14 @@ def run_colored(script: str, env=None, cwd=None) -> int:
         g, r, reset = "", "", ""
     else:
         g, r, reset = GREEN, RED, RESET
+
+    # Determine the bash executable based on the operating system
     if os.name == "nt":
         bash = r"C:\Program Files\Git\bin\bash.exe"
     else:
         bash = "bash"
+
+    # Start the subprocess
     process = subprocess.Popen(  # nosec
         # , "-l"  # -l loads .bashrc and make it really, really slow.
         [bash],  # bash reads script from stdin
@@ -69,6 +90,14 @@ def run_colored(script: str, env=None, cwd=None) -> int:
     )
 
     def stream(pipe, color, target):
+        """
+        Stream output from a pipe to a target with optional color.
+
+        Args:
+            pipe: The pipe to read from.
+            color: The color to apply to the output.
+            target: The target to write the output to.
+        """
         for line in iter(pipe.readline, ""):  # text mode here, so sentinel is ""
             if not line:
                 break
@@ -106,8 +135,17 @@ def run_colored(script: str, env=None, cwd=None) -> int:
 
 @dataclass
 class JobConfig:
-    """Configuration for a single job."""
+    """
+    Configuration for a single job.
 
+    Attributes:
+        name: The name of the job.
+        stage: The stage the job belongs to.
+        script: The main script to execute for the job.
+        variables: Environment variables specific to the job.
+        before_script: Scripts to run before the main script.
+        after_script: Scripts to run after the main script.
+    """
     name: str
     stage: str = "test"
     script: list[str] = field(default_factory=list)
@@ -118,8 +156,14 @@ class JobConfig:
 
 @dataclass
 class DefaultConfig:
-    """Default configuration that can be inherited by jobs."""
+    """
+    Default configuration that can be inherited by jobs.
 
+    Attributes:
+        before_script: Default scripts to run before job scripts.
+        after_script: Default scripts to run after job scripts.
+        variables: Default environment variables for jobs.
+    """
     before_script: list[str] = field(default_factory=list)
     after_script: list[str] = field(default_factory=list)
     variables: dict[str, str] = field(default_factory=dict)
@@ -127,15 +171,22 @@ class DefaultConfig:
 
 @dataclass
 class PipelineConfig:
-    """Complete pipeline configuration."""
+    """
+    Complete pipeline configuration.
 
+    Attributes:
+        stages: List of pipeline stages.
+        variables: Global environment variables for the pipeline.
+        default: Default configuration for jobs.
+        jobs: List of job configurations.
+    """
     stages: list[str] = field(default_factory=lambda: ["test"])
     variables: dict[str, str] = field(default_factory=dict)
     default: DefaultConfig = field(default_factory=DefaultConfig)
     jobs: list[JobConfig] = field(default_factory=list)
 
 
-class GitLabCIError(Exception):
+class GitLabCIError(Bash2GitlabError):
     """Base exception for GitLab CI runner errors."""
 
 
@@ -144,7 +195,13 @@ class JobExecutionError(GitLabCIError):
 
 
 class ConfigurationLoader:
-    """Loads and processes GitLab CI configuration files."""
+    """
+    Loads and processes GitLab CI configuration files.
+
+    Attributes:
+        base_path: The base path for resolving configuration files.
+        yaml: YAML parser instance.
+    """
 
     def __init__(self, base_path: Path | None = None):
         if not base_path:
@@ -154,7 +211,18 @@ class ConfigurationLoader:
         self.yaml = YAML(typ="safe")
 
     def load_config(self, config_path: Path | None = None) -> dict[str, Any]:
-        """Load the main configuration file and process includes."""
+        """
+        Load the main configuration file and process includes.
+
+        Args:
+            config_path: Path to the configuration file.
+
+        Returns:
+            The loaded and processed configuration.
+
+        Raises:
+            GitLabCIError: If the configuration file is not found or fails to load.
+        """
         if config_path is None:
             config_path = self.base_path / ".gitlab-ci.yml"
 
@@ -167,7 +235,18 @@ class ConfigurationLoader:
         return config
 
     def _load_yaml_file(self, file_path: Path) -> dict[str, Any]:
-        """Load a single YAML file."""
+        """
+        Load a single YAML file.
+
+        Args:
+            file_path: Path to the YAML file.
+
+        Returns:
+            The loaded YAML content.
+
+        Raises:
+            GitLabCIError: If the file fails to load.
+        """
         try:
             with open(file_path) as f:
                 return self.yaml.load(f) or {}
@@ -175,7 +254,16 @@ class ConfigurationLoader:
             raise GitLabCIError(f"Failed to load YAML file {file_path}: {e}") from e
 
     def _process_includes(self, config: dict[str, Any], base_dir: Path) -> dict[str, Any]:
-        """Process include directives for local files only."""
+        """
+        Process include directives for local files only.
+
+        Args:
+            config: The main configuration dictionary.
+            base_dir: The base directory for resolving includes.
+
+        Returns:
+            The configuration with includes merged.
+        """
         includes = config.pop("include", [])
         if not includes:
             return config
@@ -198,7 +286,16 @@ class ConfigurationLoader:
         return config
 
     def _merge_configs(self, base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
-        """Merge two configuration dictionaries."""
+        """
+        Merge two configuration dictionaries.
+
+        Args:
+            base: The base configuration.
+            overlay: The overlay configuration.
+
+        Returns:
+            The merged configuration.
+        """
         result = base.copy()
         for key, value in overlay.items():
             if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -209,7 +306,12 @@ class ConfigurationLoader:
 
 
 class PipelineProcessor:
-    """Processes raw configuration into structured pipeline configuration."""
+    """
+    Processes raw configuration into structured pipeline configuration.
+
+    Attributes:
+        RESERVED_KEYWORDS: Reserved keywords in GitLab CI configuration.
+    """
 
     RESERVED_KEYWORDS = {
         "stages",
@@ -225,7 +327,15 @@ class PipelineProcessor:
     }
 
     def process_config(self, raw_config: dict[str, Any]) -> PipelineConfig:
-        """Process raw configuration into structured pipeline config."""
+        """
+        Process raw configuration into structured pipeline config.
+
+        Args:
+            raw_config: The raw configuration dictionary.
+
+        Returns:
+            A structured PipelineConfig object.
+        """
         # Extract global configuration
         stages = raw_config.get("stages", ["test"])
         global_variables = raw_config.get("variables", {})
@@ -241,7 +351,15 @@ class PipelineProcessor:
         return PipelineConfig(stages=stages, variables=global_variables, default=default_config, jobs=jobs)
 
     def _process_default_config(self, default_data: dict[str, Any]) -> DefaultConfig:
-        """Process default configuration block."""
+        """
+        Process default configuration block.
+
+        Args:
+            default_data: The default configuration dictionary.
+
+        Returns:
+            A DefaultConfig object.
+        """
         return DefaultConfig(
             before_script=self._ensure_list(default_data.get("before_script", [])),
             after_script=self._ensure_list(default_data.get("after_script", [])),
@@ -251,7 +369,18 @@ class PipelineProcessor:
     def _process_job(
         self, name: str, job_data: dict[str, Any], default: DefaultConfig, global_vars: dict[str, str]
     ) -> JobConfig:
-        """Process a single job configuration."""
+        """
+        Process a single job configuration.
+
+        Args:
+            name: The name of the job.
+            job_data: The job configuration dictionary.
+            default: The default configuration.
+            global_vars: Global environment variables.
+
+        Returns:
+            A JobConfig object.
+        """
         # Merge variables with precedence: job > global > default
         variables = {}
         variables.update(default.variables)
@@ -272,7 +401,15 @@ class PipelineProcessor:
         )
 
     def _ensure_list(self, value: Union[str, list[str]]) -> list[str]:
-        """Ensure a value is a list of strings."""
+        """
+        Ensure a value is a list of strings.
+
+        Args:
+            value: The value to ensure.
+
+        Returns:
+            A list of strings.
+        """
         if isinstance(value, str):
             return [value]
         elif isinstance(value, list):
@@ -281,14 +418,25 @@ class PipelineProcessor:
 
 
 class VariableManager:
-    """Manages variable substitution and environment preparation."""
+    """
+    Manages variable substitution and environment preparation.
+
+    Attributes:
+        base_variables: Base environment variables.
+        gitlab_ci_vars: Simulated GitLab CI built-in variables.
+    """
 
     def __init__(self, base_variables: dict[str, str] | None = None):
         self.base_variables = base_variables or {}
         self.gitlab_ci_vars = self._get_gitlab_ci_variables()
 
     def _get_gitlab_ci_variables(self) -> dict[str, str]:
-        """Get GitLab CI built-in variables that we can simulate."""
+        """
+        Get GitLab CI built-in variables that we can simulate.
+
+        Returns:
+            A dictionary of simulated GitLab CI variables.
+        """
         return {
             "CI": "true",
             "CI_PROJECT_DIR": str(Path.cwd()),
@@ -297,7 +445,15 @@ class VariableManager:
         }
 
     def prepare_environment(self, job: JobConfig) -> dict[str, str]:
-        """Prepare environment variables for job execution."""
+        """
+        Prepare environment variables for job execution.
+
+        Args:
+            job: The job configuration.
+
+        Returns:
+            A dictionary of prepared environment variables.
+        """
         env = os.environ.copy()
 
         # Apply variables in order: built-in -> base -> job
@@ -312,7 +468,16 @@ class VariableManager:
         return env
 
     def substitute_variables(self, text: str, variables: dict[str, str]) -> str:
-        """Perform basic variable substitution in text."""
+        """
+        Perform basic variable substitution in text.
+
+        Args:
+            text: The text to substitute variables in.
+            variables: The variables to use for substitution.
+
+        Returns:
+            The text with variables substituted.
+        """
         # Simple substitution - replace $VAR and ${VAR} patterns
 
         def replace_var(match):
@@ -325,13 +490,26 @@ class VariableManager:
 
 
 class JobExecutor:
-    """Executes individual jobs."""
+    """
+    Executes individual jobs.
+
+    Attributes:
+        variable_manager: The VariableManager instance for managing variables.
+    """
 
     def __init__(self, variable_manager: VariableManager):
         self.variable_manager = variable_manager
 
     def execute_job(self, job: JobConfig) -> None:
-        """Execute a single job."""
+        """
+        Execute a single job.
+
+        Args:
+            job: The job configuration.
+
+        Raises:
+            JobExecutionError: If the job fails to execute successfully.
+        """
         print(f"🔧 Running job: {job.name} (stage: {job.stage})")
 
         env = self.variable_manager.prepare_environment(job)
@@ -358,7 +536,16 @@ class JobExecutor:
             raise JobExecutionError(f"Job {job.name} failed with exit code {e.returncode}") from e
 
     def _execute_scripts(self, scripts: list[str], env: dict[str, str]) -> None:
-        """Execute a list of script commands."""
+        """
+        Execute a list of script commands.
+
+        Args:
+            scripts: The list of scripts to execute.
+            env: The environment variables for the scripts.
+
+        Raises:
+            subprocess.CalledProcessError: If a script exits with a non-zero code.
+        """
         for script in scripts:
             if not isinstance(script, str):
                 raise Exception(f"{script} is not a string")
@@ -385,13 +572,23 @@ class JobExecutor:
 
 
 class StageOrchestrator:
-    """Orchestrates job execution by stages."""
+    """
+    Orchestrates job execution by stages.
+
+    Attributes:
+        job_executor: The JobExecutor instance for executing jobs.
+    """
 
     def __init__(self, job_executor: JobExecutor):
         self.job_executor = job_executor
 
     def execute_pipeline(self, pipeline: PipelineConfig) -> None:
-        """Execute all jobs in the pipeline, organized by stages."""
+        """
+        Execute all jobs in the pipeline, organized by stages.
+
+        Args:
+            pipeline: The pipeline configuration.
+        """
         print("🚀 Starting GitLab CI pipeline execution")
         print(f"📋 Stages: {', '.join(pipeline.stages)}")
 
@@ -411,7 +608,15 @@ class StageOrchestrator:
         print("\n🎉 Pipeline completed successfully!")
 
     def _organize_jobs_by_stage(self, pipeline: PipelineConfig) -> dict[str, list[JobConfig]]:
-        """Organize jobs by their stages."""
+        """
+        Organize jobs by their stages.
+
+        Args:
+            pipeline: The pipeline configuration.
+
+        Returns:
+            A dictionary mapping stages to lists of jobs.
+        """
         jobs_by_stage: dict[str, Any] = {}
 
         for job in pipeline.jobs:
@@ -424,7 +629,14 @@ class StageOrchestrator:
 
 
 class LocalGitLabRunner:
-    """Main runner class that orchestrates the entire pipeline execution."""
+    """
+    Main runner class that orchestrates the entire pipeline execution.
+
+    Attributes:
+        base_path: The base path for resolving configuration files.
+        loader: The ConfigurationLoader instance for loading configurations.
+        processor: The PipelineProcessor instance for processing configurations.
+    """
 
     def __init__(self, base_path: Path | None = None):
         if not base_path:
@@ -435,7 +647,19 @@ class LocalGitLabRunner:
         self.processor = PipelineProcessor()
 
     def run_pipeline(self, config_path: Path | None = None) -> int:
-        """Run the complete pipeline."""
+        """
+        Run the complete pipeline.
+
+        Args:
+            config_path: Path to the pipeline configuration file.
+
+        Returns:
+            The exit code of the pipeline execution.
+
+        Raises:
+            GitLabCIError: If there is an error in the pipeline configuration.
+            Exception: For unexpected errors.
+        """
         try:
             # Load and process configuration
             raw_config = self.loader.load_config(config_path)

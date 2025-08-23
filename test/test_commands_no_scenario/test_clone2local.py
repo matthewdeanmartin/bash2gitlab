@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 import pytest
 from pytest_mock import MockerFixture
 
-from bash2gitlab.commands.clone2local import fetch_repository_archive
+from bash2gitlab.commands.copy2local import fetch_repository_archive
 
 
 @pytest.fixture
@@ -93,7 +93,7 @@ class TestFetchRepositoryArchive:
 
         # --- Act & Assert ---
         with pytest.raises(FileExistsError, match="exists and is not empty"):
-            fetch_repository_archive("any_url", "main", [], clone_dir)
+            fetch_repository_archive("any_url", "main", None, clone_dir)
 
     def test_branch_not_found_raises_connection_error(self, mocker: MockerFixture, temp_test_dir: Path):
         """
@@ -106,7 +106,7 @@ class TestFetchRepositoryArchive:
 
         # --- Act & Assert ---
         with pytest.raises(ConnectionError, match="Could not find archive for branch"):
-            fetch_repository_archive("https://any_url", "nonexistent-branch", [], clone_dir)
+            fetch_repository_archive("https://any_url", "nonexistent-branch", "", clone_dir)
 
         # Assert that the clone directory was cleaned up
         assert not clone_dir.exists()
@@ -122,7 +122,7 @@ class TestFetchRepositoryArchive:
 
         # --- Act & Assert ---
         with pytest.raises(ConnectionError, match="A network error occurred"):
-            fetch_repository_archive("https://any_url", "main", [], clone_dir)
+            fetch_repository_archive("https://any_url", "main", None, clone_dir)
 
         # Assert that the clone directory was cleaned up
         assert not clone_dir.exists()
@@ -149,7 +149,7 @@ class TestFetchRepositoryArchive:
 
         # --- Act & Assert ---
         with pytest.raises(IOError):
-            fetch_repository_archive(repo_url, branch, sparse_dirs, clone_dir)
+            fetch_repository_archive(repo_url, branch, Path(sparse_dirs), clone_dir)
 
         # The most important assertion: the clone directory should not exist after failure.
         assert not clone_dir.exists()

@@ -26,7 +26,7 @@ class Colors:
 
     @classmethod
     def enable(cls):
-        """Disable all color output."""
+        """Enable all color output."""
         cls.HEADER = "\033[95m"
         cls.OKBLUE = "\033[94m"
         cls.OKCYAN = "\033[96m"

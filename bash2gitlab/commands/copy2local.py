@@ -19,7 +19,7 @@ __all__ = ["fetch_repository_archive", "clone_repository_ssh"]
 
 
 def fetch_repository_archive(
-    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
+    repo_url: str, branch: str, source_dir: Path, clone_path: Path, dry_run: bool = False
 ) -> None:
     """Fetches and extracts a specific directory from a repository archive.
 
@@ -33,7 +33,7 @@ def fetch_repository_archive(
         branch: The name of the branch to download (e.g., 'main', 'develop').
         source_dir: A single directory path (relative to the repo root) to
             extract and copy to the clone_dir.
-        clone_dir: The destination directory. This directory must be empty.
+        clone_path: The destination directory. This directory must be empty.
         dry_run: Simulate action
 
     Raises:
@@ -46,7 +46,6 @@ def fetch_repository_archive(
         Exception: Propagates other exceptions from network, file, or
             archive operations after attempting to clean up.
     """
-    clone_path = Path(clone_dir)
     logger.debug(
         "Fetching archive for repo %s (branch: %s) into %s with dir %s",
         repo_url,
@@ -143,7 +142,7 @@ def fetch_repository_archive(
 
 
 def clone_repository_ssh(
-    repo_url: str, branch: str, source_dir: str, clone_dir: str | Path, dry_run: bool = False
+    repo_url: str, branch: str, source_dir: Path, clone_path:  Path, dry_run: bool = False
 ) -> None:
     """Clones a repo via Git and copies a specific directory.
 
@@ -156,7 +155,7 @@ def clone_repository_ssh(
         repo_url: The repository URL (e.g., 'git@github.com:user/repo.git').
         branch: The name of the branch to check out (e.g., 'main', 'develop').
         source_dir: A single directory path (relative to the repo root) to copy.
-        clone_dir: The destination directory. This directory must be empty.
+        clone_path: The destination directory. This directory must be empty.
         dry_run: Simulate action
 
     Raises:
@@ -165,7 +164,6 @@ def clone_repository_ssh(
         Exception: Propagates other exceptions from file operations after
             attempting to clean up.
     """
-    clone_path = Path(clone_dir)
     logger.debug(
         "Cloning repo %s (branch: %s) into %s with source dir %s",
         repo_url,
@@ -184,7 +182,7 @@ def clone_repository_ssh(
         # Use a temporary directory for the full clone, which will be auto-cleaned.
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_clone_path = Path(temp_dir)
-            logger.info("Cloning '%s' to temporary location: %s", repo_url, temp_clone_path)
+            logger.info("Cloning '%s' to temporary location: %s", repo_url, short_path(temp_clone_path))
 
             # 2. Clone the repository.
             # We clone the specific branch directly to be more efficient.
@@ -205,10 +203,10 @@ def clone_repository_ssh(
             dest_dir = clone_path
 
             if repo_source_dir.is_dir():
-                logger.debug("Copying '%s' to '%s'", repo_source_dir, dest_dir)
+                logger.debug("Copying '%s' to '%s'", short_path(repo_source_dir), short_path(dest_dir))
                 shutil.copytree(repo_source_dir, dest_dir, dirs_exist_ok=True)
             elif not dry_run:
-                logger.warning("Directory '%s' not found in repository, skipping.", source_dir)
+                logger.warning("Directory '%s' not found in repository, skipping.", short_path(source_dir))
 
     except Exception as e:
         logger.error("Operation failed: %s. Cleaning up destination directory.", e)

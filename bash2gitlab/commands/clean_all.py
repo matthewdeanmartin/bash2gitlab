@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import logging
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from bash2gitlab.utils.utils import short_path
@@ -133,9 +134,13 @@ def is_target_unchanged(base_file: Path, hash_file: Path) -> bool | None:
 
 
 # --- Cleaning -----------------------------------------------------------------
+@dataclass(frozen=True)
+class CleanReport:
+    deleted_pairs: int
+    skipped_changed: int
+    skipped_invalid_hash: int
 
-
-def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
+def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
     """Delete generated target files (and their .hash files) under *root*.
 
     Only deletes when a valid pair exists **and** the base file content matches
@@ -165,7 +170,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
 
     if not seen_pairs:
         logger.info("No target pairs found under %s", short_path(root))
-        return (0, 0, 0)
+        return CleanReport(0, 0, 0)
 
     for base_file, hash_file in sorted(seen_pairs):
         status = is_target_unchanged(base_file, hash_file)
@@ -200,7 +205,7 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> tuple[int, int, int]:
         skipped_changed,
         skipped_invalid,
     )
-    return (deleted, skipped_changed, skipped_invalid)
+    return CleanReport(deleted_pairs= deleted, skipped_changed= skipped_changed,skipped_invalid_hash= skipped_invalid)
 
 
 # --- Optional: quick report helper -------------------------------------------
