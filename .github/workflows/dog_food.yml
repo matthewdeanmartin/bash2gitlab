@@ -32,5 +32,5 @@ jobs:
       - name: Install Dependencies
         run: uv sync --all-extras
 
-      - name: Run make check
+      - name: Shred-Compile-Run
         run: chmod +x scripts/*.sh && ./scripts/dogfood.sh

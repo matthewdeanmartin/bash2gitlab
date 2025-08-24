@@ -10,7 +10,7 @@ def main():
     """Start the API server with appropriate settings"""
     # Check if bash2gitlab is installed
     try:
-        import bash2gitlab # noqa
+        import bash2gitlab  # noqa
     except ImportError:
         print("❌ bash2gitlab package not found. Please install it first:")
         print("   pip install -e .")
@@ -18,8 +18,8 @@ def main():
 
     # Check if API requirements are installed
     try:
-        import fastapi # noqa
-        import uvicorn # noqa
+        import fastapi  # noqa
+        import uvicorn  # noqa
     except ImportError:
         print("❌ API server dependencies not found. Please install them:")
         print("   pip install fastapi uvicorn[standard] pydantic")

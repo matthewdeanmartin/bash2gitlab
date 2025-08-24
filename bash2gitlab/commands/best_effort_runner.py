@@ -121,7 +121,9 @@ def run_colored(script: str, env=None, cwd=None) -> int:
         script = script.replace("\r\n", "\n")
 
     if process.stdin:
-        process.stdin.write(script)
+        # without this it will keep going on errors
+        robust_script_content = f"set -eo pipefail\n{script}"
+        process.stdin.write(robust_script_content)
         process.stdin.close()
 
     # Wait for process to finish

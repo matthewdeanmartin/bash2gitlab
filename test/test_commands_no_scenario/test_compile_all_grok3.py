@@ -4,10 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands.compile_all import (
-    infer_cli,
-    run_compile_all,
-)
+from bash2gitlab.commands.compile_all import infer_cli, run_compile_all
 from bash2gitlab.errors.exceptions import CompileError, ValidationFailed
 from bash2gitlab.utils.temp_env import temporary_env_var
 

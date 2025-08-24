@@ -3,10 +3,7 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-from bash2gitlab.commands.best_effort_runner import (
-    JobExecutionError,
-    LocalGitLabRunner,
-)
+from bash2gitlab.commands.best_effort_runner import JobExecutionError, LocalGitLabRunner
 
 yaml = YAML()
 
