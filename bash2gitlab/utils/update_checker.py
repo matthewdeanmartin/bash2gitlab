@@ -10,22 +10,27 @@ Key improvements over prior version:
 - Optional colorized output that respects NO_COLOR/CI/TERM and TTY
 - Non-invasive logging: caller may pass a logger or rely on a safe default
 - Narrow exception surface with custom error types
+- ZERO-COST background checking with exit handler
 
 Public functions:
-- check_for_updates(package_name, current_version, ...)
+- start_background_update_check(package_name, current_version, ...)
+- check_for_updates(package_name, current_version, ...) [synchronous fallback]
 - reset_cache(package_name)
 
 Return contract:
-- Returns a user-facing message string when an update is available; otherwise None.
+- Background check shows message on exit if update available
+- Synchronous check returns a user-facing message string when an update is available; otherwise None.
 """
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
 import sys
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,11 +40,16 @@ from urllib import error, request
 from packaging import version as _version
 
 __all__ = [
+    "start_background_update_check",
     "check_for_updates",
     "reset_cache",
     "PackageNotFoundError",
     "NetworkError",
 ]
+
+# Global state for background checking
+_background_check_result: str | None = None
+_background_check_registered = False
 
 
 class PackageNotFoundError(Exception):
@@ -368,6 +378,84 @@ def format_update_message(
     return ""
 
 
+def _background_update_worker(
+    package_name: str,
+    current_version: str,
+    logger: logging.Logger | None,
+    cache_ttl_seconds: int,
+    include_prereleases: bool,
+) -> None:
+    """Background worker function to check for updates.
+
+    This runs in a separate thread and stores the result globally.
+    """
+    global _background_check_result
+
+    try:
+        result = check_for_updates(
+            package_name=package_name,
+            current_version=current_version,
+            logger=logger,
+            cache_ttl_seconds=cache_ttl_seconds,
+            include_prereleases=include_prereleases,
+        )
+        _background_check_result = result
+    except Exception:
+        # Silently fail - we don't want background checks to cause issues
+        _background_check_result = None
+
+
+def _exit_handler() -> None:
+    """Exit handler to display update message if available."""
+    global _background_check_result
+
+    if _background_check_result:
+        print(f"\n{_background_check_result}", file=sys.stderr)
+
+
+def start_background_update_check(
+    package_name: str,
+    current_version: str,
+    logger: logging.Logger | None = None,
+    *,
+    cache_ttl_seconds: int = 86400,
+    include_prereleases: bool = False,
+) -> None:
+    """Start a background update check that displays results on program exit.
+
+    This function returns immediately (zero cost to user) and starts a background
+    thread to check for updates. If an update is available, it will be shown when
+    the program exits.
+
+    Args:
+        package_name: The PyPI package name to check.
+        current_version: The currently installed version string.
+        logger: Optional logger for warnings.
+        cache_ttl_seconds: Cache time-to-live in seconds.
+        include_prereleases: Whether to consider prereleases newer.
+    """
+    global _background_check_registered
+
+    # Check if we already have a fresh cached result
+    cache_dir, cache_file = cache_paths(package_name)
+    if is_fresh(cache_file, cache_ttl_seconds):
+        return
+
+    # Register exit handler only once
+    if not _background_check_registered:
+        atexit.register(_exit_handler)
+        _background_check_registered = True
+
+    # Start background thread (daemon so it doesn't prevent program exit)
+    worker_thread = threading.Thread(
+        target=_background_update_worker,
+        args=(package_name, current_version, logger, cache_ttl_seconds, include_prereleases),
+        daemon=True,
+        name=f"UpdateChecker-{package_name}",
+    )
+    worker_thread.start()
+
+
 def check_for_updates(
     package_name: str,
     current_version: str,
@@ -376,7 +464,7 @@ def check_for_updates(
     cache_ttl_seconds: int = 86400,
     include_prereleases: bool = False,
 ) -> str | None:
-    """Check PyPI for a newer version of a package.
+    """Check PyPI for a newer version of a package (synchronous).
 
     Args:
         package_name: The PyPI package name to check.
@@ -423,9 +511,13 @@ def check_for_updates(
         return None
 
 
+# Example usage:
 # if __name__ == "__main__":
-#     msg = check_for_updates("bash2gitlab", "0.0.0")
-#     if msg:
-#         print(msg)
-#     else:
-#         print("No update message (cached or up-to-date).")
+#     # Zero-cost background check - returns immediately
+#     start_background_update_check("bash2gitlab", "0.0.0")
+#
+#     # Your app code here...
+#     print("App is running...")
+#     time.sleep(2)  # Simulate app work
+#
+#     # When app exits, update message will be shown if available

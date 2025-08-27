@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+
+## [0.9.3] - 2025-08-27
+
+### Fixed
+- Detect drift failed on arg parse. Validated with more comprehensive basic_check.sh test.
+
 ## [0.9.2] - 2025-08-23
 
 ### Fixed

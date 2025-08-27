@@ -106,3 +106,10 @@ variables:
     - force everyone to pick core/all
     - Split library
     - Default to core, tell people how to install on 1st attempt to use a fancy feature
+
+## Doctor
+
+- Large script warnings at 25kb ?!
+- Complains about husky hooks, but that is where bash2gitlab put the hooks 1st time around
+- Spurious warning: Uncommited changes to map may be detectign that there was a recompile, e.g. undeployed changes
+- Can't find powershell on a windows machine with powershell!

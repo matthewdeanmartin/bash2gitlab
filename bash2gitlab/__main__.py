@@ -384,8 +384,9 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
 
-def handle_change_detection_commands(args, uncompiled_path: Path) -> bool:
+def handle_change_detection_commands(args) -> bool:
     """Handle change detection specific commands. Returns True if command was handled."""
+    uncompiled_path: Path = Path(args.input_dir or "")
     if args.check_only:
         if needs_compilation(uncompiled_path):
             print("Compilation needed: input files have changed")
@@ -761,6 +762,7 @@ def main() -> int:
     detect_uncompiled_parser.add_argument(
         "--in",
         dest="input_dir",
+        default=config.compile_input_dir,
         required=not bool(config.compile_input_dir),
         help="Input directory containing the uncompiled `.gitlab-ci.yml` and other sources.",
     )
@@ -855,7 +857,7 @@ def run_cli(args: argparse.Namespace) -> ExitCode:
         return ExitCode.OK
 
     except Bash2GitlabError as e:
-        if args.debug:
+        if (hasattr(args, "debug") and args.debug) or (hasattr(args, "verbose") and args.verbose):
             raise
         # Domain error: short, human message; details in debug logs
         msg = str(e)
@@ -874,7 +876,7 @@ def run_cli(args: argparse.Namespace) -> ExitCode:
         return ExitCode.INTERRUPTED
 
     except Exception as e:  # unexpected bug
-        if args.debug:
+        if (hasattr(args, "debug") and args.debug) or (hasattr(args, "verbose") and args.verbose):
             raise
         print("unexpected error; run with --debug for details", file=sys.stderr)
         logger.exception("unhandled exception: %s", e)

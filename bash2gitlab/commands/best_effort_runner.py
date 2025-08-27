@@ -127,9 +127,10 @@ def run_colored(script: str, env=None, cwd=None) -> int:
         process.stdin.close()
 
     # Wait for process to finish
-    process.wait()
     for t in threads:
         t.join()
+
+    process.wait()
 
     if process.returncode != 0:
         raise subprocess.CalledProcessError(process.returncode, script)
