@@ -1,5 +1,11 @@
 # TODO
 
+
+## Perf
+- rtoml
+- caching/memoizing
+- 
+
 ## Bash Friendliness
 - Map more errors to return codes. Make sure only `__main__` returns codes, all others throw python exceptions
 - `--json` output option

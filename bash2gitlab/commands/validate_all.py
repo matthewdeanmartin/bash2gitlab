@@ -2,6 +2,8 @@
 Validates input folder and output folder assuming all yaml is pipeline yaml.
 """
 
+from __future__ import annotations
+
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path

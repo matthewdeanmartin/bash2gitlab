@@ -90,21 +90,19 @@ def fetch_repository_archive(
                 # Use a conservative timeout; rely on pool's retries if configured.
                 timeout = urllib3.Timeout(connect=5.0, read=60.0)
                 # Stream the body to disk (no preload).
-                with (
-                    http.request(
-                        "GET",
-                        archive_url,
-                        headers={"Accept": "application/zip"},
-                        preload_content=False,
-                        timeout=timeout,
-                        redirect=True,
-                    ) as resp,
-                    open(archive_path, "wb") as out,
-                ):
-                    if resp.status >= 400:
-                        raise ConnectionError(f"Failed to fetch archive (HTTP {resp.status}) from {archive_url}")
-                    # Efficiently stream to file
-                    shutil.copyfileobj(resp, out)
+                with http.request(
+                    "GET",
+                    archive_url,
+                    headers={"Accept": "application/zip"},
+                    preload_content=False,
+                    timeout=timeout,
+                    redirect=True,
+                ) as resp:
+                    with open(archive_path, "wb") as out:
+                        if resp.status >= 400:
+                            raise ConnectionError(f"Failed to fetch archive (HTTP {resp.status}) from {archive_url}")
+                        # Efficiently stream to file
+                        shutil.copyfileobj(resp, out)
 
             except urllib3.exceptions.HTTPError as e:
                 # Network/connection-level errors (DNS, TLS, max retries, etc.)

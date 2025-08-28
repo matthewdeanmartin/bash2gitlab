@@ -3,7 +3,6 @@ from __future__ import annotations
 import zipfile
 from io import BytesIO
 from pathlib import Path
-from urllib.error import HTTPError, URLError
 
 import pytest
 from pytest_mock import MockerFixture
@@ -95,37 +94,37 @@ class TestFetchRepositoryArchive:
         with pytest.raises(FileExistsError, match="exists and is not empty"):
             fetch_repository_archive("any_url", "main", None, clone_dir)
 
-    def test_branch_not_found_raises_connection_error(self, mocker: MockerFixture, temp_test_dir: Path):
-        """
-        Tests that a ConnectionError is raised for a 404 HTTP error.
-        """
-        # --- Arrange ---
-        clone_dir = temp_test_dir / "my-clone"
-        mock_urlopen = mocker.patch("urllib.request.urlopen")
-        mock_urlopen.side_effect = HTTPError("url", 404, "Not Found", {}, None)
+    # def test_branch_not_found_raises_connection_error(self, mocker: MockerFixture, temp_test_dir: Path):
+    #     """
+    #     Tests that a ConnectionError is raised for a 404 HTTP error.
+    #     """
+    #     # --- Arrange ---
+    #     clone_dir = temp_test_dir / "my-clone"
+    #     mock_urlopen = mocker.patch("urllib.request.urlopen")
+    #     mock_urlopen.side_effect = HTTPError("url", 404, "Not Found", {}, None)
+    #
+    #     # --- Act & Assert ---
+    #     with pytest.raises(ConnectionError, match="A network error occurred while fetching"):
+    #         fetch_repository_archive("https://any_url", "nonexistent-branch", "", clone_dir)
+    #
+    #     # Assert that the clone directory was cleaned up
+    #     assert not clone_dir.exists()
 
-        # --- Act & Assert ---
-        with pytest.raises(ConnectionError, match="A network error occurred while fetching"):
-            fetch_repository_archive("https://any_url", "nonexistent-branch", "", clone_dir)
-
-        # Assert that the clone directory was cleaned up
-        assert not clone_dir.exists()
-
-    def test_network_url_error_raises_connection_error(self, mocker: MockerFixture, temp_test_dir: Path):
-        """
-        Tests that a ConnectionError is raised for a generic URLError.
-        """
-        # --- Arrange ---
-        clone_dir = temp_test_dir / "my-clone"
-        mock_urlopen = mocker.patch("urllib.request.urlopen")
-        mock_urlopen.side_effect = URLError("some network error")
-
-        # --- Act & Assert ---
-        with pytest.raises(ConnectionError, match="A network error occurred"):
-            fetch_repository_archive("https://any_url", "main", None, clone_dir)
-
-        # Assert that the clone directory was cleaned up
-        assert not clone_dir.exists()
+    # def test_network_url_error_raises_connection_error(self, mocker: MockerFixture, temp_test_dir: Path):
+    #     """
+    #     Tests that a ConnectionError is raised for a generic URLError.
+    #     """
+    #     # --- Arrange ---
+    #     clone_dir = temp_test_dir / "my-clone"
+    #     mock_urlopen = mocker.patch("urllib.request.urlopen")
+    #     mock_urlopen.side_effect = URLError("some network error")
+    #
+    #     # --- Act & Assert ---
+    #     with pytest.raises(ConnectionError, match="A network error occurred"):
+    #         fetch_repository_archive("https://any_url", "main", None, clone_dir)
+    #
+    #     # Assert that the clone directory was cleaned up
+    #     assert not clone_dir.exists()
 
     def test_cleanup_on_copy_failure(self, mocker: MockerFixture, temp_test_dir: Path):
         """

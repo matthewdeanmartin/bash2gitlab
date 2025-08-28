@@ -3031,7 +3031,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.4"
+__version__ = "0.9.5"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -6281,21 +6281,19 @@ def fetch_repository_archive(
                 # Use a conservative timeout; rely on pool's retries if configured.
                 timeout = urllib3.Timeout(connect=5.0, read=60.0)
                 # Stream the body to disk (no preload).
-                with (
-                    http.request(
-                        "GET",
-                        archive_url,
-                        headers={"Accept": "application/zip"},
-                        preload_content=False,
-                        timeout=timeout,
-                        redirect=True,
-                    ) as resp,
-                    open(archive_path, "wb") as out,
-                ):
-                    if resp.status >= 400:
-                        raise ConnectionError(f"Failed to fetch archive (HTTP {resp.status}) from {archive_url}")
-                    # Efficiently stream to file
-                    shutil.copyfileobj(resp, out)
+                with http.request(
+                    "GET",
+                    archive_url,
+                    headers={"Accept": "application/zip"},
+                    preload_content=False,
+                    timeout=timeout,
+                    redirect=True,
+                ) as resp:
+                    with open(archive_path, "wb") as out:
+                        if resp.status >= 400:
+                            raise ConnectionError(f"Failed to fetch archive (HTTP {resp.status}) from {archive_url}")
+                        # Efficiently stream to file
+                        shutil.copyfileobj(resp, out)
 
             except urllib3.exceptions.HTTPError as e:
                 # Network/connection-level errors (DNS, TLS, max retries, etc.)
@@ -9806,6 +9804,8 @@ def run_show_config() -> int:
 """
 Validates input folder and output folder assuming all yaml is pipeline yaml.
 """
+
+from __future__ import annotations
 
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
