@@ -13,6 +13,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security in case of vulnerabilities.
 
 
+## [0.9.4] - 2025-08-27
+
+### Added
+- New validate command to validate yaml against json schema. Previously you had to compile to validate.
+
+### Changed
+- New dependency on orjson, urllib3 for speed. Tomli for backwards compatibility.
+
 ## [0.9.3] - 2025-08-27
 
 ### Fixed

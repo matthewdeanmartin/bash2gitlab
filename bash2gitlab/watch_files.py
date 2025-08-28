@@ -6,7 +6,7 @@ Usage (internal):
     from bash2gitlab.watch import start_watch
 
     start_watch(
-        uncompiled_path=Path("./ci"),
+        input_dir=Path("./ci"),
         output_path=Path("./compiled"),
         scripts_path=Path("./ci"),
         templates_dir=Path("./ci/templates"),
@@ -38,14 +38,14 @@ class _RecompileHandler(FileSystemEventHandler):
     def __init__(
         self,
         *,
-        uncompiled_path: Path,
+        input_dir: Path,
         output_path: Path,
         dry_run: bool = False,
         parallelism: int | None = None,
     ) -> None:
         super().__init__()
         self._paths = {
-            "uncompiled_path": uncompiled_path,
+            "input_dir": input_dir,
             "output_path": output_path,
         }
         self._flags = {"dry_run": dry_run, "parallelism": parallelism}
@@ -80,7 +80,7 @@ class _RecompileHandler(FileSystemEventHandler):
 
 def start_watch(
     *,
-    uncompiled_path: Path,
+    input_dir: Path,
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
@@ -91,14 +91,14 @@ def start_watch(
     Blocks forever (Ctrl-C to stop).
     """
     handler = _RecompileHandler(
-        uncompiled_path=uncompiled_path,
+        input_dir=input_dir,
         output_path=output_path,
         dry_run=dry_run,
         parallelism=parallelism,
     )
 
     observer = Observer()
-    observer.schedule(handler, str(uncompiled_path), recursive=True)
+    observer.schedule(handler, str(input_dir), recursive=True)
 
     try:
         observer.start()

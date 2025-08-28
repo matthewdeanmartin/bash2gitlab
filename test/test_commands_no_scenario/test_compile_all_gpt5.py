@@ -141,7 +141,7 @@ build:
         gitlab_ci_yaml=yaml_text,
         scripts_root=scripts_root,
         global_vars=global_vars,
-        uncompiled_path=scripts_root,
+        input_dir=scripts_root,
     )
 
     assert inlined_count >= 2  # variables merge + script inlining at minimum
@@ -222,7 +222,7 @@ def test_run_compile_all_end_to_end_inlines_and_writes(tmp_path: Path, monkeypat
     monkeypatch.setattr(mod, "mark_compilation_complete", lambda _p: None)
 
     total_inlined = mod.run_compile_all(
-        uncompiled_path=uncompiled,
+        input_dir=uncompiled,
         output_path=output,
         dry_run=False,
         parallelism=None,

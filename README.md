@@ -195,3 +195,4 @@ To define variables that should be inlined into the global `variables:` block of
 - **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.
 - **Base image holds all bash** You can only have one base image, so if you are using it for bash and yaml, you can't
   use other base images.
+- **Trigger remote pipeline** A remote pipeline has access to the shell files in its own repo.

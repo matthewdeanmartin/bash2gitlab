@@ -185,13 +185,13 @@ def find_script_references_in_node(
 # =============================
 
 
-def build_graph(uncompiled_path: Path) -> GraphModel:
+def build_graph(input_dir: Path) -> GraphModel:
     """Scan YAML + scripts and construct a :class:`GraphModel`.
 
     This function performs *no* rendering. Use :func:`render_graph` to export.
     """
     yaml_parser = get_yaml()
-    root_path = uncompiled_path.resolve()
+    root_path = input_dir.resolve()
 
     model = GraphModel(root_path=root_path)
     logger.info("Starting dependency graph generation in: %s", short_path(root_path))
@@ -379,7 +379,7 @@ def render_graph(
 
 
 def generate_dependency_graph(
-    uncompiled_path: Path,
+    input_dir: Path,
     *,
     open_graph_in_browser: bool = True,
     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
@@ -392,7 +392,7 @@ def generate_dependency_graph(
     To obtain the path to the artifact, use :func:`build_graph` +
     :func:`render_graph` directly, or inspect ``GraphModel.last_render_path``.
     """
-    model = build_graph(uncompiled_path)
+    model = build_graph(input_dir)
     dot_output = model.dot_output or ""
 
     # Render as a side-effect, if requested
@@ -406,7 +406,7 @@ def generate_dependency_graph(
 
 
 # def generate_dependency_graph(
-#     uncompiled_path: Path,
+#     input_dir: Path,
 #     *,
 #     open_graph_in_browser: bool = True,
 #     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
@@ -417,7 +417,7 @@ def generate_dependency_graph(
 #     Analyze YAML + scripts to build a dependency graph.
 #
 #     Args:
-#         uncompiled_path: Root directory of the uncompiled source files.
+#         input_dir: Root directory of the uncompiled source files.
 #         open_graph_in_browser: If True, write a graph file to CWD and open it.
 #         renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
 #         attempts: how many renderers attempted
@@ -430,7 +430,7 @@ def generate_dependency_graph(
 #     graph: dict[Path, set[Path]] = {}
 #     processed_scripts: set[Path] = set()
 #     yaml_parser = get_yaml()
-#     root_path = uncompiled_path.resolve()
+#     root_path = input_dir.resolve()
 #
 #     logger.info(f"Starting dependency graph generation in: {short_path(root_path)}")
 #
@@ -509,7 +509,7 @@ def generate_dependency_graph(
 #                 renderers_attempted.add(renderer)
 #                 attempts += 1
 #                 return generate_dependency_graph(
-#                     uncompiled_path,
+#                     input_dir,
 #                     open_graph_in_browser=open_graph_in_browser,
 #                     attempts=attempts,
 #                     renderers_attempted=renderers_attempted,

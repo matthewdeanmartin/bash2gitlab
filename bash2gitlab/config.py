@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class _Config:
+class Config:
     """
     Manages configuration for bash2gitlab, loading from files and environment variables.
 
@@ -294,15 +294,15 @@ class _Config:
         return self.get_bool("force", section="map")
 
 
-config = _Config()
+config = Config()
 
 
-def reset_for_testing(config_path_override: Path | None = None) -> _Config:
+def reset_for_testing(config_path_override: Path | None = None) -> Config:
     """
     Resets the singleton config instance. For testing purposes only.
     Allows specifying a direct path to a config file.
     """
     # pylint: disable=global-statement
     global config
-    config = _Config(config_path_override=config_path_override)
+    config = Config(config_path_override=config_path_override)
     return config

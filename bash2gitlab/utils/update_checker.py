@@ -25,7 +25,6 @@ Return contract:
 from __future__ import annotations
 
 import atexit
-import json
 import logging
 import os
 import sys
@@ -35,8 +34,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-from urllib import error, request
+from urllib import error
 
+import orjson as json
 from packaging import version as _version
 
 __all__ = [
@@ -46,6 +46,9 @@ __all__ = [
     "PackageNotFoundError",
     "NetworkError",
 ]
+
+from bash2gitlab.errors.exceptions import Bash2GitlabError
+from bash2gitlab.utils.urllib3_helper import fetch_json
 
 # Global state for background checking
 _background_check_result: str | None = None
@@ -154,7 +157,9 @@ def save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
         with cache_file.open("w", encoding="utf-8") as f:
-            json.dump({"last_check": time.time(), **payload}, f)
+            f.write(json.dumps({"last_check": time.time(), **payload}).decode())
+            # json.dumps({"last_check": time.time(), **payload})
+            # json.dump({"last_check": time.time(), **payload}, f)
     except (OSError, PermissionError):
         pass
 
@@ -183,9 +188,13 @@ def fetch_pypi_json(url: str, timeout: float) -> dict:
     Returns:
         Parsed JSON data.
     """
-    req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
-    with request.urlopen(req, timeout=timeout) as resp:  # nosec
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        return fetch_json(url, timeout)
+    except Bash2GitlabError as error:
+        raise PackageNotFoundError() from error
+    # req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
+    # with request.urlopen(req, timeout=timeout) as resp:  # nosec
+    #     return json.loads(resp.read().decode("utf-8"))
 
 
 def is_dev_version(version_str: str) -> bool:

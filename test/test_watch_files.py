@@ -22,7 +22,7 @@ def test_handler_ignores_dirs_and_irrelevant_extensions(tmp_path, monkeypatch, c
     monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", fake_compile)
 
     handler = _RecompileHandler(
-        uncompiled_path=tmp_path,
+        input_dir=tmp_path,
         output_path=tmp_path / "out",
         dry_run=False,
         parallelism=None,
@@ -56,7 +56,7 @@ def test_handler_triggers_on_yaml_and_sh(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", fake_compile)
 
     handler = _RecompileHandler(
-        uncompiled_path=tmp_path,
+        input_dir=tmp_path,
         output_path=tmp_path / "out",
         dry_run=True,
         parallelism=4,
@@ -68,7 +68,7 @@ def test_handler_triggers_on_yaml_and_sh(tmp_path, monkeypatch, caplog):
     # Should trigger for .yml
     handler.on_any_event(_Evt(str(tmp_path / "pipeline.yml")))
     assert recorded["kwargs"] is not None
-    assert recorded["kwargs"]["uncompiled_path"] == tmp_path
+    assert recorded["kwargs"]["input_dir"] == tmp_path
     assert recorded["kwargs"]["output_path"] == tmp_path / "out"
     assert recorded["kwargs"]["dry_run"] is True
     assert recorded["kwargs"]["parallelism"] == 4
@@ -97,7 +97,7 @@ def test_handler_debounce(monkeypatch, tmp_path):
     monkeypatch.setattr("bash2gitlab.watch_files.time", types.SimpleNamespace(monotonic=fake_monotonic))
 
     handler = _RecompileHandler(
-        uncompiled_path=tmp_path,
+        input_dir=tmp_path,
         output_path=tmp_path / "out",
         dry_run=False,
         parallelism=None,
@@ -118,7 +118,7 @@ def test_handler_logs_error_on_exception(tmp_path, monkeypatch, caplog):
     monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", boom)
 
     handler = _RecompileHandler(
-        uncompiled_path=tmp_path,
+        input_dir=tmp_path,
         output_path=tmp_path / "out",
         dry_run=False,
         parallelism=None,
@@ -169,7 +169,7 @@ def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, mon
 
     # Call start_watch: it should start, then promptly stop due to KeyboardInterrupt
     start_watch(
-        uncompiled_path=tmp_path,
+        input_dir=tmp_path,
         output_path=tmp_path / "compiled",
         dry_run=False,
         parallelism=None,
@@ -179,7 +179,7 @@ def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, mon
     assert started["value"] is True
     assert stopped["value"] is True
     assert joined["value"] is True
-    # Scheduled on the provided uncompiled_path, recursive=True
+    # Scheduled on the provided input_dir, recursive=True
     assert scheduled["args"] is not None
     assert scheduled["args"][1] == str(tmp_path)
     assert scheduled["recursive"] is True

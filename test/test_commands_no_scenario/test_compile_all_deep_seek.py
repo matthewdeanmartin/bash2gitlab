@@ -47,11 +47,11 @@ def yaml_instance():
 
 
 def test_infer_cli():
-    uncompiled_path = Path("/path/to/input")
+    input_dir = Path("/path/to/input")
     output_path = Path("/path/to/output")
 
     # Test without optional params
-    result = infer_cli(uncompiled_path, output_path)
+    result = infer_cli(input_dir, output_path)
     assert "bash2gitlab compile" in result
     for part in ["--in", "path", "to", "input"]:
         assert part in result
@@ -60,11 +60,11 @@ def test_infer_cli():
         assert part in result
 
     # Test with dry_run
-    result = infer_cli(uncompiled_path, output_path, dry_run=True)
+    result = infer_cli(input_dir, output_path, dry_run=True)
     assert " --dry-run" in result
 
     # Test with parallelism
-    result = infer_cli(uncompiled_path, output_path, parallelism=4)
+    result = infer_cli(input_dir, output_path, parallelism=4)
     assert " --parallelism 4" in result
 
 
@@ -303,7 +303,7 @@ def test_compile_single_file(tmp_path, mock_logger):
     source_path = tmp_path / "source.yml"
     output_file = tmp_path / "output.yml"
     scripts_path = tmp_path
-    uncompiled_path = tmp_path
+    input_dir = tmp_path
 
     source_content = """
 test-job:
@@ -318,7 +318,7 @@ test-job:
             mock_write.return_value = True
 
             inlined, written = compile_single_file(
-                source_path, output_file, scripts_path, {}, uncompiled_path, False, "test command"
+                source_path, output_file, scripts_path, {}, input_dir, False, "test command"
             )
 
             assert inlined == 1

@@ -20,7 +20,8 @@
 │   ├── map_commit.py
 │   ├── map_deploy.py
 │   ├── precommit.py
-│   └── show_config.py
+│   ├── show_config.py
+│   └── validate_all.py
 ├── config.py
 ├── errors/
 │   ├── exceptions.py
@@ -47,6 +48,7 @@
 │   ├── temp_env.py
 │   ├── terminal_colors.py
 │   ├── update_checker.py
+│   ├── urllib3_helper.py
 │   ├── utils.py
 │   ├── validate_pipeline.py
 │   ├── what_shell.py
@@ -109,7 +111,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class _Config:
+class Config:
     """
     Manages configuration for bash2gitlab, loading from files and environment variables.
 
@@ -380,17 +382,17 @@ class _Config:
         return self.get_bool("force", section="map")
 
 
-config = _Config()
+config = Config()
 
 
-def reset_for_testing(config_path_override: Path | None = None) -> _Config:
+def reset_for_testing(config_path_override: Path | None = None) -> Config:
     """
     Resets the singleton config instance. For testing purposes only.
     Allows specifying a direct path to a config file.
     """
     # pylint: disable=global-statement
     global config
-    config = _Config(config_path_override=config_path_override)
+    config = Config(config_path_override=config_path_override)
     return config
 ```
 ## File: gui.py
@@ -2908,7 +2910,7 @@ Usage (internal):
     from bash2gitlab.watch import start_watch
 
     start_watch(
-        uncompiled_path=Path("./ci"),
+        input_dir=Path("./ci"),
         output_path=Path("./compiled"),
         scripts_path=Path("./ci"),
         templates_dir=Path("./ci/templates"),
@@ -2940,14 +2942,14 @@ class _RecompileHandler(FileSystemEventHandler):
     def __init__(
         self,
         *,
-        uncompiled_path: Path,
+        input_dir: Path,
         output_path: Path,
         dry_run: bool = False,
         parallelism: int | None = None,
     ) -> None:
         super().__init__()
         self._paths = {
-            "uncompiled_path": uncompiled_path,
+            "input_dir": input_dir,
             "output_path": output_path,
         }
         self._flags = {"dry_run": dry_run, "parallelism": parallelism}
@@ -2982,7 +2984,7 @@ class _RecompileHandler(FileSystemEventHandler):
 
 def start_watch(
     *,
-    uncompiled_path: Path,
+    input_dir: Path,
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
@@ -2993,14 +2995,14 @@ def start_watch(
     Blocks forever (Ctrl-C to stop).
     """
     handler = _RecompileHandler(
-        uncompiled_path=uncompiled_path,
+        input_dir=input_dir,
         output_path=output_path,
         dry_run=dry_run,
         parallelism=parallelism,
     )
 
     observer = Observer()
-    observer.schedule(handler, str(uncompiled_path), recursive=True)
+    observer.schedule(handler, str(input_dir), recursive=True)
 
     try:
         observer.start()
@@ -3029,7 +3031,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.3"
+__version__ = "0.9.4"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -3078,6 +3080,7 @@ from urllib import error as _urlerror
 
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.input_change_detector import needs_compilation
+from bash2gitlab.commands.validate_all import run_validate_all
 from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
 from bash2gitlab.install_help import print_install_help
@@ -3228,7 +3231,7 @@ def compile_handler(args: argparse.Namespace) -> int:
 
     if args.watch:
         start_watch(
-            uncompiled_path=in_dir,
+            input_dir=in_dir,
             output_path=out_dir,
             dry_run=dry_run,
             parallelism=parallelism,
@@ -3236,11 +3239,36 @@ def compile_handler(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        run_compile_all(
-            uncompiled_path=in_dir, output_path=out_dir, dry_run=dry_run, parallelism=parallelism, force=force
-        )
+        run_compile_all(input_dir=in_dir, output_path=out_dir, dry_run=dry_run, parallelism=parallelism, force=force)
 
         logger.info("✅ GitLab CI processing complete.")
+
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        return 10
+    except (RuntimeError, ValueError) as e:
+        logger.error(f"❌ An error occurred: {e}")
+        return 1
+    return 0
+
+
+def validate_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'validate' command."""
+    logger.info("Starting bash2gitlab validator...")
+
+    # Resolve paths, using sensible defaults if optional paths are not provided
+    in_dir = Path(args.input_dir).resolve()
+    out_dir = Path(args.output_dir).resolve()
+    parallelism = args.parallelism
+
+    try:
+        run_validate_all(
+            input_dir=in_dir,
+            output_path=out_dir,
+            parallelism=parallelism,
+        )
+
+        logger.info("✅ GitLab CI validating complete.")
 
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
@@ -3427,9 +3455,9 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 def handle_change_detection_commands(args) -> bool:
     """Handle change detection specific commands. Returns True if command was handled."""
-    uncompiled_path: Path = Path(args.input_dir or "")
+    input_dir: Path = Path(args.input_dir or "")
     if args.check_only:
-        if needs_compilation(uncompiled_path):
+        if needs_compilation(input_dir):
             print("Compilation needed: input files have changed")
             return True
         else:
@@ -3437,7 +3465,7 @@ def handle_change_detection_commands(args) -> bool:
             return True
 
     if args.list_changed:
-        changed = get_changed_files(uncompiled_path)
+        changed = get_changed_files(input_dir)
         if changed:
             print("Changed files since last compilation:")
             for file_path in changed:
@@ -3789,6 +3817,9 @@ def main() -> int:
         help="Path to `.gitlab-ci.yml`, defaults to current directory",
     )
 
+    add_common_arguments(run_parser)
+    run_parser.set_defaults(func=best_effort_run_handler)
+
     # --- Detect Uncompiled ----
     detect_uncompiled_parser = subparsers.add_parser(
         "detect-uncompiled", help="Detect if input files have changed since last compilation"
@@ -3809,9 +3840,28 @@ def main() -> int:
     )
     detect_uncompiled_parser.set_defaults(func=handle_change_detection_commands)
 
-    add_common_arguments(run_parser)
-    run_parser.set_defaults(func=best_effort_run_handler)
-
+    # --- Compile Command ---
+    validate_parser = subparsers.add_parser("validate", help="Validate yaml pipelines against Gitlab json schema.")
+    validate_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=not bool(config.compile_input_dir),
+        help="Input directory containing the `.gitlab-ci.yml` and other sources.",
+    )
+    validate_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=not bool(config.compile_output_dir),
+        help="Output directory for the compiled GitLab CI files.",
+    )
+    validate_parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=config.parallelism,
+        help="Number of files to validate in parallel (default: CPU count).",
+    )
+    add_common_arguments(validate_parser)
+    validate_parser.set_defaults(func=validate_handler)
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
     if argcomplete:
@@ -4918,12 +4968,12 @@ __all__ = ["run_compile_all"]
 
 
 def infer_cli(
-    uncompiled_path: Path,
+    input_dir: Path,
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> str:
-    command = f"bash2gitlab compile --in {short_path(uncompiled_path)} --out {short_path(output_path)}"
+    command = f"bash2gitlab compile --in {short_path(input_dir)} --out {short_path(output_path)}"
     if dry_run:
         command += " --dry-run"
     if parallelism:
@@ -5188,7 +5238,7 @@ def inline_gitlab_scripts(
     gitlab_ci_yaml: str,
     scripts_root: Path,
     global_vars: dict[str, str],
-    uncompiled_path: Path,  # Path to look for job_name_variables.sh files
+    input_dir: Path,  # Path to look for job_name_variables.sh files
 ) -> tuple[int, str]:
     """
     Loads a GitLab CI YAML file, inlines scripts, merges global and job-specific variables,
@@ -5259,7 +5309,7 @@ def inline_gitlab_scripts(
             # Look for and process job-specific variables file
             safe_job_name = job_name.replace(":", "_")
             job_vars_filename = f"{safe_job_name}_variables.sh"
-            job_vars_path = uncompiled_path / job_vars_filename
+            job_vars_path = input_dir / job_vars_filename
 
             if job_vars_path.is_file():
                 logger.debug(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
@@ -5445,7 +5495,7 @@ def compile_single_file(
     output_file: Path,
     scripts_path: Path,
     variables: dict[str, str],
-    uncompiled_path: Path,
+    input_dir: Path,
     dry_run: bool,
     inferred_cli_command: str,
 ) -> tuple[int, int]:
@@ -5455,14 +5505,14 @@ def compile_single_file(
     """
     logger.debug(f"Processing template: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
-    inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
+    inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, input_dir)
     final_content = (get_banner(inferred_cli_command) + compiled_text) if inlined_for_file > 0 else raw_text
     written = write_compiled_file(output_file, final_content, dry_run)
     return inlined_for_file, int(written)
 
 
 def run_compile_all(
-    uncompiled_path: Path,
+    input_dir: Path,
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
@@ -5473,7 +5523,7 @@ def run_compile_all(
     This version safely writes files by checking hashes to avoid overwriting manual changes.
 
     Args:
-        uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
+        input_dir (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
         dry_run (bool): If True, simulate the process without writing any files.
         parallelism (int | None): Maximum number of processes to use for parallel compilation.
@@ -5484,13 +5534,13 @@ def run_compile_all(
     """
     # Check if compilation is needed (unless forced)
     if not force:
-        if not needs_compilation(uncompiled_path):
+        if not needs_compilation(input_dir):
             logger.info("No input changes detected since last compilation. Skipping compilation.")
             logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
             return 0
         logger.info("Input changes detected, proceeding with compilation...")
 
-    inferred_cli_command = infer_cli(uncompiled_path, output_path, dry_run, parallelism)
+    inferred_cli_command = infer_cli(input_dir, output_path, dry_run, parallelism)
     strays = report_targets(output_path)
     if strays:
         print("Stray files in output folder, halting")
@@ -5504,7 +5554,7 @@ def run_compile_all(
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
 
-    global_vars_path = uncompiled_path / "global_variables.sh"
+    global_vars_path = input_dir / "global_variables.sh"
     global_vars_data = {}
     if global_vars_path.is_file():
         logger.info(f"Found and loading variables from {short_path(global_vars_path)}")
@@ -5514,13 +5564,13 @@ def run_compile_all(
 
     files_to_process: list[tuple[Path, Path, dict[str, str]]] = []
 
-    if uncompiled_path.is_dir():
-        template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
+    if input_dir.is_dir():
+        template_files = list(input_dir.rglob("*.yml")) + list(input_dir.rglob("*.yaml"))
         if not template_files:
-            logger.warning(f"No template YAML files found in {uncompiled_path}")
+            logger.warning(f"No template YAML files found in {input_dir}")
 
         for template_path in template_files:
-            relative_path = template_path.relative_to(uncompiled_path)
+            relative_path = template_path.relative_to(input_dir)
             output_file = output_path / relative_path
             files_to_process.append((template_path, output_file, global_vars_data))
 
@@ -5531,7 +5581,7 @@ def run_compile_all(
 
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
-            (src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command)
+            (src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command)
             for src, out, variables in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
@@ -5541,7 +5591,7 @@ def run_compile_all(
     else:
         for src, out, variables in files_to_process:
             inlined_for_file, wrote = compile_single_file(
-                src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command
+                src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
@@ -5549,7 +5599,7 @@ def run_compile_all(
     # After successful compilation, mark as complete
     if not dry_run and (total_inlined_count > 0 or written_files_count > 0):
         try:
-            mark_compilation_complete(uncompiled_path)
+            mark_compilation_complete(input_dir)
             logger.debug("Marked compilation as complete - updated input file hashes")
         except Exception as e:
             logger.warning(f"Failed to update input hashes: {e}")
@@ -6147,12 +6197,12 @@ import logging
 import shutil
 import subprocess  # nosec: B404
 import tempfile
-import urllib.error
-import urllib.request
 import zipfile
 from pathlib import Path
 
-from bash2gitlab.errors.exceptions import Bash2GitlabError
+import urllib3
+
+from bash2gitlab.utils.urllib3_helper import _HTTP
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -6203,6 +6253,14 @@ def fetch_repository_archive(
     if not dry_run:
         clone_path.mkdir(parents=True, exist_ok=True)
 
+    # Build the archive URL
+    archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
+    if not archive_url.startswith(("http://", "https://")):
+        # Keep your project-specific error type if you have one; otherwise ValueError/TypeError is fine.
+        raise TypeError(f"Expected http or https protocol, got {archive_url}")
+
+    http = _HTTP  # _get_http_pool()
+
     try:
         # Use a temporary directory that cleans itself up automatically.
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -6212,29 +6270,39 @@ def fetch_repository_archive(
             if not dry_run:
                 unzip_root.mkdir()
 
-            # 2. Construct the archive URL and check for its existence.
-            archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
-            if not archive_url.startswith("http"):
-                raise Bash2GitlabError(f"Expected http or https protocol, got {archive_url}")
+            if dry_run:
+                logger.info("[dry-run] Would download %s to %s", archive_url, archive_path)
+                logger.info("[dry-run] Would extract %s to %s", archive_path, unzip_root)
+                return
 
+            # 2. Download the archive with streaming; will follow redirects via pool defaults.
+            logger.info("Downloading archive from %s", archive_url)
             try:
-                # Use a simple open to verify existence without a full download.
-                # URL is constructed from trusted inputs in this context.
-                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec: B310
-                    # The 'with' block itself confirms a 2xx status.
-                    logger.info("Confirmed repository archive exists at: %s", archive_url)
-            except urllib.error.HTTPError as e:
-                # Re-raise with a more specific message for clarity.
-                raise ConnectionError(
-                    f"Could not find archive for branch '{branch}' at '{archive_url}'. Please check the repository URL and branch name. (HTTP Status: {e.code})"
-                ) from e
-            except urllib.error.URLError as e:
-                raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
+                # Use a conservative timeout; rely on pool's retries if configured.
+                timeout = urllib3.Timeout(connect=5.0, read=60.0)
+                # Stream the body to disk (no preload).
+                with (
+                    http.request(
+                        "GET",
+                        archive_url,
+                        headers={"Accept": "application/zip"},
+                        preload_content=False,
+                        timeout=timeout,
+                        redirect=True,
+                    ) as resp,
+                    open(archive_path, "wb") as out,
+                ):
+                    if resp.status >= 400:
+                        raise ConnectionError(f"Failed to fetch archive (HTTP {resp.status}) from {archive_url}")
+                    # Efficiently stream to file
+                    shutil.copyfileobj(resp, out)
 
-            logger.info("Downloading archive to %s", archive_path)
-            # URL is validated above.
-            if not dry_run:
-                urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
+            except urllib3.exceptions.HTTPError as e:
+                # Network/connection-level errors (DNS, TLS, max retries, etc.)
+                raise ConnectionError(f"A network error occurred while fetching the URL: {e}") from e
+
+            if not archive_path.exists() or archive_path.stat().st_size == 0:
+                raise OSError("Downloaded archive is empty or missing.")
 
             # 3. Unzip the downloaded archive.
             logger.info("Extracting archive to %s", unzip_root)
@@ -7314,7 +7382,7 @@ def run_doctor() -> int:
     ):
         flag_issue()
 
-    lint_warnings = check_lint_config_validity()
+    lint_warnings = check_lint_config_validity(config)
     if not check("Lint configuration is valid and reachable", not lint_warnings, lint_warnings):
         flag_issue()
 
@@ -7346,22 +7414,23 @@ from __future__ import annotations
 
 import logging
 import os
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Literal
 
+import urllib3
+
 from bash2gitlab.commands.precommit import HOOK_CONTENT, hook_hash, hook_path
-from bash2gitlab.config import config
+from bash2gitlab.config import Config, config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.urllib3_helper import _HTTP
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
 
 # A reasonably large size that might cause issues with inlining.
 # Corresponds to MAX_INLINE_LEN in compile_not_bash.py
-LARGE_SCRIPT_THRESHOLD_BYTES = 16000
+LARGE_SCRIPT_THRESHOLD_BYTES = 1000 * 1024
 
 PrecommitStatus = Literal["Installed", "Not Installed", "Foreign Hook", "Error"]
 
@@ -7434,10 +7503,15 @@ def check_map_source_paths_exist() -> list[str]:
     return warnings
 
 
-def check_lint_config_validity() -> list[str]:
+# --- Refactor: GitLab lint config validity using the same PoolManager --------
+def check_lint_config_validity(config: Config) -> list[str]:
     """
     Validates the GitLab URL, project ID, and token for the lint command.
+
+    Returns a list of human-readable problems (empty list = OK).
     """
+    # BUG: This is not how to reference properties on config.
+
     gitlab_url = config.lint_gitlab_url
     project_id = config.lint_project_id
     token = os.environ.get("GITLAB_PRIVATE_TOKEN")  # Tokens are often in env
@@ -7445,28 +7519,86 @@ def check_lint_config_validity() -> list[str]:
     if not project_id or not gitlab_url:
         return ["Linting with `project_id` is recommended for better accuracy but is not configured."]
 
+    if not gitlab_url.lower().startswith("http"):
+        return [f"Invalid GitLab URL: {gitlab_url!r}"]
+
     api_url = f"{gitlab_url.rstrip('/')}/api/v4/projects/{project_id}"
-    headers = {"User-Agent": "bash2gitlab-doctor/1.0"}
+
+    # Per-call headers merge with client defaults
+    headers = {
+        "User-Agent": "bash2gitlab-doctor/1.0",
+        "Accept": "application/json",
+    }
     if token:
         headers["PRIVATE-TOKEN"] = token
 
-    req = urllib.request.Request(api_url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=5) as response:  # nosec
-            if response.status == 200:
-                return []  # Success
-            else:
-                return [f"GitLab API returned status {response.status} for project {project_id}."]
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return [f"Project with ID '{project_id}' not found at {gitlab_url}."]
-        if e.code == 401:
+        # Short, explicit timeouts; tune for your environment
+        with _HTTP.request(
+            "GET",
+            api_url,
+            headers=headers,
+            timeout=urllib3.Timeout(connect=2.0, read=3.0),
+            preload_content=False,
+            decode_content=True,
+        ) as r:
+            status = r.status
+            # Drain body for connection reuse even if we don't need it
+            _ = r.read(0)
+
+        if status == 200:
+            return []
+        if status == 401:
             return ["Authentication failed (401 Unauthorized). Check your token."]
-        return [f"GitLab API request failed with HTTP status {e.code}."]
-    except (urllib.error.URLError, TimeoutError) as e:
+        if status == 404:
+            return [f"Project with ID '{project_id}' not found at {gitlab_url}."]
+        return [f"GitLab API returned status {status} for project {project_id}."]
+
+    except urllib3.exceptions.SSLError as e:
+        return [f"TLS/SSL error while connecting to '{gitlab_url}': {e}"]
+    except (urllib3.exceptions.ReadTimeoutError, urllib3.exceptions.ConnectTimeoutError) as e:
+        return [f"Connection to GitLab timed out: {e}"]
+    except urllib3.exceptions.MaxRetryError as e:
         return [f"Could not connect to GitLab instance at '{gitlab_url}': {e}"]
-    except Exception as e:
+    except urllib3.exceptions.HTTPError as e:
+        return [f"HTTP error while contacting GitLab: {e}"]
+    except Exception as e:  # keep a catch-all to mirror original behavior
         return [f"An unexpected error occurred while checking GitLab connectivity: {e}"]
+
+
+# def check_lint_config_validity() -> list[str]:
+#     """
+#     Validates the GitLab URL, project ID, and token for the lint command.
+#     """
+#     gitlab_url = config.lint_gitlab_url
+#     project_id = config.lint_project_id
+#     token = os.environ.get("GITLAB_PRIVATE_TOKEN")  # Tokens are often in env
+#
+#     if not project_id or not gitlab_url:
+#         return ["Linting with `project_id` is recommended for better accuracy but is not configured."]
+#
+#     api_url = f"{gitlab_url.rstrip('/')}/api/v4/projects/{project_id}"
+#     headers = {"User-Agent": "bash2gitlab-doctor/1.0"}
+#     if token:
+#         headers["PRIVATE-TOKEN"] = token
+#
+#     req = urllib.request.Request(api_url, headers=headers)
+#     try:
+#         with urllib.request.urlopen(req, timeout=5) as response:  # nosec
+#             if response.status == 200:
+#                 return []  # Success
+#             else:
+#                 return [f"GitLab API returned status {response.status} for project {project_id}."]
+#     except urllib.error.HTTPError as e:
+#         if e.code == 404:
+#             return [f"Project with ID '{project_id}' not found at {gitlab_url}."]
+#         if e.code == 401:
+#             return ["Authentication failed (401 Unauthorized). Check your token."]
+#         return [f"GitLab API request failed with HTTP status {e.code}."]
+#     except (urllib.error.URLError, TimeoutError) as e:
+#         return [f"Could not connect to GitLab instance at '{gitlab_url}': {e}"]
+#     except Exception as e:
+#         return [f"An unexpected error occurred while checking GitLab connectivity: {e}"]
 
 
 def check_for_large_scripts(input_dir: Path) -> list[str]:
@@ -7682,13 +7814,13 @@ def find_script_references_in_node(
 # =============================
 
 
-def build_graph(uncompiled_path: Path) -> GraphModel:
+def build_graph(input_dir: Path) -> GraphModel:
     """Scan YAML + scripts and construct a :class:`GraphModel`.
 
     This function performs *no* rendering. Use :func:`render_graph` to export.
     """
     yaml_parser = get_yaml()
-    root_path = uncompiled_path.resolve()
+    root_path = input_dir.resolve()
 
     model = GraphModel(root_path=root_path)
     logger.info("Starting dependency graph generation in: %s", short_path(root_path))
@@ -7876,7 +8008,7 @@ def render_graph(
 
 
 def generate_dependency_graph(
-    uncompiled_path: Path,
+    input_dir: Path,
     *,
     open_graph_in_browser: bool = True,
     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
@@ -7889,7 +8021,7 @@ def generate_dependency_graph(
     To obtain the path to the artifact, use :func:`build_graph` +
     :func:`render_graph` directly, or inspect ``GraphModel.last_render_path``.
     """
-    model = build_graph(uncompiled_path)
+    model = build_graph(input_dir)
     dot_output = model.dot_output or ""
 
     # Render as a side-effect, if requested
@@ -7903,7 +8035,7 @@ def generate_dependency_graph(
 
 
 # def generate_dependency_graph(
-#     uncompiled_path: Path,
+#     input_dir: Path,
 #     *,
 #     open_graph_in_browser: bool = True,
 #     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
@@ -7914,7 +8046,7 @@ def generate_dependency_graph(
 #     Analyze YAML + scripts to build a dependency graph.
 #
 #     Args:
-#         uncompiled_path: Root directory of the uncompiled source files.
+#         input_dir: Root directory of the uncompiled source files.
 #         open_graph_in_browser: If True, write a graph file to CWD and open it.
 #         renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
 #         attempts: how many renderers attempted
@@ -7927,7 +8059,7 @@ def generate_dependency_graph(
 #     graph: dict[Path, set[Path]] = {}
 #     processed_scripts: set[Path] = set()
 #     yaml_parser = get_yaml()
-#     root_path = uncompiled_path.resolve()
+#     root_path = input_dir.resolve()
 #
 #     logger.info(f"Starting dependency graph generation in: {short_path(root_path)}")
 #
@@ -8006,7 +8138,7 @@ def generate_dependency_graph(
 #                 renderers_attempted.add(renderer)
 #                 attempts += 1
 #                 return generate_dependency_graph(
-#                     uncompiled_path,
+#                     input_dir,
 #                     open_graph_in_browser=open_graph_in_browser,
 #                     attempts=attempts,
 #                     renderers_attempted=renderers_attempted,
@@ -8559,7 +8691,6 @@ Notes:
 
 from __future__ import annotations
 
-import json
 import logging
 import multiprocessing
 from collections.abc import Sequence
@@ -8567,6 +8698,8 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from urllib import error, request
+
+import orjson as json
 
 from bash2gitlab.utils.utils import short_path
 
@@ -8665,7 +8798,8 @@ def post_json(
         URLError / HTTPError on network issues (logged and re-raised).
         ValueError if response cannot be parsed as JSON.
     """
-    body = json.dumps(payload).encode("utf-8")
+    # body = json.dumps(payload).encode("utf-8")
+    body = json.dumps(payload)
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -9494,7 +9628,7 @@ import logging
 import os
 from typing import Any
 
-from bash2gitlab.config import _Config, config
+from bash2gitlab.config import Config, config
 from bash2gitlab.utils.terminal_colors import Colors
 from bash2gitlab.utils.utils import short_path
 
@@ -9565,7 +9699,7 @@ def _parse_prop_name(prop_name: str) -> tuple[str, str | None]:
     return (prop_name, None)
 
 
-def get_value_and_source_details(prop_name: str, config_instance: _Config) -> tuple[Any, str, str | None]:
+def get_value_and_source_details(prop_name: str, config_instance: Config) -> tuple[Any, str, str | None]:
     """
     Determines the final value and the specific source of a configuration property.
 
@@ -9666,6 +9800,210 @@ def run_show_config() -> int:
             print(f"  {key_padded} = {value_str} {source_str}")
 
     return 0
+```
+## File: commands\validate_all.py
+```python
+"""
+Validates input folder and output folder assuming all yaml is pipeline yaml.
+"""
+
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any
+
+import orjson
+
+from bash2gitlab.utils.terminal_colors import Colors
+from bash2gitlab.utils.validate_pipeline import ValidationResult, validate_gitlab_ci_yaml
+
+
+def find_yaml_files(directory: Path) -> list[Path]:
+    """
+    Recursively find all YAML files in the given directory.
+
+    Args:
+        directory: Directory to search for YAML files.
+
+    Returns:
+        List of Path objects for YAML files.
+    """
+    yaml_files: list[Path] = []
+    for pattern in ["**/*.yaml", "**/*.yml"]:
+        # Only include actual files, not directories
+        yaml_files.extend(path for path in directory.glob(pattern) if path.is_file())
+    return sorted(yaml_files)
+
+
+def validate_single_file(file_path: Path) -> ValidationResult:
+    """
+    Validate a single YAML file.
+
+    Args:
+        file_path: Path to the YAML file to validate.
+
+    Returns:
+        ValidationResult containing the validation outcome.
+    """
+    try:
+        # Double-check that this is actually a file
+        if not file_path.exists():
+            return ValidationResult(file_path=file_path, is_valid=False, errors=[f"File does not exist: {file_path}"])
+
+        if not file_path.is_file():
+            return ValidationResult(file_path=file_path, is_valid=False, errors=[f"Path is not a file: {file_path}"])
+
+        yaml_content = file_path.read_text(encoding="utf-8")
+        is_valid, errors = validate_gitlab_ci_yaml(yaml_content)
+        return ValidationResult(file_path=file_path, is_valid=is_valid, errors=errors)
+    except Exception as e:
+        return ValidationResult(file_path=file_path, is_valid=False, errors=[f"Failed to read file: {str(e)}"])
+
+
+def write_results_to_output(results: list[ValidationResult], output_path: Path) -> None:
+    """
+    Write validation results to output file in JSON format.
+
+    Args:
+        results: List of validation results.
+        output_path: Path to write the output file.
+    """
+    output_data: dict[str, Any] = {
+        "summary": {
+            "total_files": len(results),
+            "valid_files": sum(1 for r in results if r.is_valid),
+            "invalid_files": sum(1 for r in results if not r.is_valid),
+        },
+        "results": [
+            {"file": str(result.file_path), "is_valid": result.is_valid, "errors": result.errors} for result in results
+        ],
+    }
+
+    # Ensure output directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(orjson.dumps(output_data).decode())
+
+
+def print_validation_summary(results: list[ValidationResult]) -> None:
+    """
+    Print a colored summary of validation results.
+
+    Args:
+        results: List of validation results.
+    """
+    total_files = len(results)
+    valid_files = sum(1 for r in results if r.is_valid)
+    invalid_files = total_files - valid_files
+
+    print(f"\n{Colors.HEADER}{Colors.BOLD}=== VALIDATION SUMMARY ==={Colors.ENDC}")
+    print(f"Total files processed: {Colors.OKBLUE}{total_files}{Colors.ENDC}")
+    print(f"Valid files: {Colors.OKGREEN}{valid_files}{Colors.ENDC}")
+    print(f"Invalid files: {Colors.FAIL}{invalid_files}{Colors.ENDC}")
+
+    if invalid_files > 0:
+        print(f"\n{Colors.WARNING}{Colors.BOLD}Files with errors:{Colors.ENDC}")
+        for result in results:
+            if not result.is_valid:
+                print(f"\n{Colors.FAIL}✗ {result.file_path}{Colors.ENDC}")
+                for error in result.errors:
+                    print(f"  {Colors.FAIL}• {error}{Colors.ENDC}")
+    else:
+        print(f"\n{Colors.OKGREEN}{Colors.BOLD}✓ All files are valid!{Colors.ENDC}")
+
+
+def run_validate_all(
+    input_dir: Path,
+    output_path: Path,
+    parallelism: int | None = None,
+) -> int:
+    """
+    Orchestrate the validation of all YAML files in input directory.
+
+    Args:
+        input_dir: Directory containing YAML files to validate.
+        output_path: Path to write validation results.
+        parallelism: Number of parallel processes (None for auto-detect).
+
+    Returns:
+        Exit code (0 for success, 1 for validation failures, 2 for errors).
+    """
+    try:
+        # Validate input directory exists
+        if not input_dir.exists():
+            print(f"{Colors.FAIL}Error: Input directory does not exist: {input_dir}{Colors.ENDC}")
+            return 2
+
+        if not input_dir.is_dir():
+            print(f"{Colors.FAIL}Error: Input path is not a directory: {input_dir}{Colors.ENDC}")
+            return 2
+
+        # Find all YAML files
+        yaml_files = find_yaml_files(input_dir)
+
+        if not yaml_files:
+            print(f"{Colors.WARNING}Warning: No YAML files found in {input_dir}{Colors.ENDC}")
+            return 0
+
+        print(f"{Colors.OKCYAN}Found {len(yaml_files)} YAML files to validate{Colors.ENDC}")
+
+        # Determine parallelism strategy
+        if len(yaml_files) <= 5:
+            # Serial processing for small number of files
+            print(f"{Colors.OKBLUE}Using serial processing{Colors.ENDC}")
+            results = []
+            for yaml_file in yaml_files:
+                print(f"Validating: {yaml_file}")
+                result = validate_single_file(yaml_file)
+                results.append(result)
+        else:
+            # Parallel processing for larger number of files
+            max_workers = parallelism if parallelism else os.cpu_count()
+            print(f"{Colors.OKBLUE}Using parallel processing with {max_workers} workers{Colors.ENDC}")
+
+            results = []
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all validation tasks
+                future_to_file = {
+                    executor.submit(validate_single_file, yaml_file): yaml_file for yaml_file in yaml_files
+                }
+
+                # Collect results as they complete
+                for future in as_completed(future_to_file):
+                    yaml_file = future_to_file[future]
+                    try:
+                        result = future.result()
+                        results.append(result)
+                        status = (
+                            f"{Colors.OKGREEN}✓{Colors.ENDC}" if result.is_valid else f"{Colors.FAIL}✗{Colors.ENDC}"
+                        )
+                        print(f"{status} {yaml_file}")
+                    except Exception as e:
+                        print(f"{Colors.FAIL}✗ {yaml_file} - Exception: {e}{Colors.ENDC}")
+                        results.append(
+                            ValidationResult(
+                                file_path=yaml_file, is_valid=False, errors=[f"Processing exception: {str(e)}"]
+                            )
+                        )
+
+        # Sort results by file path for consistent output
+        results.sort(key=lambda r: r.file_path)
+
+        # Write results to output file
+        # write_results_to_output(results, output_path)
+        # print(f"\n{Colors.OKCYAN}Results written to: {output_path}{Colors.ENDC}")
+
+        # Print summary
+        print_validation_summary(results)
+
+        # Return appropriate exit code
+        invalid_count = sum(1 for r in results if not r.is_valid)
+        return 1 if invalid_count > 0 else 0
+
+    except Exception as e:
+        print(f"{Colors.FAIL}Error during validation: {e}{Colors.ENDC}")
+        raise
 ```
 ## File: errors\exceptions.py
 ```python
@@ -13659,7 +13997,6 @@ Return contract:
 from __future__ import annotations
 
 import atexit
-import json
 import logging
 import os
 import sys
@@ -13669,8 +14006,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
-from urllib import error, request
+from urllib import error
 
+import orjson as json
 from packaging import version as _version
 
 __all__ = [
@@ -13680,6 +14018,9 @@ __all__ = [
     "PackageNotFoundError",
     "NetworkError",
 ]
+
+from bash2gitlab.errors.exceptions import Bash2GitlabError
+from bash2gitlab.utils.urllib3_helper import fetch_json
 
 # Global state for background checking
 _background_check_result: str | None = None
@@ -13788,7 +14129,9 @@ def save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
         with cache_file.open("w", encoding="utf-8") as f:
-            json.dump({"last_check": time.time(), **payload}, f)
+            f.write(json.dumps({"last_check": time.time(), **payload}).decode())
+            # json.dumps({"last_check": time.time(), **payload})
+            # json.dump({"last_check": time.time(), **payload}, f)
     except (OSError, PermissionError):
         pass
 
@@ -13817,9 +14160,13 @@ def fetch_pypi_json(url: str, timeout: float) -> dict:
     Returns:
         Parsed JSON data.
     """
-    req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
-    with request.urlopen(req, timeout=timeout) as resp:  # nosec
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        return fetch_json(url, timeout)
+    except Bash2GitlabError as error:
+        raise PackageNotFoundError() from error
+    # req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
+    # with request.urlopen(req, timeout=timeout) as resp:  # nosec
+    #     return json.loads(resp.read().decode("utf-8"))
 
 
 def is_dev_version(version_str: str) -> bool:
@@ -14156,6 +14503,90 @@ def check_for_updates(
 #
 #     # When app exits, update message will be shown if available
 ```
+## File: utils\urllib3_helper.py
+```python
+from __future__ import annotations
+
+import ssl
+from typing import Any
+
+import certifi
+import orjson
+import urllib3
+from urllib3.util import Retry
+
+from bash2gitlab.errors.exceptions import Bash2GitlabError
+
+# --- Module-level client (reused for perf via connection pooling) ---
+_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+
+_RETRIES = Retry(
+    total=1,  # network resiliency
+    connect=1,
+    read=1,
+    backoff_factor=0.3,  # exponential backoff: 0.3, 0.6, 1.2, ...
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=frozenset({"GET", "HEAD"}),
+    raise_on_status=False,  # we’ll check r.status ourselves
+)
+
+_HTTP = urllib3.PoolManager(
+    # tune these to your concurrency/throughput needs
+    maxsize=10,  # sockets per host
+    retries=_RETRIES,
+    ssl_context=_SSL_CTX,  # verified TLS, SNI + hostname verify by default
+    headers={
+        "User-Agent": "bash2gitlab-update-checker/2",
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip, deflate, br",  # allow compression (urllib3 will auto-decode)
+    },
+)
+
+
+def fetch_json(url: str, timeout: float) -> dict[str, Any]:
+    """
+    Fetch JSON metadata from PyPI (or any HTTPS JSON endpoint) using urllib3.
+
+    Args:
+        url: HTTPS URL to fetch.
+        timeout: Total read timeout (seconds). Connect timeout is derived.
+
+    Returns:
+        Parsed JSON data as a dict.
+
+    Raises:
+        ValueError: If the URL is not HTTPS.
+        RuntimeError: For non-2xx HTTP responses.
+        urllib3.exceptions.HTTPError: For lower-level connection/timeout issues.
+        json.JSONDecodeError: If the response isn't valid JSON.
+    """
+    if not url.lower().startswith("https://"):
+        raise ValueError("Refusing to fetch non-HTTPS URL for security.")
+
+    # # Split timeout into connect/read parts. Adjust to your latency profile.
+    # connect_to = min(max(timeout * 0.3, 0.5), 5.0)  # 30% of total, clamped 0.5..5s
+    # read_to = timeout
+
+    # Stream then read so the connection is safely returned to the pool.
+    # decode_content=True lets urllib3 transparently decompress gzip/deflate/br.
+    with _HTTP.request(
+        "GET",
+        url,
+        # timeout=urllib3.Timeout(connect=connect_to, read=read_to),
+        timeout=urllib3.Timeout(connect=0.5, read=0.5),
+        preload_content=False,
+        decode_content=True,
+    ) as r:
+        if r.status == 404:
+            raise Bash2GitlabError("Not Found")
+        if r.status < 200 or r.status >= 300:
+            # You can include response text if small; avoid logging huge bodies.
+            raise RuntimeError(f"Unexpected HTTP status {r.status} for {url}")
+
+        # JSON is UTF-8 by spec; if you want to honor charset, parse r.headers.
+        raw = r.read()
+        return orjson.loads(raw.decode("utf-8"))
+```
 ## File: utils\utils.py
 ```python
 """Utility functions with no strong link to the domain of the overall application."""
@@ -14197,16 +14628,17 @@ def short_path(path: Path) -> str:
 ```python
 from __future__ import annotations
 
-import json
 import logging
 import sys
 import tempfile
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import jsonschema
+import orjson as json
 import ruamel.yaml
 
 logger = logging.getLogger(__name__)
@@ -14264,7 +14696,7 @@ class GitLabCIValidator:
         try:
             if self.cache_file.exists():
                 with open(self.cache_file, encoding="utf-8") as f:
-                    return json.load(f)
+                    return json.loads(f.read())
         except (OSError, json.JSONDecodeError) as e:
             print(f"Failed to load schema from cache: {e}")
         return None
@@ -14279,7 +14711,7 @@ class GitLabCIValidator:
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump(schema, f, indent=2)
+                f.write(json.dumps(schema).decode())
         except OSError as e:
             print(f"Failed to save schema to cache: {e}")
 
@@ -14308,7 +14740,7 @@ class GitLabCIValidator:
                 fallback_file = current_dir / self.fallback_schema_path
                 if fallback_file.exists():
                     with open(fallback_file, encoding="utf-8") as f:
-                        return json.load(f)
+                        return json.loads(f.read())
             except (OSError, FileNotFoundError):
                 pass
 
@@ -14399,6 +14831,20 @@ class GitLabCIValidator:
             return False, [f"YAML parsing error: {str(e)}"]
         except Exception as e:
             return False, [f"Validation error: {str(e)}"]
+
+
+@dataclass
+class ValidationResult:
+    """Result of validating a single YAML file."""
+
+    file_path: Path
+    is_valid: bool
+    errors: list[str]
+
+    def __post_init__(self) -> None:
+        """Ensure file_path is a Path object."""
+        if not isinstance(self.file_path, Path):
+            self.file_path = Path(self.file_path)
 
 
 def validate_gitlab_ci_yaml(yaml_content: str, cache_dir: str | None = None) -> tuple[bool, list[str]]:

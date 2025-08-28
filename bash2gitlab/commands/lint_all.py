@@ -39,7 +39,6 @@ Notes:
 
 from __future__ import annotations
 
-import json
 import logging
 import multiprocessing
 from collections.abc import Sequence
@@ -47,6 +46,8 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from urllib import error, request
+
+import orjson as json
 
 from bash2gitlab.utils.utils import short_path
 
@@ -145,7 +146,8 @@ def post_json(
         URLError / HTTPError on network issues (logged and re-raised).
         ValueError if response cannot be parsed as JSON.
     """
-    body = json.dumps(payload).encode("utf-8")
+    # body = json.dumps(payload).encode("utf-8")
+    body = json.dumps(payload)
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import json
 import logging
 import sys
 import tempfile
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import jsonschema
+import orjson as json
 import ruamel.yaml
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,7 @@ class GitLabCIValidator:
         try:
             if self.cache_file.exists():
                 with open(self.cache_file, encoding="utf-8") as f:
-                    return json.load(f)
+                    return json.loads(f.read())
         except (OSError, json.JSONDecodeError) as e:
             print(f"Failed to load schema from cache: {e}")
         return None
@@ -82,7 +83,7 @@ class GitLabCIValidator:
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
             with open(self.cache_file, "w", encoding="utf-8") as f:
-                json.dump(schema, f, indent=2)
+                f.write(json.dumps(schema).decode())
         except OSError as e:
             print(f"Failed to save schema to cache: {e}")
 
@@ -111,7 +112,7 @@ class GitLabCIValidator:
                 fallback_file = current_dir / self.fallback_schema_path
                 if fallback_file.exists():
                     with open(fallback_file, encoding="utf-8") as f:
-                        return json.load(f)
+                        return json.loads(f.read())
             except (OSError, FileNotFoundError):
                 pass
 
@@ -202,6 +203,20 @@ class GitLabCIValidator:
             return False, [f"YAML parsing error: {str(e)}"]
         except Exception as e:
             return False, [f"Validation error: {str(e)}"]
+
+
+@dataclass
+class ValidationResult:
+    """Result of validating a single YAML file."""
+
+    file_path: Path
+    is_valid: bool
+    errors: list[str]
+
+    def __post_init__(self) -> None:
+        """Ensure file_path is a Path object."""
+        if not isinstance(self.file_path, Path):
+            self.file_path = Path(self.file_path)
 
 
 def validate_gitlab_ci_yaml(yaml_content: str, cache_dir: str | None = None) -> tuple[bool, list[str]]:

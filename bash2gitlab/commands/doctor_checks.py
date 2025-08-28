@@ -2,22 +2,23 @@ from __future__ import annotations
 
 import logging
 import os
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Literal
 
+import urllib3
+
 from bash2gitlab.commands.precommit import HOOK_CONTENT, hook_hash, hook_path
-from bash2gitlab.config import config
+from bash2gitlab.config import Config, config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
+from bash2gitlab.utils.urllib3_helper import _HTTP
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
 
 # A reasonably large size that might cause issues with inlining.
 # Corresponds to MAX_INLINE_LEN in compile_not_bash.py
-LARGE_SCRIPT_THRESHOLD_BYTES = 16000
+LARGE_SCRIPT_THRESHOLD_BYTES = 1000 * 1024
 
 PrecommitStatus = Literal["Installed", "Not Installed", "Foreign Hook", "Error"]
 
@@ -90,10 +91,15 @@ def check_map_source_paths_exist() -> list[str]:
     return warnings
 
 
-def check_lint_config_validity() -> list[str]:
+# --- Refactor: GitLab lint config validity using the same PoolManager --------
+def check_lint_config_validity(config: Config) -> list[str]:
     """
     Validates the GitLab URL, project ID, and token for the lint command.
+
+    Returns a list of human-readable problems (empty list = OK).
     """
+    # BUG: This is not how to reference properties on config.
+
     gitlab_url = config.lint_gitlab_url
     project_id = config.lint_project_id
     token = os.environ.get("GITLAB_PRIVATE_TOKEN")  # Tokens are often in env
@@ -101,28 +107,86 @@ def check_lint_config_validity() -> list[str]:
     if not project_id or not gitlab_url:
         return ["Linting with `project_id` is recommended for better accuracy but is not configured."]
 
+    if not gitlab_url.lower().startswith("http"):
+        return [f"Invalid GitLab URL: {gitlab_url!r}"]
+
     api_url = f"{gitlab_url.rstrip('/')}/api/v4/projects/{project_id}"
-    headers = {"User-Agent": "bash2gitlab-doctor/1.0"}
+
+    # Per-call headers merge with client defaults
+    headers = {
+        "User-Agent": "bash2gitlab-doctor/1.0",
+        "Accept": "application/json",
+    }
     if token:
         headers["PRIVATE-TOKEN"] = token
 
-    req = urllib.request.Request(api_url, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=5) as response:  # nosec
-            if response.status == 200:
-                return []  # Success
-            else:
-                return [f"GitLab API returned status {response.status} for project {project_id}."]
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return [f"Project with ID '{project_id}' not found at {gitlab_url}."]
-        if e.code == 401:
+        # Short, explicit timeouts; tune for your environment
+        with _HTTP.request(
+            "GET",
+            api_url,
+            headers=headers,
+            timeout=urllib3.Timeout(connect=2.0, read=3.0),
+            preload_content=False,
+            decode_content=True,
+        ) as r:
+            status = r.status
+            # Drain body for connection reuse even if we don't need it
+            _ = r.read(0)
+
+        if status == 200:
+            return []
+        if status == 401:
             return ["Authentication failed (401 Unauthorized). Check your token."]
-        return [f"GitLab API request failed with HTTP status {e.code}."]
-    except (urllib.error.URLError, TimeoutError) as e:
+        if status == 404:
+            return [f"Project with ID '{project_id}' not found at {gitlab_url}."]
+        return [f"GitLab API returned status {status} for project {project_id}."]
+
+    except urllib3.exceptions.SSLError as e:
+        return [f"TLS/SSL error while connecting to '{gitlab_url}': {e}"]
+    except (urllib3.exceptions.ReadTimeoutError, urllib3.exceptions.ConnectTimeoutError) as e:
+        return [f"Connection to GitLab timed out: {e}"]
+    except urllib3.exceptions.MaxRetryError as e:
         return [f"Could not connect to GitLab instance at '{gitlab_url}': {e}"]
-    except Exception as e:
+    except urllib3.exceptions.HTTPError as e:
+        return [f"HTTP error while contacting GitLab: {e}"]
+    except Exception as e:  # keep a catch-all to mirror original behavior
         return [f"An unexpected error occurred while checking GitLab connectivity: {e}"]
+
+
+# def check_lint_config_validity() -> list[str]:
+#     """
+#     Validates the GitLab URL, project ID, and token for the lint command.
+#     """
+#     gitlab_url = config.lint_gitlab_url
+#     project_id = config.lint_project_id
+#     token = os.environ.get("GITLAB_PRIVATE_TOKEN")  # Tokens are often in env
+#
+#     if not project_id or not gitlab_url:
+#         return ["Linting with `project_id` is recommended for better accuracy but is not configured."]
+#
+#     api_url = f"{gitlab_url.rstrip('/')}/api/v4/projects/{project_id}"
+#     headers = {"User-Agent": "bash2gitlab-doctor/1.0"}
+#     if token:
+#         headers["PRIVATE-TOKEN"] = token
+#
+#     req = urllib.request.Request(api_url, headers=headers)
+#     try:
+#         with urllib.request.urlopen(req, timeout=5) as response:  # nosec
+#             if response.status == 200:
+#                 return []  # Success
+#             else:
+#                 return [f"GitLab API returned status {response.status} for project {project_id}."]
+#     except urllib.error.HTTPError as e:
+#         if e.code == 404:
+#             return [f"Project with ID '{project_id}' not found at {gitlab_url}."]
+#         if e.code == 401:
+#             return ["Authentication failed (401 Unauthorized). Check your token."]
+#         return [f"GitLab API request failed with HTTP status {e.code}."]
+#     except (urllib.error.URLError, TimeoutError) as e:
+#         return [f"Could not connect to GitLab instance at '{gitlab_url}': {e}"]
+#     except Exception as e:
+#         return [f"An unexpected error occurred while checking GitLab connectivity: {e}"]
 
 
 def check_for_large_scripts(input_dir: Path) -> list[str]:

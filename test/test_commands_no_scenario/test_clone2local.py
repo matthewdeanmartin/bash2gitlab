@@ -105,7 +105,7 @@ class TestFetchRepositoryArchive:
         mock_urlopen.side_effect = HTTPError("url", 404, "Not Found", {}, None)
 
         # --- Act & Assert ---
-        with pytest.raises(ConnectionError, match="Could not find archive for branch"):
+        with pytest.raises(ConnectionError, match="A network error occurred while fetching"):
             fetch_repository_archive("https://any_url", "nonexistent-branch", "", clone_dir)
 
         # Assert that the clone directory was cleaned up

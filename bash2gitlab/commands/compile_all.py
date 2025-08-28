@@ -35,12 +35,12 @@ __all__ = ["run_compile_all"]
 
 
 def infer_cli(
-    uncompiled_path: Path,
+    input_dir: Path,
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> str:
-    command = f"bash2gitlab compile --in {short_path(uncompiled_path)} --out {short_path(output_path)}"
+    command = f"bash2gitlab compile --in {short_path(input_dir)} --out {short_path(output_path)}"
     if dry_run:
         command += " --dry-run"
     if parallelism:
@@ -305,7 +305,7 @@ def inline_gitlab_scripts(
     gitlab_ci_yaml: str,
     scripts_root: Path,
     global_vars: dict[str, str],
-    uncompiled_path: Path,  # Path to look for job_name_variables.sh files
+    input_dir: Path,  # Path to look for job_name_variables.sh files
 ) -> tuple[int, str]:
     """
     Loads a GitLab CI YAML file, inlines scripts, merges global and job-specific variables,
@@ -376,7 +376,7 @@ def inline_gitlab_scripts(
             # Look for and process job-specific variables file
             safe_job_name = job_name.replace(":", "_")
             job_vars_filename = f"{safe_job_name}_variables.sh"
-            job_vars_path = uncompiled_path / job_vars_filename
+            job_vars_path = input_dir / job_vars_filename
 
             if job_vars_path.is_file():
                 logger.debug(f"Found and loading job-specific variables for '{job_name}' from {job_vars_path}")
@@ -562,7 +562,7 @@ def compile_single_file(
     output_file: Path,
     scripts_path: Path,
     variables: dict[str, str],
-    uncompiled_path: Path,
+    input_dir: Path,
     dry_run: bool,
     inferred_cli_command: str,
 ) -> tuple[int, int]:
@@ -572,14 +572,14 @@ def compile_single_file(
     """
     logger.debug(f"Processing template: {short_path(source_path)}")
     raw_text = source_path.read_text(encoding="utf-8")
-    inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, uncompiled_path)
+    inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, input_dir)
     final_content = (get_banner(inferred_cli_command) + compiled_text) if inlined_for_file > 0 else raw_text
     written = write_compiled_file(output_file, final_content, dry_run)
     return inlined_for_file, int(written)
 
 
 def run_compile_all(
-    uncompiled_path: Path,
+    input_dir: Path,
     output_path: Path,
     dry_run: bool = False,
     parallelism: int | None = None,
@@ -590,7 +590,7 @@ def run_compile_all(
     This version safely writes files by checking hashes to avoid overwriting manual changes.
 
     Args:
-        uncompiled_path (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
+        input_dir (Path): Path to the input .gitlab-ci.yml, other yaml and bash files.
         output_path (Path): Path to write the .gitlab-ci.yml file and other yaml.
         dry_run (bool): If True, simulate the process without writing any files.
         parallelism (int | None): Maximum number of processes to use for parallel compilation.
@@ -601,13 +601,13 @@ def run_compile_all(
     """
     # Check if compilation is needed (unless forced)
     if not force:
-        if not needs_compilation(uncompiled_path):
+        if not needs_compilation(input_dir):
             logger.info("No input changes detected since last compilation. Skipping compilation.")
             logger.info("Use --force to compile anyway, or modify input files to trigger compilation.")
             return 0
         logger.info("Input changes detected, proceeding with compilation...")
 
-    inferred_cli_command = infer_cli(uncompiled_path, output_path, dry_run, parallelism)
+    inferred_cli_command = infer_cli(input_dir, output_path, dry_run, parallelism)
     strays = report_targets(output_path)
     if strays:
         print("Stray files in output folder, halting")
@@ -621,7 +621,7 @@ def run_compile_all(
     if not dry_run:
         output_path.mkdir(parents=True, exist_ok=True)
 
-    global_vars_path = uncompiled_path / "global_variables.sh"
+    global_vars_path = input_dir / "global_variables.sh"
     global_vars_data = {}
     if global_vars_path.is_file():
         logger.info(f"Found and loading variables from {short_path(global_vars_path)}")
@@ -631,13 +631,13 @@ def run_compile_all(
 
     files_to_process: list[tuple[Path, Path, dict[str, str]]] = []
 
-    if uncompiled_path.is_dir():
-        template_files = list(uncompiled_path.rglob("*.yml")) + list(uncompiled_path.rglob("*.yaml"))
+    if input_dir.is_dir():
+        template_files = list(input_dir.rglob("*.yml")) + list(input_dir.rglob("*.yaml"))
         if not template_files:
-            logger.warning(f"No template YAML files found in {uncompiled_path}")
+            logger.warning(f"No template YAML files found in {input_dir}")
 
         for template_path in template_files:
-            relative_path = template_path.relative_to(uncompiled_path)
+            relative_path = template_path.relative_to(input_dir)
             output_file = output_path / relative_path
             files_to_process.append((template_path, output_file, global_vars_data))
 
@@ -648,7 +648,7 @@ def run_compile_all(
 
     if total_files >= 5 and max_workers > 1 and parallelism:
         args_list = [
-            (src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command)
+            (src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command)
             for src, out, variables in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
@@ -658,7 +658,7 @@ def run_compile_all(
     else:
         for src, out, variables in files_to_process:
             inlined_for_file, wrote = compile_single_file(
-                src, out, uncompiled_path, variables, uncompiled_path, dry_run, inferred_cli_command
+                src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
@@ -666,7 +666,7 @@ def run_compile_all(
     # After successful compilation, mark as complete
     if not dry_run and (total_inlined_count > 0 or written_files_count > 0):
         try:
-            mark_compilation_complete(uncompiled_path)
+            mark_compilation_complete(input_dir)
             logger.debug("Marked compilation as complete - updated input file hashes")
         except Exception as e:
             logger.warning(f"Failed to update input hashes: {e}")

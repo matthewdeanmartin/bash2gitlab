@@ -37,6 +37,7 @@ from urllib import error as _urlerror
 
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.input_change_detector import needs_compilation
+from bash2gitlab.commands.validate_all import run_validate_all
 from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
 from bash2gitlab.install_help import print_install_help
@@ -187,7 +188,7 @@ def compile_handler(args: argparse.Namespace) -> int:
 
     if args.watch:
         start_watch(
-            uncompiled_path=in_dir,
+            input_dir=in_dir,
             output_path=out_dir,
             dry_run=dry_run,
             parallelism=parallelism,
@@ -195,11 +196,36 @@ def compile_handler(args: argparse.Namespace) -> int:
         return 0
 
     try:
-        run_compile_all(
-            uncompiled_path=in_dir, output_path=out_dir, dry_run=dry_run, parallelism=parallelism, force=force
-        )
+        run_compile_all(input_dir=in_dir, output_path=out_dir, dry_run=dry_run, parallelism=parallelism, force=force)
 
         logger.info("✅ GitLab CI processing complete.")
+
+    except FileNotFoundError as e:
+        logger.error(f"❌ An error occurred: {e}")
+        return 10
+    except (RuntimeError, ValueError) as e:
+        logger.error(f"❌ An error occurred: {e}")
+        return 1
+    return 0
+
+
+def validate_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'validate' command."""
+    logger.info("Starting bash2gitlab validator...")
+
+    # Resolve paths, using sensible defaults if optional paths are not provided
+    in_dir = Path(args.input_dir).resolve()
+    out_dir = Path(args.output_dir).resolve()
+    parallelism = args.parallelism
+
+    try:
+        run_validate_all(
+            input_dir=in_dir,
+            output_path=out_dir,
+            parallelism=parallelism,
+        )
+
+        logger.info("✅ GitLab CI validating complete.")
 
     except FileNotFoundError as e:
         logger.error(f"❌ An error occurred: {e}")
@@ -386,9 +412,9 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 def handle_change_detection_commands(args) -> bool:
     """Handle change detection specific commands. Returns True if command was handled."""
-    uncompiled_path: Path = Path(args.input_dir or "")
+    input_dir: Path = Path(args.input_dir or "")
     if args.check_only:
-        if needs_compilation(uncompiled_path):
+        if needs_compilation(input_dir):
             print("Compilation needed: input files have changed")
             return True
         else:
@@ -396,7 +422,7 @@ def handle_change_detection_commands(args) -> bool:
             return True
 
     if args.list_changed:
-        changed = get_changed_files(uncompiled_path)
+        changed = get_changed_files(input_dir)
         if changed:
             print("Changed files since last compilation:")
             for file_path in changed:
@@ -748,6 +774,9 @@ def main() -> int:
         help="Path to `.gitlab-ci.yml`, defaults to current directory",
     )
 
+    add_common_arguments(run_parser)
+    run_parser.set_defaults(func=best_effort_run_handler)
+
     # --- Detect Uncompiled ----
     detect_uncompiled_parser = subparsers.add_parser(
         "detect-uncompiled", help="Detect if input files have changed since last compilation"
@@ -768,9 +797,28 @@ def main() -> int:
     )
     detect_uncompiled_parser.set_defaults(func=handle_change_detection_commands)
 
-    add_common_arguments(run_parser)
-    run_parser.set_defaults(func=best_effort_run_handler)
-
+    # --- Compile Command ---
+    validate_parser = subparsers.add_parser("validate", help="Validate yaml pipelines against Gitlab json schema.")
+    validate_parser.add_argument(
+        "--in",
+        dest="input_dir",
+        required=not bool(config.compile_input_dir),
+        help="Input directory containing the `.gitlab-ci.yml` and other sources.",
+    )
+    validate_parser.add_argument(
+        "--out",
+        dest="output_dir",
+        required=not bool(config.compile_output_dir),
+        help="Output directory for the compiled GitLab CI files.",
+    )
+    validate_parser.add_argument(
+        "--parallelism",
+        type=int,
+        default=config.parallelism,
+        help="Number of files to validate in parallel (default: CPU count).",
+    )
+    add_common_arguments(validate_parser)
+    validate_parser.set_defaults(func=validate_handler)
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
     if argcomplete:

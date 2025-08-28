@@ -50,9 +50,7 @@ def test_compile_single_script_reference(setup_dirs: tuple[Path, Path, Path, Pat
         output_file = output_dir / ".gitlab-ci.yml"
 
         # Run the compilation
-        inlined_count = run_compile_all(
-            uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=False, force=True
-        )
+        inlined_count = run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
 
         # Assertions
         assert inlined_count == 1, "Expected one section to be inlined"
@@ -73,9 +71,7 @@ def test_dry_run_no_changes(setup_dirs: tuple[Path, Path, Path, Path]):
         output_file = output_dir / ".gitlab-ci.yml"
 
         # Run in dry run mode
-        inlined_count = run_compile_all(
-            uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=True, force=True
-        )
+        inlined_count = run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=True, force=True)
 
         assert inlined_count == 1, "Expected one section to be inlined"
         assert not output_file.exists(), "Output file should not be created in dry run"
@@ -88,15 +84,13 @@ def test_no_changes_no_write(setup_dirs: tuple[Path, Path, Path, Path]):
         output_dir / ".gitlab-ci.yml"
 
         # First compilation
-        run_compile_all(uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
+        run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
 
         # Modify script file to have same content (no structural change)
         script_file.write_text('#!/bin/bash\necho "Hello, World!"\n', encoding="utf-8")
 
         # Run again
-        inlined_count = run_compile_all(
-            uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=False, force=False
-        )
+        inlined_count = run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=False, force=False)
 
         assert inlined_count == 0, "No inlining should occur if no changes"
 
@@ -108,7 +102,7 @@ def test_manual_edit_prevents_overwrite(setup_dirs: tuple[Path, Path, Path, Path
         output_file = output_dir / ".gitlab-ci.yml"
 
         # First compilation
-        run_compile_all(uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
+        run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
 
         # Manually edit the output file
         original_content = output_file.read_text(encoding="utf-8")
@@ -117,7 +111,7 @@ def test_manual_edit_prevents_overwrite(setup_dirs: tuple[Path, Path, Path, Path
 
         # Attempt to compile again
         with pytest.raises(CompileError):
-            run_compile_all(uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
+            run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
 
 
 def test_invalid_yaml_validation(setup_dirs: tuple[Path, Path, Path, Path]):
@@ -139,7 +133,7 @@ def test_invalid_yaml_validation(setup_dirs: tuple[Path, Path, Path, Path]):
         yaml_file.write_text(invalid_yaml, encoding="utf-8")
 
         with pytest.raises(ValidationFailed):
-            run_compile_all(uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
+            run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
 
 
 def test_global_variables(setup_dirs: tuple[Path, Path, Path, Path]):
@@ -156,9 +150,7 @@ def test_global_variables(setup_dirs: tuple[Path, Path, Path, Path]):
         global_vars_file.write_text(global_vars_content, encoding="utf-8")
 
         # Run compilation
-        inlined_count = run_compile_all(
-            uncompiled_path=uncompiled_dir, output_path=output_dir, dry_run=False, force=True
-        )
+        inlined_count = run_compile_all(input_dir=uncompiled_dir, output_path=output_dir, dry_run=False, force=True)
 
         assert inlined_count >= 1, "Expected at least one section inlined (variables)"
         compiled_content = output_file.read_text(encoding="utf-8")
@@ -170,17 +162,17 @@ def test_global_variables(setup_dirs: tuple[Path, Path, Path, Path]):
 def test_infer_cli():
     """Test the infer_cli function generates correct command."""
     with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
-        uncompiled_path = Path("/path/to/uncompiled")
+        input_dir = Path("/path/to/uncompiled")
         output_path = Path("/path/to/output")
 
         # Test without dry_run and parallelism
-        command = infer_cli(uncompiled_path, output_path).replace("C:", "")
-        assert command == f"bash2gitlab compile --in {uncompiled_path} --out {output_path}"
+        command = infer_cli(input_dir, output_path).replace("C:", "")
+        assert command == f"bash2gitlab compile --in {input_dir} --out {output_path}"
 
         # Test with dry_run
-        command = infer_cli(uncompiled_path, output_path, dry_run=True).replace("C:", "")
-        assert command == f"bash2gitlab compile --in {uncompiled_path} --out {output_path} --dry-run"
+        command = infer_cli(input_dir, output_path, dry_run=True).replace("C:", "")
+        assert command == f"bash2gitlab compile --in {input_dir} --out {output_path} --dry-run"
 
         # Test with parallelism
-        command = infer_cli(uncompiled_path, output_path, parallelism=4).replace("C:", "")
-        assert command == f"bash2gitlab compile --in {uncompiled_path} --out {output_path} --parallelism 4"
+        command = infer_cli(input_dir, output_path, parallelism=4).replace("C:", "")
+        assert command == f"bash2gitlab compile --in {input_dir} --out {output_path} --parallelism 4"

@@ -1,5 +1,13 @@
 # TODO
 
+## Bash Friendliness
+- Map more errors to return codes. Make sure only `__main__` returns codes, all others throw python exceptions
+- `--json` output option
+- Support piped input (for single file at a time usage)
+
+## detect drift/detect uncompiled
+- not enough logging in some cases, dry run shows output, but w/o dry run no output at all.
+
 ## Errors
 
 - Defaults to stack trace on compile when can't find the script.

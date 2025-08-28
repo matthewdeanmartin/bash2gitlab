@@ -6,12 +6,12 @@ import logging
 import shutil
 import subprocess  # nosec: B404
 import tempfile
-import urllib.error
-import urllib.request
 import zipfile
 from pathlib import Path
 
-from bash2gitlab.errors.exceptions import Bash2GitlabError
+import urllib3
+
+from bash2gitlab.utils.urllib3_helper import _HTTP
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,14 @@ def fetch_repository_archive(
     if not dry_run:
         clone_path.mkdir(parents=True, exist_ok=True)
 
+    # Build the archive URL
+    archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
+    if not archive_url.startswith(("http://", "https://")):
+        # Keep your project-specific error type if you have one; otherwise ValueError/TypeError is fine.
+        raise TypeError(f"Expected http or https protocol, got {archive_url}")
+
+    http = _HTTP  # _get_http_pool()
+
     try:
         # Use a temporary directory that cleans itself up automatically.
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -71,29 +79,39 @@ def fetch_repository_archive(
             if not dry_run:
                 unzip_root.mkdir()
 
-            # 2. Construct the archive URL and check for its existence.
-            archive_url = f"{repo_url.rstrip('/')}/archive/refs/heads/{branch}.zip"
-            if not archive_url.startswith("http"):
-                raise Bash2GitlabError(f"Expected http or https protocol, got {archive_url}")
+            if dry_run:
+                logger.info("[dry-run] Would download %s to %s", archive_url, archive_path)
+                logger.info("[dry-run] Would extract %s to %s", archive_path, unzip_root)
+                return
 
+            # 2. Download the archive with streaming; will follow redirects via pool defaults.
+            logger.info("Downloading archive from %s", archive_url)
             try:
-                # Use a simple open to verify existence without a full download.
-                # URL is constructed from trusted inputs in this context.
-                with urllib.request.urlopen(archive_url, timeout=10) as _response:  # nosec: B310
-                    # The 'with' block itself confirms a 2xx status.
-                    logger.info("Confirmed repository archive exists at: %s", archive_url)
-            except urllib.error.HTTPError as e:
-                # Re-raise with a more specific message for clarity.
-                raise ConnectionError(
-                    f"Could not find archive for branch '{branch}' at '{archive_url}'. Please check the repository URL and branch name. (HTTP Status: {e.code})"
-                ) from e
-            except urllib.error.URLError as e:
-                raise ConnectionError(f"A network error occurred while verifying the URL: {e.reason}") from e
+                # Use a conservative timeout; rely on pool's retries if configured.
+                timeout = urllib3.Timeout(connect=5.0, read=60.0)
+                # Stream the body to disk (no preload).
+                with (
+                    http.request(
+                        "GET",
+                        archive_url,
+                        headers={"Accept": "application/zip"},
+                        preload_content=False,
+                        timeout=timeout,
+                        redirect=True,
+                    ) as resp,
+                    open(archive_path, "wb") as out,
+                ):
+                    if resp.status >= 400:
+                        raise ConnectionError(f"Failed to fetch archive (HTTP {resp.status}) from {archive_url}")
+                    # Efficiently stream to file
+                    shutil.copyfileobj(resp, out)
 
-            logger.info("Downloading archive to %s", archive_path)
-            # URL is validated above.
-            if not dry_run:
-                urllib.request.urlretrieve(archive_url, archive_path)  # nosec: B310
+            except urllib3.exceptions.HTTPError as e:
+                # Network/connection-level errors (DNS, TLS, max retries, etc.)
+                raise ConnectionError(f"A network error occurred while fetching the URL: {e}") from e
+
+            if not archive_path.exists() or archive_path.stat().st_size == 0:
+                raise OSError("Downloaded archive is empty or missing.")
 
             # 3. Unzip the downloaded archive.
             logger.info("Extracting archive to %s", unzip_root)

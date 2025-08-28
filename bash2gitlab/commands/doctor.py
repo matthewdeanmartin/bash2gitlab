@@ -218,7 +218,7 @@ def run_doctor() -> int:
     ):
         flag_issue()
 
-    lint_warnings = check_lint_config_validity()
+    lint_warnings = check_lint_config_validity(config)
     if not check("Lint configuration is valid and reachable", not lint_warnings, lint_warnings):
         flag_issue()
 

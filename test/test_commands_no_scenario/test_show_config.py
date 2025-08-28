@@ -9,7 +9,7 @@ import pytest
 # Import the module under test.
 # If your module lives elsewhere, adjust this import.
 from bash2gitlab.commands import show_config as show_mod
-from bash2gitlab.config import _Config as ConfigClass
+from bash2gitlab.config import Config as ConfigClass
 from bash2gitlab.config import reset_for_testing
 
 # ------------------------- helpers -------------------------

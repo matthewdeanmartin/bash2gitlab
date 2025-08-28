@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any
 
-from bash2gitlab.config import _Config, config
+from bash2gitlab.config import Config, config
 from bash2gitlab.utils.terminal_colors import Colors
 from bash2gitlab.utils.utils import short_path
 
@@ -77,7 +77,7 @@ def _parse_prop_name(prop_name: str) -> tuple[str, str | None]:
     return (prop_name, None)
 
 
-def get_value_and_source_details(prop_name: str, config_instance: _Config) -> tuple[Any, str, str | None]:
+def get_value_and_source_details(prop_name: str, config_instance: Config) -> tuple[Any, str, str | None]:
     """
     Determines the final value and the specific source of a configuration property.
 
