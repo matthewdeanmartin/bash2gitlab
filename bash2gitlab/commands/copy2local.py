@@ -11,7 +11,7 @@ from pathlib import Path
 
 import urllib3
 
-from bash2gitlab.utils.urllib3_helper import _HTTP
+from bash2gitlab.utils.urllib3_helper import get_http_pool
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ def fetch_repository_archive(
         # Keep your project-specific error type if you have one; otherwise ValueError/TypeError is fine.
         raise TypeError(f"Expected http or https protocol, got {archive_url}")
 
+    _SSL_CTX, _HTTP, _RETRIES = get_http_pool()
     http = _HTTP  # _get_http_pool()
 
     try:

@@ -7,15 +7,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-try:
-    import matplotlib.pyplot as plt  # noqa
-    import networkx as nx  # noqa
-    from graphviz import Source  # noqa
-    from pyvis.network import Network  # noqa
-except ModuleNotFoundError:
-    # Optional render backends; handled at runtime in _auto_pick / render_graph
-    pass  # nosec
-
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX
@@ -24,6 +15,16 @@ from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.temp_env import temporary_env_var
 from bash2gitlab.utils.utils import short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
+
+# try:
+#     import matplotlib.pyplot as plt  # noqa
+#     import networkx as nx  # noqa
+#     from graphviz import Source  # noqa
+#     from pyvis.network import Network  # noqa
+# except ModuleNotFoundError:
+#     # Optional render backends; handled at runtime in _auto_pick / render_graph
+#     pass  # nosec
+
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +233,8 @@ def build_graph(input_dir: Path) -> GraphModel:
 
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
+    from graphviz import Source  # noqa
+
     src = Source(dot_output)
     out_file = src.render(
         filename=filename_base,
@@ -403,116 +406,3 @@ def generate_dependency_graph(
         pass  # nosec
 
     return dot_output
-
-
-# def generate_dependency_graph(
-#     input_dir: Path,
-#     *,
-#     open_graph_in_browser: bool = True,
-#     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
-#     attempts: int = 0,
-#     renderers_attempted: set[str] | None = None,
-# ) -> str:
-#     """
-#     Analyze YAML + scripts to build a dependency graph.
-#
-#     Args:
-#         input_dir: Root directory of the uncompiled source files.
-#         open_graph_in_browser: If True, write a graph file to CWD and open it.
-#         renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
-#         attempts: how many renderers attempted
-#         renderers_attempted: which were tried
-#
-#     Returns:
-#         DOT graph as a string (stdout responsibility is left to the caller).
-#     """
-#     auto_mode = renderer == "auto"
-#     graph: dict[Path, set[Path]] = {}
-#     processed_scripts: set[Path] = set()
-#     yaml_parser = get_yaml()
-#     root_path = input_dir.resolve()
-#
-#     logger.info(f"Starting dependency graph generation in: {short_path(root_path)}")
-#
-#     template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
-#     if not template_files:
-#         logger.warning(f"No YAML files found in {root_path}")
-#         return ""
-#
-#     for yaml_path in template_files:
-#         logger.debug(f"Parsing YAML file: {yaml_path}")
-#         graph.setdefault(yaml_path, set())
-#         try:
-#             content = yaml_path.read_text("utf-8")
-#             yaml_data = yaml_parser.load(content)
-#             if yaml_data:
-#                 find_script_references_in_node(yaml_data, yaml_path, root_path, graph, processed_scripts)
-#         except YAMLError as e:
-#             logger.error(f"Failed to parse YAML file {yaml_path}: {e}")
-#         except Exception as e:
-#             logger.error(f"An unexpected error occurred with {yaml_path}: {e}")
-#
-#     logger.info(f"Found {len(graph)} source files and traced {len(processed_scripts)} script dependencies.")
-#
-#     dot_output = format_dot_output(graph, root_path)
-#     logger.info("Successfully generated DOT graph output.")
-#
-#     if open_graph_in_browser:
-#         filename_base = f"dependency-graph-{root_path.name}".replace(" ", "_")
-#
-#         def _auto_pick() -> str:
-#             try:
-#                 import graphviz  # noqa: F401
-#
-#                 return "graphviz"
-#             except Exception:
-#                 try:
-#                     import pyvis  # noqa: F401
-#
-#                     return "pyvis"
-#                 except Exception:
-#                     try:
-#                         import matplotlib  # noqa: F401
-#                         import networkx  # noqa: F401
-#
-#                         return "networkx"
-#                     except Exception:
-#                         return "none"
-#
-#         chosen = _auto_pick() if renderer == "auto" else renderer
-#
-#         try:
-#             # pyvis needs utf-8 but doesn't explicitly set it so it fails on Windows.
-#             with temporary_env_var("PYTHONUTF8", "1"):
-#                 if chosen == "graphviz":
-#                     # best, but requires additional installation
-#                     out_path = _render_with_graphviz(dot_output, filename_base)
-#                 elif chosen == "pyvis":
-#                     # not at godo as graphviz
-#                     out_path = _render_with_pyvis(graph, root_path, filename_base)
-#                 elif chosen == "networkx":
-#                     # can be a messy diagram
-#                     out_path = _render_with_networkx(graph, root_path, filename_base)
-#                 else:
-#                     raise RuntimeError(
-#                         "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
-#                     )
-#
-#             logger.info("Wrote graph to %s", short_path(out_path))
-#             if not os.environ.get("CI"):
-#                 webbrowser.open(out_path.as_uri())
-#         except Exception as e:  # pragma: no cover - env dependent
-#             logger.error("Failed to render or open the graph: %s", e)
-#             if (1 < attempts < 4 and len(renderers_attempted or {}) < 3) or auto_mode:
-#                 if not renderers_attempted:
-#                     renderers_attempted = set()
-#                 renderers_attempted.add(renderer)
-#                 attempts += 1
-#                 return generate_dependency_graph(
-#                     input_dir,
-#                     open_graph_in_browser=open_graph_in_browser,
-#                     attempts=attempts,
-#                     renderers_attempted=renderers_attempted,
-#                 )
-#
-#     return dot_output

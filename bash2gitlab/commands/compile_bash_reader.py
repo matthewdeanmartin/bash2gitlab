@@ -11,7 +11,7 @@ from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
 
-__all__ = ["read_bash_script", "SourceSecurityError", "PragmaError"]
+__all__ = ["read_bash_script", "SourceSecurityError", "PragmaError", "SOURCE_COMMAND_REGEX"]
 
 # Set up a logger for this module
 logger = logging.getLogger(__name__)

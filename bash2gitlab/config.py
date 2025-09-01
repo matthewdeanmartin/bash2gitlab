@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any, TypeVar
@@ -10,13 +9,14 @@ from typing import Any, TypeVar
 from bash2gitlab.errors.exceptions import ConfigInvalid
 from bash2gitlab.utils.utils import short_path
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomli as tomllib
-    except ImportError:
-        tomllib = None
+# New TOML reader wrapper
+# Prefers rtoml, falls back to tomllib, then tomli
+try:
+    import bash2gitlab.utils.toml_reader as _toml
+    from bash2gitlab.utils.toml_reader import read_toml  # type: ignore
+except Exception as _e:  # pragma: no cover - only hit if import fails entirely
+    _toml = None  # type: ignore
+    read_toml = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -56,50 +56,56 @@ class Config:
             for filename in self.CONFIG_FILES:
                 config_path = directory / filename
                 if config_path.is_file():
-                    logger.debug(f"Found configuration file: {config_path}")
+                    logger.debug("Found configuration file: %s", config_path)
                     return config_path
         return None
 
     def load_file_config(self) -> dict[str, Any]:
-        """Loads configuration from bash2gitlab.toml or pyproject.toml."""
+        """Loads configuration from bash2gitlab.toml or pyproject.toml using toml_reader."""
         config_path = self.config_path_override or self.find_config_file()
         if not config_path:
             return {}
 
-        if not tomllib:
+        # If toml_reader is unavailable, keep behavior close to previous implementation:
+        if _toml is None or read_toml is None:
             logger.warning(
-                "TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11."
+                "TOML reader not available. Cannot load config from file. "
+                "Install 'rtoml' (preferred), or use Python 3.11+ for tomllib, or install tomli."
             )
             return {}
 
         try:
-            with config_path.open("rb") as f:
-                data = tomllib.load(f)
+            data = read_toml(config_path)
 
             if config_path.name == "pyproject.toml":
-                file_config = data.get("tool", {}).get("bash2gitlab", {})
+                file_config = data.get("tool", {}).get("bash2gitlab", {})  # type: ignore[assignment]
             else:
-                file_config = data
+                file_config = data  # type: ignore[assignment]
 
-            logger.info(f"Loaded configuration from {short_path(config_path)}")
-            return file_config
+            logger.info("Loaded configuration from %s", short_path(config_path))
+            # Ensure we always hand back a dict[str, Any]
+            if isinstance(file_config, dict):
+                return dict(file_config)
+            logger.warning("Config root is not a table/dict in %s; ignoring.", short_path(config_path))
+            return {}
 
-        except tomllib.TOMLDecodeError as e:
-            logger.error(f"Error decoding TOML file {short_path(config_path)}: {e}")
-            raise ConfigInvalid() from e
-        except OSError as e:
-            logger.error(f"Error reading file {short_path(config_path)}: {e}")
+        except Exception as e:  # toml_reader wraps/raises its own errors; unify to ConfigInvalid
+            # distinguish OSError for clearer logging
+            if isinstance(e, OSError):
+                logger.error("Error reading file %s: %s", short_path(config_path), e)
+            else:
+                logger.error("Error decoding TOML file %s: %s", short_path(config_path), e)
             raise ConfigInvalid() from e
 
     def load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
-        env_config = {}
+        env_config: dict[str, str] = {}
         for key, value in os.environ.items():
             if key.startswith(self.ENV_VAR_PREFIX):
                 # Converts BASH2GITLAB_SECTION_KEY to section_key
                 config_key = key[len(self.ENV_VAR_PREFIX) :].lower()
                 env_config[config_key] = value
-                logger.debug(f"Loaded from environment: {config_key}")
+                logger.debug("Loaded from environment: %s", config_key)
         return env_config
 
     def _get_value(self, key: str, section: str | None = None) -> tuple[Any, str]:
@@ -133,7 +139,7 @@ class Config:
                 return value.lower() in ("true", "1", "t", "y", "yes")  # type: ignore[return-value]
             return target_type(value)  # type: ignore[return-value,call-arg]
         except (ValueError, TypeError) as e:
-            logger.warning(f"Config value for '{key}' is not a valid {target_type.__name__}. Ignoring.")
+            logger.warning("Config value for '%s' is not a valid %s. Ignoring.", key, target_type.__name__)
             raise ConfigInvalid() from e
 
     def get_str(self, key: str, section: str | None = None) -> str | None:
@@ -159,7 +165,7 @@ class Config:
     def get_dict(self, key: str, section: str | None = None) -> dict[str, str]:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
-            copy_dict = {}
+            copy_dict: dict[str, str] = {}
             for the_key, the_value in value.items():
                 copy_dict[str(the_key)] = str(the_value)
             return copy_dict
@@ -168,7 +174,7 @@ class Config:
     def get_dict_of_list(self, key: str, section: str | None = None) -> dict[str, list[str] | Collection[str]]:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
-            copy_dict = {}
+            copy_dict: dict[str, list[str] | Collection[str]] = {}
             for the_key, the_value in value.items():
                 copy_dict[str(the_key)] = the_value
             return copy_dict

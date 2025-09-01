@@ -17,7 +17,7 @@ def no_update_and_no_argcomplete(monkeypatch):
     monkeypatch.setattr(m.argcomplete, "autocomplete", lambda *a, **k: None)
 
     # avoid real update checks
-    monkeypatch.setattr(m, "check_for_updates", lambda *a, **k: None)
+    monkeypatch.setattr(m, "start_background_update_check", lambda *a, **k: None)
 
     # stub logging config generator but keep the requested level for assertions via attribute
     levels: list[str] = []

@@ -11,7 +11,7 @@ from bash2gitlab.commands.precommit import HOOK_CONTENT, hook_hash, hook_path
 from bash2gitlab.config import Config, config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
-from bash2gitlab.utils.urllib3_helper import _HTTP
+from bash2gitlab.utils.urllib3_helper import get_http_pool
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,7 @@ def check_lint_config_validity(config: Config) -> list[str]:
 
     try:
         # Short, explicit timeouts; tune for your environment
+        _SSL_CTX, _HTTP, _RETRIES = get_http_pool()
         with _HTTP.request(
             "GET",
             api_url,

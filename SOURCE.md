@@ -47,6 +47,7 @@
 │   ├── pathlib_polyfills.py
 │   ├── temp_env.py
 │   ├── terminal_colors.py
+│   ├── toml_reader.py
 │   ├── update_checker.py
 │   ├── urllib3_helper.py
 │   ├── utils.py
@@ -90,7 +91,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any, TypeVar
@@ -98,13 +98,14 @@ from typing import Any, TypeVar
 from bash2gitlab.errors.exceptions import ConfigInvalid
 from bash2gitlab.utils.utils import short_path
 
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomli as tomllib
-    except ImportError:
-        tomllib = None
+# New TOML reader wrapper
+# Prefers rtoml, falls back to tomllib, then tomli
+try:
+    import bash2gitlab.utils.toml_reader as _toml
+    from bash2gitlab.utils.toml_reader import read_toml  # type: ignore
+except Exception as _e:  # pragma: no cover - only hit if import fails entirely
+    _toml = None  # type: ignore
+    read_toml = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -144,50 +145,56 @@ class Config:
             for filename in self.CONFIG_FILES:
                 config_path = directory / filename
                 if config_path.is_file():
-                    logger.debug(f"Found configuration file: {config_path}")
+                    logger.debug("Found configuration file: %s", config_path)
                     return config_path
         return None
 
     def load_file_config(self) -> dict[str, Any]:
-        """Loads configuration from bash2gitlab.toml or pyproject.toml."""
+        """Loads configuration from bash2gitlab.toml or pyproject.toml using toml_reader."""
         config_path = self.config_path_override or self.find_config_file()
         if not config_path:
             return {}
 
-        if not tomllib:
+        # If toml_reader is unavailable, keep behavior close to previous implementation:
+        if _toml is None or read_toml is None:
             logger.warning(
-                "TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11."
+                "TOML reader not available. Cannot load config from file. "
+                "Install 'rtoml' (preferred), or use Python 3.11+ for tomllib, or install tomli."
             )
             return {}
 
         try:
-            with config_path.open("rb") as f:
-                data = tomllib.load(f)
+            data = read_toml(config_path)
 
             if config_path.name == "pyproject.toml":
-                file_config = data.get("tool", {}).get("bash2gitlab", {})
+                file_config = data.get("tool", {}).get("bash2gitlab", {})  # type: ignore[assignment]
             else:
-                file_config = data
+                file_config = data  # type: ignore[assignment]
 
-            logger.info(f"Loaded configuration from {short_path(config_path)}")
-            return file_config
+            logger.info("Loaded configuration from %s", short_path(config_path))
+            # Ensure we always hand back a dict[str, Any]
+            if isinstance(file_config, dict):
+                return dict(file_config)
+            logger.warning("Config root is not a table/dict in %s; ignoring.", short_path(config_path))
+            return {}
 
-        except tomllib.TOMLDecodeError as e:
-            logger.error(f"Error decoding TOML file {short_path(config_path)}: {e}")
-            raise ConfigInvalid() from e
-        except OSError as e:
-            logger.error(f"Error reading file {short_path(config_path)}: {e}")
+        except Exception as e:  # toml_reader wraps/raises its own errors; unify to ConfigInvalid
+            # distinguish OSError for clearer logging
+            if isinstance(e, OSError):
+                logger.error("Error reading file %s: %s", short_path(config_path), e)
+            else:
+                logger.error("Error decoding TOML file %s: %s", short_path(config_path), e)
             raise ConfigInvalid() from e
 
     def load_env_config(self) -> dict[str, str]:
         """Loads configuration from environment variables."""
-        env_config = {}
+        env_config: dict[str, str] = {}
         for key, value in os.environ.items():
             if key.startswith(self.ENV_VAR_PREFIX):
                 # Converts BASH2GITLAB_SECTION_KEY to section_key
                 config_key = key[len(self.ENV_VAR_PREFIX) :].lower()
                 env_config[config_key] = value
-                logger.debug(f"Loaded from environment: {config_key}")
+                logger.debug("Loaded from environment: %s", config_key)
         return env_config
 
     def _get_value(self, key: str, section: str | None = None) -> tuple[Any, str]:
@@ -221,7 +228,7 @@ class Config:
                 return value.lower() in ("true", "1", "t", "y", "yes")  # type: ignore[return-value]
             return target_type(value)  # type: ignore[return-value,call-arg]
         except (ValueError, TypeError) as e:
-            logger.warning(f"Config value for '{key}' is not a valid {target_type.__name__}. Ignoring.")
+            logger.warning("Config value for '%s' is not a valid %s. Ignoring.", key, target_type.__name__)
             raise ConfigInvalid() from e
 
     def get_str(self, key: str, section: str | None = None) -> str | None:
@@ -247,7 +254,7 @@ class Config:
     def get_dict(self, key: str, section: str | None = None) -> dict[str, str]:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
-            copy_dict = {}
+            copy_dict: dict[str, str] = {}
             for the_key, the_value in value.items():
                 copy_dict[str(the_key)] = str(the_value)
             return copy_dict
@@ -256,7 +263,7 @@ class Config:
     def get_dict_of_list(self, key: str, section: str | None = None) -> dict[str, list[str] | Collection[str]]:
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
-            copy_dict = {}
+            copy_dict: dict[str, list[str] | Collection[str]] = {}
             for the_key, the_value in value.items():
                 copy_dict[str(the_key)] = the_value
             return copy_dict
@@ -3031,7 +3038,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.6"
+__version__ = "0.9.7"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -3119,10 +3126,10 @@ try:
     from bash2gitlab.commands.map_commit import run_commit_map
     from bash2gitlab.commands.map_deploy import run_map_deploy
     from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
-    from bash2gitlab.utils.update_checker import check_for_updates
+    from bash2gitlab.utils.update_checker import start_background_update_check
     from bash2gitlab.watch_files import start_watch
 except ModuleNotFoundError:
-    check_for_updates = None  # type: ignore[assignment]
+    start_background_update_check = None  # type: ignore[assignment]
     start_watch = None  # type: ignore[assignment]
 
 # emoji support
@@ -3478,8 +3485,8 @@ def handle_change_detection_commands(args) -> bool:
 
 def main() -> int:
     """Main CLI entry point."""
-    if check_for_updates:  # type: ignore[truthy-function]
-        check_for_updates(__about__.__title__, __about__.__version__)
+    if start_background_update_check:  # type: ignore[truthy-function]
+        start_background_update_check(__about__.__title__, __about__.__version__)
 
     parser = SmartParser(
         prog=__about__.__title__,
@@ -5632,7 +5639,7 @@ from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.utils import short_path
 
-__all__ = ["read_bash_script", "SourceSecurityError", "PragmaError"]
+__all__ = ["read_bash_script", "SourceSecurityError", "PragmaError", "SOURCE_COMMAND_REGEX"]
 
 # Set up a logger for this module
 logger = logging.getLogger(__name__)
@@ -6200,7 +6207,7 @@ from pathlib import Path
 
 import urllib3
 
-from bash2gitlab.utils.urllib3_helper import _HTTP
+from bash2gitlab.utils.urllib3_helper import get_http_pool
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -6257,6 +6264,7 @@ def fetch_repository_archive(
         # Keep your project-specific error type if you have one; otherwise ValueError/TypeError is fine.
         raise TypeError(f"Expected http or https protocol, got {archive_url}")
 
+    _SSL_CTX, _HTTP, _RETRIES = get_http_pool()
     http = _HTTP  # _get_http_pool()
 
     try:
@@ -7419,7 +7427,7 @@ from bash2gitlab.commands.precommit import HOOK_CONTENT, hook_hash, hook_path
 from bash2gitlab.config import Config, config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.pathlib_polyfills import is_relative_to
-from bash2gitlab.utils.urllib3_helper import _HTTP
+from bash2gitlab.utils.urllib3_helper import get_http_pool
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -7529,6 +7537,7 @@ def check_lint_config_validity(config: Config) -> list[str]:
 
     try:
         # Short, explicit timeouts; tune for your environment
+        _SSL_CTX, _HTTP, _RETRIES = get_http_pool()
         with _HTTP.request(
             "GET",
             api_url,
@@ -7630,15 +7639,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-try:
-    import matplotlib.pyplot as plt  # noqa
-    import networkx as nx  # noqa
-    from graphviz import Source  # noqa
-    from pyvis.network import Network  # noqa
-except ModuleNotFoundError:
-    # Optional render backends; handled at runtime in _auto_pick / render_graph
-    pass  # nosec
-
 from ruamel.yaml.error import YAMLError
 
 from bash2gitlab.commands.compile_bash_reader import SOURCE_COMMAND_REGEX
@@ -7647,6 +7647,16 @@ from bash2gitlab.utils.pathlib_polyfills import is_relative_to
 from bash2gitlab.utils.temp_env import temporary_env_var
 from bash2gitlab.utils.utils import short_path
 from bash2gitlab.utils.yaml_factory import get_yaml
+
+# try:
+#     import matplotlib.pyplot as plt  # noqa
+#     import networkx as nx  # noqa
+#     from graphviz import Source  # noqa
+#     from pyvis.network import Network  # noqa
+# except ModuleNotFoundError:
+#     # Optional render backends; handled at runtime in _auto_pick / render_graph
+#     pass  # nosec
+
 
 logger = logging.getLogger(__name__)
 
@@ -7855,6 +7865,8 @@ def build_graph(input_dir: Path) -> GraphModel:
 
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
+    from graphviz import Source  # noqa
+
     src = Source(dot_output)
     out_file = src.render(
         filename=filename_base,
@@ -8026,119 +8038,6 @@ def generate_dependency_graph(
         pass  # nosec
 
     return dot_output
-
-
-# def generate_dependency_graph(
-#     input_dir: Path,
-#     *,
-#     open_graph_in_browser: bool = True,
-#     renderer: Literal["auto", "graphviz", "pyvis", "networkx"] = "auto",
-#     attempts: int = 0,
-#     renderers_attempted: set[str] | None = None,
-# ) -> str:
-#     """
-#     Analyze YAML + scripts to build a dependency graph.
-#
-#     Args:
-#         input_dir: Root directory of the uncompiled source files.
-#         open_graph_in_browser: If True, write a graph file to CWD and open it.
-#         renderer: "graphviz", "pyvis", "networkx", or "auto" (try in that order).
-#         attempts: how many renderers attempted
-#         renderers_attempted: which were tried
-#
-#     Returns:
-#         DOT graph as a string (stdout responsibility is left to the caller).
-#     """
-#     auto_mode = renderer == "auto"
-#     graph: dict[Path, set[Path]] = {}
-#     processed_scripts: set[Path] = set()
-#     yaml_parser = get_yaml()
-#     root_path = input_dir.resolve()
-#
-#     logger.info(f"Starting dependency graph generation in: {short_path(root_path)}")
-#
-#     template_files = list(root_path.rglob("*.yml")) + list(root_path.rglob("*.yaml"))
-#     if not template_files:
-#         logger.warning(f"No YAML files found in {root_path}")
-#         return ""
-#
-#     for yaml_path in template_files:
-#         logger.debug(f"Parsing YAML file: {yaml_path}")
-#         graph.setdefault(yaml_path, set())
-#         try:
-#             content = yaml_path.read_text("utf-8")
-#             yaml_data = yaml_parser.load(content)
-#             if yaml_data:
-#                 find_script_references_in_node(yaml_data, yaml_path, root_path, graph, processed_scripts)
-#         except YAMLError as e:
-#             logger.error(f"Failed to parse YAML file {yaml_path}: {e}")
-#         except Exception as e:
-#             logger.error(f"An unexpected error occurred with {yaml_path}: {e}")
-#
-#     logger.info(f"Found {len(graph)} source files and traced {len(processed_scripts)} script dependencies.")
-#
-#     dot_output = format_dot_output(graph, root_path)
-#     logger.info("Successfully generated DOT graph output.")
-#
-#     if open_graph_in_browser:
-#         filename_base = f"dependency-graph-{root_path.name}".replace(" ", "_")
-#
-#         def _auto_pick() -> str:
-#             try:
-#                 import graphviz  # noqa: F401
-#
-#                 return "graphviz"
-#             except Exception:
-#                 try:
-#                     import pyvis  # noqa: F401
-#
-#                     return "pyvis"
-#                 except Exception:
-#                     try:
-#                         import matplotlib  # noqa: F401
-#                         import networkx  # noqa: F401
-#
-#                         return "networkx"
-#                     except Exception:
-#                         return "none"
-#
-#         chosen = _auto_pick() if renderer == "auto" else renderer
-#
-#         try:
-#             # pyvis needs utf-8 but doesn't explicitly set it so it fails on Windows.
-#             with temporary_env_var("PYTHONUTF8", "1"):
-#                 if chosen == "graphviz":
-#                     # best, but requires additional installation
-#                     out_path = _render_with_graphviz(dot_output, filename_base)
-#                 elif chosen == "pyvis":
-#                     # not at godo as graphviz
-#                     out_path = _render_with_pyvis(graph, root_path, filename_base)
-#                 elif chosen == "networkx":
-#                     # can be a messy diagram
-#                     out_path = _render_with_networkx(graph, root_path, filename_base)
-#                 else:
-#                     raise RuntimeError(
-#                         "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
-#                     )
-#
-#             logger.info("Wrote graph to %s", short_path(out_path))
-#             if not os.environ.get("CI"):
-#                 webbrowser.open(out_path.as_uri())
-#         except Exception as e:  # pragma: no cover - env dependent
-#             logger.error("Failed to render or open the graph: %s", e)
-#             if (1 < attempts < 4 and len(renderers_attempted or {}) < 3) or auto_mode:
-#                 if not renderers_attempted:
-#                     renderers_attempted = set()
-#                 renderers_attempted.add(renderer)
-#                 attempts += 1
-#                 return generate_dependency_graph(
-#                     input_dir,
-#                     open_graph_in_browser=open_graph_in_browser,
-#                     attempts=attempts,
-#                     renderers_attempted=renderers_attempted,
-#                 )
-#
-#     return dot_output
 ```
 ## File: commands\init_project.py
 ```python
@@ -14056,6 +13955,142 @@ class Colors:
 if os.environ.get("NO_COLOR") or not os.isatty(1):
     Colors.disable()
 ```
+## File: utils\toml_reader.py
+```python
+# toml_reader.py
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from types import ModuleType
+from typing import Any, Mapping  # noqa
+
+# --- Backend choice (simple & up-front) --------------------------------------
+
+BACKEND: str
+LOADER: ModuleType | None
+
+try:
+    import rtoml as LOADER  # type: ignore
+
+    BACKEND = "rtoml"
+except Exception:
+    try:
+        import tomllib as LOADER  # type: ignore[attr-defined]
+
+        BACKEND = "tomllib"
+    except Exception:
+        try:
+            import tomli as LOADER  # type: ignore
+
+            BACKEND = "tomli"
+        except Exception:
+            LOADER = None
+            BACKEND = "unavailable"
+
+
+# --- Unified error ------------------------------------------------------------
+
+
+class TomlError(ValueError):
+    """Unified TOML decode error raised by this wrapper."""
+
+
+def raise_toml_error(err: Exception, *, source: str) -> TomlError:
+    return TomlError(f"TOML parse error ({source}): {err}")
+
+
+# --- Loading helpers ----------------------------------------------------------
+
+
+def load_from_path(path: Path) -> Mapping[str, Any]:
+    """
+    Load a TOML file from disk using the selected backend and return the native mapping.
+
+    rtoml uses text I/O; tomllib/tomli use binary I/O.
+    """
+    if LOADER is None:
+        raise RuntimeError(
+            "No TOML backend available. Install 'rtoml' (preferred), "
+            "'tomli' on Python < 3.11, or use Python 3.11+ for 'tomllib'."
+        )
+
+    try:
+        if BACKEND == "rtoml":
+            with path.open("r", encoding="utf-8") as f:
+                return LOADER.load(f)  # type: ignore[call-arg]
+        else:
+            with path.open("rb") as f:
+                return LOADER.load(f)  # type: ignore[call-arg]
+    except FileNotFoundError:
+        raise
+    except Exception as e:
+        raise raise_toml_error(e, source=str(path)) from e
+
+
+def loads_from_string(s: str) -> Mapping[str, Any]:
+    """
+    Parse TOML from a string using the selected backend and return the native mapping.
+    """
+    if LOADER is None:
+        raise RuntimeError(
+            "No TOML backend available. Install 'rtoml' (preferred), "
+            "'tomli' on Python < 3.11, or use Python 3.11+ for 'tomllib'."
+        )
+
+    try:
+        if BACKEND == "rtoml":
+            return LOADER.loads(s)  # type: ignore[attr-defined]
+        elif BACKEND == "tomllib":
+            return LOADER.loads(s.encode("utf-8"))  # type: ignore[attr-defined]
+        else:  # tomli
+            return LOADER.loads(s)  # type: ignore[attr-defined]
+    except Exception as e:
+        raise raise_toml_error(e, source="<string>") from e
+
+
+# --- Public API (read-only interface: only readers) ---------------------------
+
+
+@dataclass(frozen=True)
+class TomlReader:
+    """
+    Reader-only TOML interface that normalizes rtoml/tomllib/tomli behavior.
+
+    Attributes:
+        backend: 'rtoml', 'tomllib', 'tomli', or 'unavailable'
+    """
+
+    backend: str = BACKEND
+
+    def load(self, path: str | Path) -> Mapping[str, Any]:
+        """Load TOML from a file path and return the backend's native mapping."""
+        return load_from_path(Path(path))
+
+    def loads(self, content: str) -> Mapping[str, Any]:
+        """Parse TOML from a string and return the backend's native mapping."""
+        return loads_from_string(content)
+
+
+# Convenience top-level functions
+
+_reader = TomlReader()
+
+
+def read_toml(path: str | Path) -> Mapping[str, Any]:
+    """Load TOML from a file path; returns the backend's native mapping."""
+    return _reader.load(path)
+
+
+def parse_toml(content: str) -> Mapping[str, Any]:
+    """Parse TOML from a string; returns the backend's native mapping."""
+    return _reader.loads(content)
+
+
+def toml_backend() -> str:
+    """Return the backend in use: 'rtoml', 'tomllib', 'tomli', or 'unavailable'."""
+    return _reader.backend
+```
 ## File: utils\update_checker.py
 ```python
 """Improved update checker utility for bash2gitlab (standalone module).
@@ -14068,8 +14103,8 @@ Key improvements over prior version:
 - Yanked version detection with warnings
 - Development version detection and reporting
 - Optional colorized output that respects NO_COLOR/CI/TERM and TTY
-- Non-invasive logging: caller may pass a logger or rely on a safe default
-- Narrow exception surface with custom error types
+- Proper logging with debug information for troubleshooting
+- Clean exception handling - only entry points catch and suppress
 - ZERO-COST background checking with exit handler
 
 Public functions:
@@ -14093,7 +14128,6 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 from urllib import error
 
 import orjson as json
@@ -14107,6 +14141,7 @@ __all__ = [
     "NetworkError",
 ]
 
+from bash2gitlab import __about__
 from bash2gitlab.errors.exceptions import Bash2GitlabError
 from bash2gitlab.utils.urllib3_helper import fetch_json
 
@@ -14141,18 +14176,28 @@ class VersionInfo:
     current_yanked: bool
 
 
-def get_logger(user_logger: logging.Logger | None) -> Callable[[str], None]:
-    """Get a warning logging function.
+def get_logger(user_logger: logging.Logger | None) -> logging.Logger:
+    """Get a logger instance.
 
     Args:
         user_logger: Logger instance or None.
 
     Returns:
-        Logger warning method or built-in print.
+        Logger instance (user-provided or default).
     """
     if isinstance(user_logger, logging.Logger):
-        return user_logger.warning
-    return print
+        return user_logger
+
+    # Create a default logger
+    logger = logging.getLogger("update_checker")
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stderr)
+        formatter = logging.Formatter("%(name)s: %(levelname)s: %(message)s")
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.WARNING)
+
+    return logger
 
 
 def can_use_color() -> bool:
@@ -14167,10 +14212,7 @@ def can_use_color() -> bool:
         return False
     if os.environ.get("TERM") == "dumb":
         return False
-    try:
-        return sys.stdout.isatty()
-    except Exception:
-        return False
+    return sys.stdout.isatty()
 
 
 def cache_paths(package_name: str) -> tuple[Path, Path]:
@@ -14187,41 +14229,101 @@ def cache_paths(package_name: str) -> tuple[Path, Path]:
     return cache_dir, cache_file
 
 
-def is_fresh(cache_file: Path, ttl_seconds: int) -> bool:
-    """Check if cache file is fresh.
+def load_cache(cache_file: Path, logger: logging.Logger) -> dict | None:
+    """Load cache JSON safely. Returns None on any error.
 
     Args:
         cache_file: Path to cache file.
-        ttl_seconds: TTL in seconds.
+        logger: Logger instance for debugging.
 
     Returns:
-        True if cache is within TTL.
+        Cache data or None if not found/invalid.
     """
+    logger.debug(f"Attempting to load cache from {cache_file}")
+
+    if not cache_file.exists():
+        logger.debug(f"Cache file {cache_file} does not exist")
+        return None
+
     try:
+        raw = cache_file.read_text(encoding="utf-8")
+        logger.debug(f"Read {len(raw)} bytes from cache file")
+
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            logger.debug(f"Cache data is not a dict, got {type(data)}")
+            return None
+
+        logger.debug(f"Successfully loaded cache with keys: {list(data.keys())}")
+        return data
+
+    except json.JSONDecodeError as e:
+        logger.debug(f"Failed to parse JSON from cache: {e}")
+        raise
+    except OSError as e:
+        logger.debug(f"Failed to read cache file: {e}")
+        raise
+
+
+def is_fresh(cache_file: Path, ttl_seconds: int, logger: logging.Logger) -> bool:
+    """Check if cache file is fresh using its embedded last_check (preferred)
+    or falling back to file mtime.
+
+    Args:
+        cache_file: Path to cache file.
+        ttl_seconds: Time-to-live in seconds.
+        logger: Logger instance for debugging.
+
+    Returns:
+        True if cache is fresh.
+    """
+    logger.debug(f"Checking cache freshness for {cache_file}, TTL={ttl_seconds}s")
+
+    try:
+        data = load_cache(cache_file, logger)
+        now = time.time()
+
+        if data and isinstance(data.get("last_check"), (int, float)):
+            age = now - float(data["last_check"])
+            fresh = age < ttl_seconds
+            logger.debug(f"Cache age from embedded timestamp: {age:.1f}s, fresh: {fresh}")
+            return fresh
+
         if cache_file.exists():
             last_check_time = cache_file.stat().st_mtime
-            return (time.time() - last_check_time) < ttl_seconds
-    except (OSError, PermissionError):
-        return False
+            age = now - last_check_time
+            fresh = age < ttl_seconds
+            logger.debug(f"Cache age from file mtime: {age:.1f}s, fresh: {fresh}")
+            return fresh
+
+    except Exception as e:
+        logger.debug(f"Error checking cache freshness: {e}")
+        # Re-raise instead of silently returning False
+        raise
+
+    logger.debug("No cache file found")
     return False
 
 
-def save_cache(cache_dir: Path, cache_file: Path, payload: dict) -> None:
+def save_cache(cache_dir: Path, cache_file: Path, payload: dict, logger: logging.Logger) -> None:
     """Save data to cache.
 
     Args:
         cache_dir: Cache directory.
         cache_file: Cache file path.
         payload: Data to store.
+        logger: Logger instance for debugging.
     """
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        with cache_file.open("w", encoding="utf-8") as f:
-            f.write(json.dumps({"last_check": time.time(), **payload}).decode())
-            # json.dumps({"last_check": time.time(), **payload})
-            # json.dump({"last_check": time.time(), **payload}, f)
-    except (OSError, PermissionError):
-        pass
+    logger.debug(f"Saving cache to {cache_file} with payload keys: {list(payload.keys())}")
+
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    logger.debug(f"Created cache directory: {cache_dir}")
+
+    body = {"last_check": time.time(), **payload}
+    cache_content = json.dumps(body).decode()
+
+    cache_file.write_text(cache_content, encoding="utf-8")
+    logger.debug(f"Wrote {len(cache_content)} bytes to cache file")
 
 
 def reset_cache(package_name: str) -> None:
@@ -14231,30 +14333,34 @@ def reset_cache(package_name: str) -> None:
         package_name: Package name to clear from cache.
     """
     _, cache_file = cache_paths(package_name)
-    try:
-        if cache_file.exists():
-            cache_file.unlink(missing_ok=True)
-    except (OSError, PermissionError):
-        pass
+    if cache_file.exists():
+        cache_file.unlink(missing_ok=True)
 
 
-def fetch_pypi_json(url: str, timeout: float) -> dict:
+def fetch_pypi_json(url: str, timeout: float, logger: logging.Logger) -> dict:
     """Fetch JSON metadata from PyPI.
 
     Args:
         url: URL to fetch.
         timeout: Timeout in seconds.
+        logger: Logger instance for debugging.
 
     Returns:
         Parsed JSON data.
+
+    Raises:
+        PackageNotFoundError: If package not found (404).
+        NetworkError: For other network errors.
     """
+    logger.debug(f"Fetching PyPI JSON from {url} with timeout {timeout}s")
+
     try:
-        return fetch_json(url, timeout)
-    except Bash2GitlabError as the_error:
-        raise PackageNotFoundError() from the_error
-    # req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
-    # with request.urlopen(req, timeout=timeout) as resp:  # nosec
-    #     return json.loads(resp.read().decode("utf-8"))
+        data = fetch_json(url, timeout)
+        logger.debug(f"Successfully fetched JSON with {len(data)} top-level keys")
+        return data
+    except Bash2GitlabError as e:
+        logger.debug(f"bash2gitlab error fetching JSON: {e}")
+        raise PackageNotFoundError() from e
 
 
 def is_dev_version(version_str: str) -> bool:
@@ -14265,12 +14371,12 @@ def is_dev_version(version_str: str) -> bool:
 
     Returns:
         True if this is a development version.
+
+    Raises:
+        _version.InvalidVersion: If version string is invalid.
     """
-    try:
-        v = _version.parse(version_str)
-        return v.is_devrelease
-    except _version.InvalidVersion:
-        return False
+    v = _version.parse(version_str)
+    return v.is_devrelease
 
 
 def is_version_yanked(releases: dict, version_str: str) -> bool:
@@ -14288,15 +14394,13 @@ def is_version_yanked(releases: dict, version_str: str) -> bool:
         return False
 
     # Check if any release file for this version is yanked
-    for release in version_releases:
-        if release.get("yanked", False):
-            return True
-    return False
+    return any(release.get("yanked", False) for release in version_releases)
 
 
 def get_version_info_from_pypi(
     package_name: str,
     current_version: str,
+    logger: logging.Logger,
     *,
     include_prereleases: bool,
     timeout: float = 5.0,
@@ -14308,6 +14412,7 @@ def get_version_info_from_pypi(
     Args:
         package_name: Package name.
         current_version: Current version to check if yanked.
+        logger: Logger instance for debugging.
         include_prereleases: Whether to include prereleases.
         timeout: Request timeout.
         retries: Number of retries.
@@ -14323,19 +14428,28 @@ def get_version_info_from_pypi(
     url = f"https://pypi.org/pypi/{package_name}/json"
     last_err: Exception | None = None
 
+    logger.debug(f"Getting version info for {package_name}, current: {current_version}")
+    logger.debug(f"Will retry up to {retries} times with {backoff}s backoff")
+
     for attempt in range(retries + 1):
+        logger.debug(f"Attempt {attempt + 1}/{retries + 1}")
+
         try:
-            data = fetch_pypi_json(url, timeout)
+            data = fetch_pypi_json(url, timeout, logger)
             releases = data.get("releases", {})
 
             if not releases:
+                logger.debug("No releases found in PyPI data, using info.version")
                 info_ver = data.get("info", {}).get("version")
                 return VersionInfo(
                     latest_stable=str(info_ver) if info_ver else None, latest_dev=None, current_yanked=False
                 )
 
+            logger.debug(f"Found {len(releases)} releases in PyPI data")
+
             # Check if current version is yanked
             current_yanked = is_version_yanked(releases, current_version)
+            logger.debug(f"Current version {current_version} yanked: {current_yanked}")
 
             # Parse all valid versions
             stable_versions: list[_version.Version] = []
@@ -14345,10 +14459,12 @@ def get_version_info_from_pypi(
                 try:
                     v = _version.parse(v_str)
                 except _version.InvalidVersion:
+                    logger.debug(f"Skipping invalid version: {v_str}")
                     continue
 
                 # Skip yanked versions when looking for latest
                 if is_version_yanked(releases, v_str):
+                    logger.debug(f"Skipping yanked version: {v_str}")
                     continue
 
                 if v.is_devrelease:
@@ -14356,24 +14472,33 @@ def get_version_info_from_pypi(
                 elif v.is_prerelease:
                     if include_prereleases:
                         stable_versions.append(v)
+                    else:
+                        logger.debug(f"Skipping prerelease (not requested): {v_str}")
                 else:
                     stable_versions.append(v)
 
             latest_stable = str(max(stable_versions)) if stable_versions else None
             latest_dev = str(max(dev_versions)) if dev_versions else None
 
+            logger.debug(f"Latest stable: {latest_stable}, latest dev: {latest_dev}")
+
             return VersionInfo(latest_stable=latest_stable, latest_dev=latest_dev, current_yanked=current_yanked)
 
         except error.HTTPError as e:
+            logger.debug(f"HTTP error on attempt {attempt + 1}: {e.code} {e.reason}")
             if e.code == 404:
                 raise PackageNotFoundError from e
             last_err = e
         except (error.URLError, TimeoutError, OSError, json.JSONDecodeError) as e:
+            logger.debug(f"Network/parsing error on attempt {attempt + 1}: {e}")
             last_err = e
 
         if attempt < retries:
-            time.sleep(backoff * (attempt + 1))
+            sleep_time = backoff * (attempt + 1)
+            logger.debug(f"Sleeping {sleep_time}s before retry")
+            time.sleep(sleep_time)
 
+    logger.debug(f"All {retries + 1} attempts failed, raising NetworkError")
     raise NetworkError(str(last_err))
 
 
@@ -14381,6 +14506,7 @@ def format_update_message(
     package_name: str,
     current_version_str: str,
     version_info: VersionInfo,
+    logger: logging.Logger,
 ) -> str:
     """Format the update notification message.
 
@@ -14388,22 +14514,29 @@ def format_update_message(
         package_name: Package name.
         current_version_str: Current version string.
         version_info: Version information from PyPI.
+        logger: Logger instance for debugging.
 
     Returns:
         Formatted update message.
     """
+    logger.debug(f"Formatting update message for {package_name} {current_version_str}")
+
     pypi_url = f"https://pypi.org/project/{package_name}/"
     messages: list[str] = []
 
     try:
         current = _version.parse(current_version_str)
-    except _version.InvalidVersion:
+        logger.debug(f"Parsed current version: {current}")
+    except _version.InvalidVersion as e:
+        logger.debug(f"Invalid current version '{current_version_str}': {e}")
         current = None
 
     c = _Color() if can_use_color() else None
+    logger.debug(f"Using colors: {c is not None}")
 
     # Check if current version is yanked
     if version_info.current_yanked:
+        logger.debug("Current version is yanked, adding warning")
         if c:
             yank_msg = f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!{c.ENDC}"
         else:
@@ -14417,33 +14550,40 @@ def format_update_message(
         try:
             latest_stable = _version.parse(version_info.latest_stable)
             if latest_stable > current:
+                logger.debug(f"Found stable update: {latest_stable} > {current}")
                 if c:
                     stable_msg = f"{c.YELLOW}A new stable version of {package_name} is available: {c.GREEN}{latest_stable}{c.YELLOW} (you are using {current}).{c.ENDC}"
                 else:
                     stable_msg = f"A new stable version of {package_name} is available: {latest_stable} (you are using {current})."
                 messages.append(stable_msg)
-        except _version.InvalidVersion:
-            pass
+            else:
+                logger.debug(f"No stable update needed: {latest_stable} <= {current}")
+        except _version.InvalidVersion as e:
+            logger.debug(f"Invalid latest stable version '{version_info.latest_stable}': {e}")
 
     # Check for dev versions
     if version_info.latest_dev:
         try:
             latest_dev = _version.parse(version_info.latest_dev)
             if current is None or latest_dev > current:
+                logger.debug(f"Found dev version: {latest_dev}")
                 if c:
                     dev_msg = f"{c.BLUE}Development version available: {c.GREEN}{latest_dev}{c.BLUE} (use at your own risk).{c.ENDC}"
                 else:
                     dev_msg = f"Development version available: {latest_dev} (use at your own risk)."
                 messages.append(dev_msg)
-        except _version.InvalidVersion:
-            pass
+        except _version.InvalidVersion as e:
+            logger.debug(f"Invalid latest dev version '{version_info.latest_dev}': {e}")
 
     if messages:
         upgrade_msg = "Please upgrade using your preferred package manager."
         info_msg = f"More info: {pypi_url}"
         messages.extend([upgrade_msg, info_msg])
-        return "\n".join(messages)
+        result = "\n".join(messages)
+        logger.debug(f"Generated update message with {len(messages)} lines")
+        return result
 
+    logger.debug("No update message needed")
     return ""
 
 
@@ -14460,6 +14600,7 @@ def _background_update_worker(
     """
     global _background_check_result
 
+    # Only catch exceptions at this entry point
     try:
         result = check_for_updates(
             package_name=package_name,
@@ -14469,8 +14610,10 @@ def _background_update_worker(
             include_prereleases=include_prereleases,
         )
         _background_check_result = result
-    except Exception:
-        # Silently fail - we don't want background checks to cause issues
+    except Exception as e:
+        # Background checks should not cause issues, but we should log what happened
+        actual_logger = get_logger(logger)
+        actual_logger.debug(f"Background update check failed: {e}")
         _background_check_result = None
 
 
@@ -14501,26 +14644,46 @@ def start_background_update_check(
         cache_ttl_seconds: Cache time-to-live in seconds.
         include_prereleases: Whether to consider prereleases newer.
     """
-    global _background_check_registered
+    global _background_check_registered, _background_check_result
 
-    # Check if we already have a fresh cached result
-    cache_dir, cache_file = cache_paths(package_name)
-    if is_fresh(cache_file, cache_ttl_seconds):
-        return
+    # Only catch exceptions at this entry point
+    try:
+        actual_logger = get_logger(logger)
+        cache_dir, cache_file = cache_paths(package_name)
 
-    # Register exit handler only once
-    if not _background_check_registered:
-        atexit.register(_exit_handler)
-        _background_check_registered = True
+        fresh = is_fresh(cache_file, cache_ttl_seconds, actual_logger)
+        cached = load_cache(cache_file, actual_logger) if cache_file.exists() else None
 
-    # Start background thread (daemon so it doesn't prevent program exit)
-    worker_thread = threading.Thread(
-        target=_background_update_worker,
-        args=(package_name, current_version, logger, cache_ttl_seconds, include_prereleases),
-        daemon=True,
-        name=f"UpdateChecker-{package_name}",
-    )
-    worker_thread.start()
+        if not _background_check_registered:
+            atexit.register(_exit_handler)
+            _background_check_registered = True
+
+        if fresh and isinstance(cached, dict):
+            actual_logger.debug("Using fresh cache for background check")
+            # Recompute message against *current* environment (current_version)
+            vi = VersionInfo(
+                latest_stable=cached.get("latest_stable"),
+                latest_dev=cached.get("latest_dev"),
+                current_yanked=bool(cached.get("current_yanked", False)),
+            )
+            msg = format_update_message(package_name, current_version, vi, actual_logger)
+            _background_check_result = msg if msg else None
+            return
+
+        actual_logger.debug("Starting background thread for update check")
+        # Cache stale/missing -> refresh in the background; result will be printed on exit (if ready)
+        worker_thread = threading.Thread(
+            target=_background_update_worker,
+            args=(package_name, current_version, logger, cache_ttl_seconds, include_prereleases),
+            daemon=True,
+            name=f"UpdateChecker-{package_name}",
+        )
+        worker_thread.start()
+
+    except Exception as e:
+        # Silently fail for background checks only - log if we have a logger
+        if logger:
+            logger.debug(f"Failed to start background update check: {e}")
 
 
 def check_for_updates(
@@ -14542,52 +14705,65 @@ def check_for_updates(
 
     Returns:
         Formatted update message if update available, else None.
+
+    Raises:
+        PackageNotFoundError: If package not found on PyPI.
+        NetworkError: If network errors occur.
+        Various other exceptions for cache/filesystem issues.
     """
-    warn = get_logger(logger)
+    actual_logger = get_logger(logger)
     cache_dir, cache_file = cache_paths(package_name)
 
-    if is_fresh(cache_file, cache_ttl_seconds):
-        return None
+    fresh = is_fresh(cache_file, cache_ttl_seconds, actual_logger)
+    cached = load_cache(cache_file, actual_logger) if cache_file.exists() else None
+
+    if fresh and isinstance(cached, dict):
+        actual_logger.debug("Using fresh cache for synchronous check")
+        # Recompute message using current state/version — no API call
+        vi = VersionInfo(
+            latest_stable=cached.get("latest_stable"),
+            latest_dev=cached.get("latest_dev"),
+            current_yanked=bool(cached.get("current_yanked", False)),
+        )
+        msg = format_update_message(package_name, current_version, vi, actual_logger)
+        return msg if msg else None
+
+    # Stale/missing -> query PyPI
+    actual_logger.debug("Cache stale/missing, querying PyPI")
 
     try:
-        version_info = get_version_info_from_pypi(
-            package_name, current_version, include_prereleases=include_prereleases
+        vi = get_version_info_from_pypi(
+            package_name, current_version, actual_logger, include_prereleases=include_prereleases
         )
 
-        message = format_update_message(package_name, current_version, version_info)
+        # Cache only data, not the message
+        save_cache(
+            cache_dir,
+            cache_file,
+            {
+                "latest_stable": vi.latest_stable,
+                "latest_dev": vi.latest_dev,
+                "current_yanked": vi.current_yanked,
+            },
+            actual_logger,
+        )
 
-        # Cache the results
-        cache_payload = {
-            "latest_stable": version_info.latest_stable,
-            "latest_dev": version_info.latest_dev,
-            "current_yanked": version_info.current_yanked,
-        }
-        save_cache(cache_dir, cache_file, cache_payload)
-
-        return message if message else None
+        msg = format_update_message(package_name, current_version, vi, actual_logger)
+        return msg if msg else None
 
     except PackageNotFoundError:
-        warn(f"Package '{package_name}' not found on PyPI.")
-        save_cache(cache_dir, cache_file, {"error": "not_found"})
+        actual_logger.warning(f"Package '{package_name}' not found on PyPI.")
+        save_cache(cache_dir, cache_file, {"error": "not_found"}, actual_logger)
         return None
-    except NetworkError:
-        save_cache(cache_dir, cache_file, {"error": "network"})
-        return None
-    except Exception:
-        save_cache(cache_dir, cache_file, {"error": "unknown"})
+    except NetworkError as e:
+        actual_logger.warning(f"Network error checking for updates: {e}")
+        save_cache(cache_dir, cache_file, {"error": "network"}, actual_logger)
         return None
 
 
-# Example usage:
-# if __name__ == "__main__":
-#     # Zero-cost background check - returns immediately
-#     start_background_update_check("bash2gitlab", "0.0.0")
-#
-#     # Your app code here...
-#     print("App is running...")
-#     time.sleep(2)  # Simulate app work
-#
-#     # When app exits, update message will be shown if available
+if __name__ == "__main__":
+    start_background_update_check(__about__.__title__, __about__.__version__)
+    # print(check_for_updates(__about__.__title__, __about__.__version__))
 ```
 ## File: utils\urllib3_helper.py
 ```python
@@ -14603,30 +14779,41 @@ from urllib3.util import Retry
 
 from bash2gitlab.errors.exceptions import Bash2GitlabError
 
-# --- Module-level client (reused for perf via connection pooling) ---
-_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+_POOL_TUPLE = None
 
-_RETRIES = Retry(
-    total=1,  # network resiliency
-    connect=1,
-    read=1,
-    backoff_factor=0.3,  # exponential backoff: 0.3, 0.6, 1.2, ...
-    status_forcelist=(429, 500, 502, 503, 504),
-    allowed_methods=frozenset({"GET", "HEAD"}),
-    raise_on_status=False,  # we’ll check r.status ourselves
-)
 
-_HTTP = urllib3.PoolManager(
-    # tune these to your concurrency/throughput needs
-    maxsize=10,  # sockets per host
-    retries=_RETRIES,
-    ssl_context=_SSL_CTX,  # verified TLS, SNI + hostname verify by default
-    headers={
-        "User-Agent": "bash2gitlab-update-checker/2",
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip, deflate, br",  # allow compression (urllib3 will auto-decode)
-    },
-)
+# @lru_cache(maxsize=1)
+def get_http_pool():
+    global _POOL_TUPLE
+    if _POOL_TUPLE:
+        return _POOL_TUPLE
+
+    # --- Module-level client (reused for perf via connection pooling) ---
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+
+    _RETRIES = Retry(
+        total=1,  # network resiliency
+        connect=1,
+        read=1,
+        backoff_factor=0.3,  # exponential backoff: 0.3, 0.6, 1.2, ...
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET", "HEAD"}),
+        raise_on_status=False,  # we’ll check r.status ourselves
+    )
+
+    _HTTP = urllib3.PoolManager(
+        # tune these to your concurrency/throughput needs
+        maxsize=10,  # sockets per host
+        retries=_RETRIES,
+        ssl_context=_SSL_CTX,  # verified TLS, SNI + hostname verify by default
+        headers={
+            "User-Agent": "bash2gitlab-update-checker/2",
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip, deflate, br",  # allow compression (urllib3 will auto-decode)
+        },
+    )
+    _POOL_TUPLE = _SSL_CTX, _HTTP, _RETRIES
+    return _SSL_CTX, _HTTP, _RETRIES
 
 
 def fetch_json(
@@ -14658,6 +14845,7 @@ def fetch_json(
 
     # Stream then read so the connection is safely returned to the pool.
     # decode_content=True lets urllib3 transparently decompress gzip/deflate/br.
+    _SSL_CTX, _HTTP, _RETRIES = get_http_pool()
     with _HTTP.request(
         "GET",
         url,
@@ -15056,31 +15244,6 @@ def get_yaml() -> YAML:
     y.explicit_start = False  # no '---'
     y.explicit_end = False  # no '...'
     return y
-
-
-#
-# @functools.lru_cache(maxsize=1)
-# def get_yaml() -> YAML:
-#     y = YAML()
-#     y.width = 4096
-#     y.preserve_quotes = True  # Want to minimize quotes, but "1.0" -> 1.0 is a type change.
-#
-#     # Don't set default_style for all strings - let LiteralScalarString work naturally
-#     # y.default_style = '"'  # COMMENTED OUT - this was preventing | syntax
-#
-#     # Instead, set up a custom representer that quotes regular strings but not literal blocks
-#     def custom_str_representer(dumper, data):
-#         if isinstance(data, LiteralScalarString):
-#             return dumper.represent_literal_scalar(data)
-#         # Force quotes on regular strings to prevent type changes like "1.0" -> 1.0
-#         return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='"')
-#
-#     y.representer.add_representer(str, custom_str_representer)
-#     y.representer.add_representer(LiteralScalarString, y.representer.represent_literal_scalarstring)
-#
-#     y.explicit_start = False  # no '---'
-#     y.explicit_end = False  # no '...'
-#     return y
 ```
 ## File: utils\yaml_file_same.py
 ```python

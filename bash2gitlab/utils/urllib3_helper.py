@@ -10,30 +10,41 @@ from urllib3.util import Retry
 
 from bash2gitlab.errors.exceptions import Bash2GitlabError
 
-# --- Module-level client (reused for perf via connection pooling) ---
-_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+_POOL_TUPLE = None
 
-_RETRIES = Retry(
-    total=1,  # network resiliency
-    connect=1,
-    read=1,
-    backoff_factor=0.3,  # exponential backoff: 0.3, 0.6, 1.2, ...
-    status_forcelist=(429, 500, 502, 503, 504),
-    allowed_methods=frozenset({"GET", "HEAD"}),
-    raise_on_status=False,  # we’ll check r.status ourselves
-)
 
-_HTTP = urllib3.PoolManager(
-    # tune these to your concurrency/throughput needs
-    maxsize=10,  # sockets per host
-    retries=_RETRIES,
-    ssl_context=_SSL_CTX,  # verified TLS, SNI + hostname verify by default
-    headers={
-        "User-Agent": "bash2gitlab-update-checker/2",
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip, deflate, br",  # allow compression (urllib3 will auto-decode)
-    },
-)
+# @lru_cache(maxsize=1)
+def get_http_pool():
+    global _POOL_TUPLE
+    if _POOL_TUPLE:
+        return _POOL_TUPLE
+
+    # --- Module-level client (reused for perf via connection pooling) ---
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+
+    _RETRIES = Retry(
+        total=1,  # network resiliency
+        connect=1,
+        read=1,
+        backoff_factor=0.3,  # exponential backoff: 0.3, 0.6, 1.2, ...
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET", "HEAD"}),
+        raise_on_status=False,  # we’ll check r.status ourselves
+    )
+
+    _HTTP = urllib3.PoolManager(
+        # tune these to your concurrency/throughput needs
+        maxsize=10,  # sockets per host
+        retries=_RETRIES,
+        ssl_context=_SSL_CTX,  # verified TLS, SNI + hostname verify by default
+        headers={
+            "User-Agent": "bash2gitlab-update-checker/2",
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip, deflate, br",  # allow compression (urllib3 will auto-decode)
+        },
+    )
+    _POOL_TUPLE = _SSL_CTX, _HTTP, _RETRIES
+    return _SSL_CTX, _HTTP, _RETRIES
 
 
 def fetch_json(
@@ -65,6 +76,7 @@ def fetch_json(
 
     # Stream then read so the connection is safely returned to the pool.
     # decode_content=True lets urllib3 transparently decompress gzip/deflate/br.
+    _SSL_CTX, _HTTP, _RETRIES = get_http_pool()
     with _HTTP.request(
         "GET",
         url,

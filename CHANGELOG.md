@@ -12,7 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
-## [0.9.6] - 2025-08-30
+## [0.9.7] - 2025-09-01
+
+### Fixed
+
+- Fix performance with lazy loading, rtoml.
+- Fix performance and caching logic for update checker.
+
+## [0.9.6] - 2025-09-01
 
 ### Fixed
 

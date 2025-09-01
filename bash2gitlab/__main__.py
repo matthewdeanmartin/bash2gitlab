@@ -76,10 +76,10 @@ try:
     from bash2gitlab.commands.map_commit import run_commit_map
     from bash2gitlab.commands.map_deploy import run_map_deploy
     from bash2gitlab.commands.precommit import PrecommitHookError, install, uninstall
-    from bash2gitlab.utils.update_checker import check_for_updates
+    from bash2gitlab.utils.update_checker import start_background_update_check
     from bash2gitlab.watch_files import start_watch
 except ModuleNotFoundError:
-    check_for_updates = None  # type: ignore[assignment]
+    start_background_update_check = None  # type: ignore[assignment]
     start_watch = None  # type: ignore[assignment]
 
 # emoji support
@@ -435,8 +435,8 @@ def handle_change_detection_commands(args) -> bool:
 
 def main() -> int:
     """Main CLI entry point."""
-    if check_for_updates:  # type: ignore[truthy-function]
-        check_for_updates(__about__.__title__, __about__.__version__)
+    if start_background_update_check:  # type: ignore[truthy-function]
+        start_background_update_check(__about__.__title__, __about__.__version__)
 
     parser = SmartParser(
         prog=__about__.__title__,
