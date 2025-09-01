@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import functools
 import logging
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -35,9 +37,7 @@ class GitLabCIValidator:
         Args:
             cache_dir: Directory to cache the schema file. If None, uses system temp directory.
         """
-        self.schema_url = (
-            "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json"
-        )
+        self.schema_url = "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json"
         self.cache_dir = Path(cache_dir) if cache_dir else Path(tempfile.gettempdir())
         self.cache_file = self.cache_dir / "gitlab_ci_schema.json"
         self.fallback_schema_path = "schemas/gitlab_ci_schema.json"  # Package resource path
@@ -55,22 +55,29 @@ class GitLabCIValidator:
                 schema_data = response.read().decode("utf-8")
                 return json.loads(schema_data)
         except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError) as e:
-            print(f"Failed to fetch schema from URL: {e}")
+            logger.warning(f"Failed to fetch schema from URL: {e}")
             return None
 
     def _load_schema_from_cache(self) -> dict[str, Any] | None:
         """
-        Load the schema from cache file.
+        Load the schema from cache file if it is 7 days old or newer.
 
         Returns:
-            Schema dictionary if successful, None otherwise.
+            Schema dictionary if successful and fresh, None otherwise.
         """
         try:
             if self.cache_file.exists():
+                mtime = self.cache_file.stat().st_mtime
+                age_seconds = time.time() - mtime
+                seven_days = 7 * 24 * 60 * 60
+                if age_seconds > seven_days:
+                    logger.debug("Cache file is older than 7 days, ignoring.")
+                    return None
+
                 with open(self.cache_file, encoding="utf-8") as f:
                     return json.loads(f.read())
         except (OSError, json.JSONDecodeError) as e:
-            print(f"Failed to load schema from cache: {e}")
+            logger.debug(f"Failed to load schema from cache: {e}")
         return None
 
     def _save_schema_to_cache(self, schema: dict[str, Any]) -> None:
@@ -85,7 +92,7 @@ class GitLabCIValidator:
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 f.write(json.dumps(schema).decode())
         except OSError as e:
-            print(f"Failed to save schema to cache: {e}")
+            logger.warning(f"Failed to save schema to cache: {e}")
 
     def _load_fallback_schema(self) -> dict[str, Any] | None:
         """
@@ -117,10 +124,11 @@ class GitLabCIValidator:
                 pass
 
         except (json.JSONDecodeError, Exception) as e:
-            print(f"Failed to load fallback schema: {e}")
+            logger.warning(f"Failed to load Gitlab JSON schema from package resource: {e}")
 
         return None
 
+    @functools.cache  # noqa: B019
     def get_schema(self) -> dict[str, Any]:
         """
         Get the GitLab CI schema, trying URL first, then cache, then fallback.
@@ -131,22 +139,23 @@ class GitLabCIValidator:
         Raises:
             RuntimeError: If no schema could be loaded from any source.
         """
+        # Check cache
+        schema = self._load_schema_from_cache()
+        if schema:
+            logger.debug("Using cached gitlab schema")
+            return schema
+
         # Try to fetch from URL first
         schema = self._fetch_schema_from_url()
         if schema:
+            logger.debug("Using schema from URL")
             self._save_schema_to_cache(schema)
-            return schema
-
-        # Fall back to cache
-        schema = self._load_schema_from_cache()
-        if schema:
-            print("Using cached schema (could not fetch from URL)")
             return schema
 
         # Fall back to package resource
         schema = self._load_fallback_schema()
         if schema:
-            print("Using fallback schema from package (could not fetch from URL or cache)")
+            logger.debug("Using gitlab schema from package")
             return schema
 
         raise RuntimeError("Could not load schema from URL, cache, or fallback resource")

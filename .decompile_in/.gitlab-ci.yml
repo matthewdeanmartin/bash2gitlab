@@ -99,12 +99,12 @@ bandit:
 check_docs:
   stage: docs
   script:
-    - uv run interrogate "$PACKAGE_DIR" --verbose
+    - uv run interrogate "$PACKAGE_DIR" --verbose --fail-under 70
     - |
       set -o pipefail
       uv run pydoctest --config .pydoctest.json | grep -v "__init__" | grep -v "__main__" | grep -v "Unable to parse"
     - uv run linkcheckMarkdown README.md
-    - uv run markdownlint README.md --config .markdownlintrc
+    # - uv run markdownlint README.md --config .markdownlintrc
     - uv run mdformat README.md docs/*.md
     - uv run codespell README.md "$PACKAGE_DIR" docs --ignore-words=private_dictionary.txt
     - |

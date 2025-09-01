@@ -17,6 +17,7 @@ dependencies = [
     "urllib3",
     "orjson",
     "certifi",
+    # "rapidyaml==0.9.0", # API too radically different to use yet.
 
     # Extensibility
     "pluggy", # required to compile

@@ -141,11 +141,7 @@ def test_regex_patterns():
         match = re.match(pattern, test_input)
         if should_match:
             assert match is not None, f"Test {i + 1}: '{test_input}' should match but didn't"
-            assert (
-                match.group("key") == expected_key
-            ), f"Test {i + 1}: Expected key '{expected_key}', got '{match.group('key')}'"
-            assert (
-                match.group("value") == expected_value
-            ), f"Test {i + 1}: Expected value '{expected_value}', got '{match.group('value')}'"
+            assert match.group("key") == expected_key, f"Test {i + 1}: Expected key '{expected_key}', got '{match.group('key')}'"
+            assert match.group("value") == expected_value, f"Test {i + 1}: Expected value '{expected_value}', got '{match.group('value')}'"
         else:
             assert match is None, f"Test {i + 1}: '{test_input}' should not match but did"

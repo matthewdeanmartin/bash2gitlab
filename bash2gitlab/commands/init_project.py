@@ -53,9 +53,7 @@ def prompt_for_config(console: Console, output_dir_default: str) -> dict[str, An
         console.print(Panel.fit("[bold cyan]Lint Settings[/bold cyan]", border_style="cyan"))
         lint_config = {
             "gitlab_url": Prompt.ask("Enter your GitLab instance URL", default="https://gitlab.com"),
-            "project_id": IntPrompt.ask(
-                "Enter the GitLab Project ID for project-scoped linting (optional)", default=None
-            ),
+            "project_id": IntPrompt.ask("Enter the GitLab Project ID for project-scoped linting (optional)", default=None),
         }
         # Filter out None values
         config["lint"] = {k: v for k, v in lint_config.items() if v is not None}
@@ -65,12 +63,8 @@ def prompt_for_config(console: Console, output_dir_default: str) -> dict[str, An
         console.print(Panel.fit("[bold cyan]Decompile Settings[/bold cyan]", border_style="cyan"))
         decompile_config = {
             # Since input_dir is the most common case for a folder, default to that.
-            "input_folder": Prompt.ask(
-                "Enter the default folder to decompile from", default=config.get("input_dir", "src")
-            ),
-            "output_dir": Prompt.ask(
-                "Enter the default directory for decompiled output", default=config.get("output_dir", "out")
-            ),
+            "input_folder": Prompt.ask("Enter the default folder to decompile from", default=config.get("input_dir", "src")),
+            "output_dir": Prompt.ask("Enter the default directory for decompiled output", default=config.get("output_dir", "out")),
         }
         config["decompile"] = decompile_config
 
@@ -82,9 +76,7 @@ def prompt_for_config(console: Console, output_dir_default: str) -> dict[str, An
             "repo_url": Prompt.ask("Enter the repository URL to copy from", default=repo_url_default),
             "branch": Prompt.ask("Enter the branch to copy from", default="main"),
             "source_dir": Prompt.ask("Enter the source directory within the repo to copy", default="."),
-            "copy_dir": Prompt.ask(
-                "Enter the local directory to copy files to", default=config.get("output_dir", "out")
-            ),
+            "copy_dir": Prompt.ask("Enter the local directory to copy files to", default=config.get("output_dir", "out")),
         }
         config["copy2local"] = copy2local_config
 
@@ -122,9 +114,7 @@ def create_or_update_config_file(base_path: Path, config_data: dict[str, Any], f
         doc = tomlkit.parse(toml_path.read_text(encoding="utf-8"))
 
         if "tool" in doc and "bash2gitlab" in doc["tool"] and not force:  # type: ignore[operator]
-            raise FileExistsError(
-                "A '[tool.bash2gitlab]' section already exists in pyproject.toml. Use the --force flag to overwrite it."
-            )
+            raise FileExistsError("A '[tool.bash2gitlab]' section already exists in pyproject.toml. Use the --force flag to overwrite it.")
     else:
         logger.info(f"No 'pyproject.toml' found. A new one will be created at '{short_path(base_path)}'.")
         doc = tomlkit.document()
@@ -174,9 +164,7 @@ def run_init(directory, force) -> int:
         console.print(Syntax(final_toml_string, "toml", theme="monokai", line_numbers=True))
         console.print("=" * 60)
 
-        if not Confirm.ask(
-            f"\nWrite this configuration to [cyan]{short_path(base_path / 'pyproject.toml')} [/cyan]?", default=True
-        ):
+        if not Confirm.ask(f"\nWrite this configuration to [cyan]{short_path(base_path / 'pyproject.toml')} [/cyan]?", default=True):
             console.print("\n[yellow]Initialization cancelled by user.[/yellow]")
             return 1
 

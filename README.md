@@ -14,6 +14,9 @@ ______________________________________________________________________
 
 ## Before
 
+Surely Gitlab has a solution for this? Not as far as I can
+tell. [Here are some of my best workarounds](https://gitlab.com/matthewdeanmartin/includes_templates).
+
 Your IDE sees a single YAML string, and your scripts are trapped in one file.
 
 `.gitlab-ci.yml`:
@@ -147,14 +150,14 @@ Run with
 
 ### Diagnostics
 
-| Command | Description                                                                         |
-|:---------------|:------------------------------------------------------------------------------------|
-| `lint` | Call gitlab APIs to lint you yaml                                                   |
-| `detect-drift` | Report what unexpected changes were made to the generated files.                    |
-| `show-config` | Display config after cascade                                                        |
-| `doctor` | Look for environment problems                                                       |
-| `graph` | Generate graph inline relationships                                                 |
-| `detect-uncompiled` | Detect if you forgot to compile                                                     |
+| Command | Description |
+|:--------------------|:------------------------------------------------------------------------------------|
+| `lint` | Call gitlab APIs to lint you yaml |
+| `detect-drift` | Report what unexpected changes were made to the generated files. |
+| `show-config` | Display config after cascade |
+| `doctor` | Look for environment problems |
+| `graph` | Generate graph inline relationships |
+| `detect-uncompiled` | Detect if you forgot to compile |
 | `run` | Best efforts to run bash in a .gitlab-ci.yml file in similar order as a real runner |
 
 For detailed options on any command, run `bash2gitlab <command> --help`.
@@ -189,7 +192,8 @@ To define variables that should be inlined into the global `variables:` block of
 - **[gitlab-ci-local](https://github.com/firecow/gitlab-ci-local):** This is an excellent tool for running your entire
   GitLab pipeline in local Docker containers. `bash2gitlab` is different—it focuses on the "unit testing" of your Bash
   logic itself, assuming you can and want to execute your scripts on your local machine without the overhead of Docker.
-- **GitHub Actions** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
+- \*\*GitHub Actions
+  \*\* [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
   do not have this problem. A shared GitHub action can reference a script in the shared action's repo. A GitHub
   "reusable" workflow is a single yaml file and might suffer from the same problem as Gitlab pipelines.
 - **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.

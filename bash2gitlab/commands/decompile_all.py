@@ -382,9 +382,7 @@ def process_decompile_job(
     if isinstance(job_data.get("variables"), dict):
         sanitized_job_name = re.sub(r"[^\w.-]", "-", job_name.lower())
         sanitized_job_name = re.sub(r"-+", "-", sanitized_job_name).strip("-")
-        job_vars_filename = decompile_variables_block(
-            job_data["variables"], sanitized_job_name, scripts_output_path, dry_run=dry_run
-        )
+        job_vars_filename = decompile_variables_block(job_data["variables"], sanitized_job_name, scripts_output_path, dry_run=dry_run)
         if job_vars_filename:
             decompiled_count += 1
 
@@ -419,9 +417,7 @@ def iterate_yaml_files(root: Path) -> Iterable[Path]:
     yield from root.rglob("*.yaml")
 
 
-def run_decompile_gitlab_file(
-    *, input_yaml_path: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1
-) -> tuple[int, int, Path]:
+def run_decompile_gitlab_file(*, input_yaml_path: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1) -> tuple[int, int, Path]:
     """Decompile a *single* GitLab CI YAML file into scripts + modified YAML in *output_dir*.
 
     Returns (jobs_processed, total_files_created, output_yaml_path).
@@ -502,9 +498,7 @@ def run_decompile_gitlab_file(
     return jobs_processed, total_files_created, output_yaml_path
 
 
-def run_decompile_gitlab_tree(
-    *, input_root: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1
-) -> tuple[int, int, int]:
+def run_decompile_gitlab_tree(*, input_root: Path, output_dir: Path, dry_run: bool = False, minimum_lines: int = 1) -> tuple[int, int, int]:
     """Decompile *all* ``*.yml`` / ``*.yaml`` under ``input_root`` into ``output_dir``.
 
     The relative directory structure under ``input_root`` is preserved in ``output_dir``.
@@ -521,9 +515,7 @@ def run_decompile_gitlab_tree(
     for in_file in iterate_yaml_files(input_root):
         rel_dir = in_file.parent.relative_to(input_root)
         out_subdir = (output_dir / rel_dir).resolve()
-        jobs, created, _ = run_decompile_gitlab_file(
-            input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run, minimum_lines=minimum_lines
-        )
+        jobs, created, _ = run_decompile_gitlab_file(input_yaml_path=in_file, output_dir=out_subdir, dry_run=dry_run, minimum_lines=minimum_lines)
         yaml_files_processed += 1
         total_jobs += jobs
         total_created += created

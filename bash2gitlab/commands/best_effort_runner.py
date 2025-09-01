@@ -261,9 +261,7 @@ class ConfigurationLoader:
         except Exception as e:
             raise GitlabRunnerError(f"Failed to load YAML file {file_path}: {e}") from e
 
-    def _process_includes(
-        self, config: dict[str, Any], base_dir: Path, seen_files: set[Path] | None = None
-    ) -> dict[str, Any]:
+    def _process_includes(self, config: dict[str, Any], base_dir: Path, seen_files: set[Path] | None = None) -> dict[str, Any]:
         """
         Recursively process 'include' directives from a GitLab-style YAML config.
 
@@ -384,9 +382,7 @@ class PipelineProcessor:
             variables=default_data.get("variables", {}),
         )
 
-    def _process_job(
-        self, name: str, job_data: dict[str, Any], default: DefaultConfig, global_vars: dict[str, str]
-    ) -> JobConfig:
+    def _process_job(self, name: str, job_data: dict[str, Any], default: DefaultConfig, global_vars: dict[str, str]) -> JobConfig:
         """
         Process a single job configuration.
 

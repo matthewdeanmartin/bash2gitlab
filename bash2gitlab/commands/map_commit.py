@@ -58,11 +58,7 @@ def _sync_single_target_to_source(
             continue
 
         # Skip ignored files
-        if (
-            target_file_path.name == ".gitignore"
-            or target_file_path.suffix == ".hash"
-            or target_file_path.suffix.lower() not in _VALID_SUFFIXES
-        ):
+        if target_file_path.name == ".gitignore" or target_file_path.suffix == ".hash" or target_file_path.suffix.lower() not in _VALID_SUFFIXES:
             continue
 
         relative_path = target_file_path.relative_to(target_base_path)

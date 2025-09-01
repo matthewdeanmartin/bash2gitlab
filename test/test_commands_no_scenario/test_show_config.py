@@ -104,9 +104,7 @@ def test_get_value_and_source_from_file_pyproject(tmp_path: Path, monkeypatch: p
 #     assert detail is None
 
 
-def test_run_show_config_with_file_and_env(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-):
+def test_run_show_config_with_file_and_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     monkeypatch.chdir(tmp_path)
 
     # File config
@@ -152,9 +150,7 @@ def test_run_show_config_with_file_and_env(
     assert "No 'bash2gitlab.toml' or 'pyproject.toml' config file found" not in out
 
 
-def test_run_show_config_when_no_config_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-):
+def test_run_show_config_when_no_config_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]):
     # Empty cwd, no config present and no env
     monkeypatch.chdir(tmp_path)
     for k in ("INPUT_DIR", "OUTPUT_DIR", "PARALLELISM", "DRY_RUN", "VERBOSE", "QUIET"):

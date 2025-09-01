@@ -34,8 +34,8 @@ class Config:
     4. Hardcoded defaults (implicitly, where applicable)
     """
 
-    _ENV_VAR_PREFIX = "BASH2GITLAB_"
-    _CONFIG_FILES = ["bash2gitlab.toml", "pyproject.toml"]
+    ENV_VAR_PREFIX = "BASH2GITLAB_"
+    CONFIG_FILES = ["bash2gitlab.toml", "pyproject.toml"]
 
     def __init__(self, config_path_override: Path | None = None):
         """
@@ -53,7 +53,7 @@ class Config:
         """Searches for a configuration file in the current directory and its parents."""
         current_dir = Path.cwd()
         for directory in [current_dir, *current_dir.parents]:
-            for filename in self._CONFIG_FILES:
+            for filename in self.CONFIG_FILES:
                 config_path = directory / filename
                 if config_path.is_file():
                     logger.debug(f"Found configuration file: {config_path}")
@@ -67,9 +67,7 @@ class Config:
             return {}
 
         if not tomllib:
-            logger.warning(
-                "TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11."
-            )
+            logger.warning("TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11.")
             return {}
 
         try:
@@ -95,9 +93,9 @@ class Config:
         """Loads configuration from environment variables."""
         env_config = {}
         for key, value in os.environ.items():
-            if key.startswith(self._ENV_VAR_PREFIX):
+            if key.startswith(self.ENV_VAR_PREFIX):
                 # Converts BASH2GITLAB_SECTION_KEY to section_key
-                config_key = key[len(self._ENV_VAR_PREFIX) :].lower()
+                config_key = key[len(self.ENV_VAR_PREFIX) :].lower()
                 env_config[config_key] = value
                 logger.debug(f"Loaded from environment: {config_key}")
         return env_config

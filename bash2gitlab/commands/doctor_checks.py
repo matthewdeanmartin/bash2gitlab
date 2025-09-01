@@ -65,11 +65,10 @@ def check_precommit_hook_status(repo_root: Path) -> tuple[PrecommitStatus, list[
         content = h_path.read_text(encoding="utf-8")
         if hook_hash(content) == hook_hash(HOOK_CONTENT):
             return "Installed", [f"Hook found at: {short_path(h_path)}"]
-        else:
-            return "Foreign Hook", [
-                f"A non-bash2gitlab hook exists at: {short_path(h_path)}",
-                "Run `install-precommit --force` to overwrite it.",
-            ]
+        return "Foreign Hook", [
+            f"A non-bash2gitlab hook exists at: {short_path(h_path)}",
+            "Run `install-precommit --force` to overwrite it.",
+        ]
     except Exception as e:
         return "Error", [f"Could not check git hooks directory: {e}"]
 
@@ -204,10 +203,7 @@ def check_for_large_scripts(input_dir: Path) -> list[str]:
             try:
                 size = script_file.stat().st_size
                 if size > LARGE_SCRIPT_THRESHOLD_BYTES:
-                    warnings.append(
-                        f"Large script file found: {short_path(script_file)} ({size / 1024:.1f} KB). "
-                        f"This may impact performance or YAML readability when inlined."
-                    )
+                    warnings.append(f"Large script file found: {short_path(script_file)} ({size / 1024:.1f} KB). This may impact performance or YAML readability when inlined.")
             except FileNotFoundError:
                 # File might be a broken symlink, ignore.
                 continue

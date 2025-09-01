@@ -190,8 +190,8 @@ def fetch_pypi_json(url: str, timeout: float) -> dict:
     """
     try:
         return fetch_json(url, timeout)
-    except Bash2GitlabError as error:
-        raise PackageNotFoundError() from error
+    except Bash2GitlabError as the_error:
+        raise PackageNotFoundError() from the_error
     # req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
     # with request.urlopen(req, timeout=timeout) as resp:  # nosec
     #     return json.loads(resp.read().decode("utf-8"))
@@ -270,9 +270,7 @@ def get_version_info_from_pypi(
 
             if not releases:
                 info_ver = data.get("info", {}).get("version")
-                return VersionInfo(
-                    latest_stable=str(info_ver) if info_ver else None, latest_dev=None, current_yanked=False
-                )
+                return VersionInfo(latest_stable=str(info_ver) if info_ver else None, latest_dev=None, current_yanked=False)
 
             # Check if current version is yanked
             current_yanked = is_version_yanked(releases, current_version)
@@ -347,9 +345,7 @@ def format_update_message(
         if c:
             yank_msg = f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!{c.ENDC}"
         else:
-            yank_msg = (
-                f"WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!"
-            )
+            yank_msg = f"WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!"
         messages.append(yank_msg)
 
     # Check for stable updates
@@ -416,8 +412,6 @@ def _background_update_worker(
 
 def _exit_handler() -> None:
     """Exit handler to display update message if available."""
-    global _background_check_result
-
     if _background_check_result:
         print(f"\n{_background_check_result}", file=sys.stderr)
 
@@ -492,9 +486,7 @@ def check_for_updates(
         return None
 
     try:
-        version_info = get_version_info_from_pypi(
-            package_name, current_version, include_prereleases=include_prereleases
-        )
+        version_info = get_version_info_from_pypi(package_name, current_version, include_prereleases=include_prereleases)
 
         message = format_update_message(package_name, current_version, version_info)
 

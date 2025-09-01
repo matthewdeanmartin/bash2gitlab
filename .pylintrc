@@ -179,6 +179,10 @@ disable=raw-checker-failed,
         missing-function-docstring,
         too-many-positional-arguments,
         cyclic-import, # can't figure out how to break this.
+        broad-exception-caught, # This isn't java. Don't make be guess what could be thrown.
+        no-member, # orjson prob and mypy does this better
+        global-statement, # this is how you lazy load
+        import-outside-toplevel, # this is for optional libraries
 
 
 # Enable the message, report, category or checker with the given id(s). You can

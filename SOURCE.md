@@ -5580,6 +5580,10 @@ def run_compile_all(
         max_workers = min(parallelism, max_workers)
 
     if total_files >= 5 and max_workers > 1 and parallelism:
+        # prime the cache or we get n schema downloads and n attempts to save it to disk
+        validator = GitLabCIValidator()
+        validator.get_schema()
+
         args_list = [
             (src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command)
             for src, out, variables in files_to_process
@@ -9815,7 +9819,7 @@ from typing import Any
 import orjson
 
 from bash2gitlab.utils.terminal_colors import Colors
-from bash2gitlab.utils.validate_pipeline import ValidationResult, validate_gitlab_ci_yaml
+from bash2gitlab.utils.validate_pipeline import GitLabCIValidator, ValidationResult, validate_gitlab_ci_yaml
 
 
 def find_yaml_files(directory: Path) -> list[Path]:
@@ -9958,6 +9962,10 @@ def run_validate_all(
                 result = validate_single_file(yaml_file)
                 results.append(result)
         else:
+            # prime the cache or we get n schema downloads and n attempts to save it to disk
+            validator = GitLabCIValidator()
+            validator.get_schema()
+
             # Parallel processing for larger number of files
             max_workers = parallelism if parallelism else os.cpu_count()
             print(f"{Colors.OKBLUE}Using parallel processing with {max_workers} workers{Colors.ENDC}")
@@ -14628,9 +14636,11 @@ def short_path(path: Path) -> str:
 ```python
 from __future__ import annotations
 
+import functools
 import logging
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -14683,22 +14693,29 @@ class GitLabCIValidator:
                 schema_data = response.read().decode("utf-8")
                 return json.loads(schema_data)
         except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError) as e:
-            print(f"Failed to fetch schema from URL: {e}")
+            logger.warning(f"Failed to fetch schema from URL: {e}")
             return None
 
     def _load_schema_from_cache(self) -> dict[str, Any] | None:
         """
-        Load the schema from cache file.
+        Load the schema from cache file if it is 7 days old or newer.
 
         Returns:
-            Schema dictionary if successful, None otherwise.
+            Schema dictionary if successful and fresh, None otherwise.
         """
         try:
             if self.cache_file.exists():
+                mtime = self.cache_file.stat().st_mtime
+                age_seconds = time.time() - mtime
+                seven_days = 7 * 24 * 60 * 60
+                if age_seconds > seven_days:
+                    logger.debug("Cache file is older than 7 days, ignoring.")
+                    return None
+
                 with open(self.cache_file, encoding="utf-8") as f:
                     return json.loads(f.read())
         except (OSError, json.JSONDecodeError) as e:
-            print(f"Failed to load schema from cache: {e}")
+            logger.debug(f"Failed to load schema from cache: {e}")
         return None
 
     def _save_schema_to_cache(self, schema: dict[str, Any]) -> None:
@@ -14713,7 +14730,7 @@ class GitLabCIValidator:
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 f.write(json.dumps(schema).decode())
         except OSError as e:
-            print(f"Failed to save schema to cache: {e}")
+            logger.warning(f"Failed to save schema to cache: {e}")
 
     def _load_fallback_schema(self) -> dict[str, Any] | None:
         """
@@ -14745,10 +14762,11 @@ class GitLabCIValidator:
                 pass
 
         except (json.JSONDecodeError, Exception) as e:
-            print(f"Failed to load fallback schema: {e}")
+            logger.warning(f"Failed to load Gitlab JSON schema from package resource: {e}")
 
         return None
 
+    @functools.lru_cache(maxsize=None)
     def get_schema(self) -> dict[str, Any]:
         """
         Get the GitLab CI schema, trying URL first, then cache, then fallback.
@@ -14759,22 +14777,23 @@ class GitLabCIValidator:
         Raises:
             RuntimeError: If no schema could be loaded from any source.
         """
+        # Check cache
+        schema = self._load_schema_from_cache()
+        if schema:
+            logger.debug("Using cached gitlab schema")
+            return schema
+
         # Try to fetch from URL first
         schema = self._fetch_schema_from_url()
         if schema:
+            logger.debug("Using schema from URL")
             self._save_schema_to_cache(schema)
-            return schema
-
-        # Fall back to cache
-        schema = self._load_schema_from_cache()
-        if schema:
-            print("Using cached schema (could not fetch from URL)")
             return schema
 
         # Fall back to package resource
         schema = self._load_fallback_schema()
         if schema:
-            print("Using fallback schema from package (could not fetch from URL or cache)")
+            logger.debug("Using gitlab schema from package")
             return schema
 
         raise RuntimeError("Could not load schema from URL, cache, or fallback resource")

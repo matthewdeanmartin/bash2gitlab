@@ -88,9 +88,7 @@ def _patch_clone_deps(monkeypatch, *, called: dict[str, Any]):
     monkeypatch.setattr(m, "fetch_repository_archive", fake_fetch_repository_archive)
 
 
-def _patch_map_commit_deps(
-    monkeypatch, *, called: dict[str, Any], get_map_side_effect: Exception | dict[str, str] = None
-):
+def _patch_map_commit_deps(monkeypatch, *, called: dict[str, Any], get_map_side_effect: Exception | dict[str, str] = None):
     import bash2gitlab.__main__ as m
 
     def fake_map_deploy(mapping, dry_run: bool, force: bool):

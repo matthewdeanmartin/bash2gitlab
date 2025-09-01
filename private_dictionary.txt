@@ -107,3 +107,9 @@ Cygwin
 WSL
 insensitive
 case-insensitive
+MRO
+sys
+gren
+bannna
+json
+JSONDecodeError

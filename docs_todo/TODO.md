@@ -1,10 +1,20 @@
 # TODO
 
 
+## Bugs
+- validate fails on bad error if --out is missing.
+- Permission denied on writing json schema to cache on window. FIXED.
+
 ## Perf
 - rtoml
 - caching/memoizing
-- 
+- parallelize all commands
+  - compile - done
+  - validate - done
+  - lint - done
+  - all others ... TODO
+
+
 
 ## Bash Friendliness
 - Map more errors to return codes. Make sure only `__main__` returns codes, all others throw python exceptions

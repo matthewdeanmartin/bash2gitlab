@@ -12,10 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.6] - 2025-08-30
+
+### Fixed
+
+- json schema loaded from cache, then URL, then resource. Won't start using resource until there is some staleness logic.
+- Prime cache before attempting to validate on multiple threads
 
 ## [0.9.5] - 2025-08-28
 
 ### Fixed
+
 - Backwards compatibility for 3.8, etc
 
 

@@ -142,7 +142,7 @@ def run_map_deploy(
         if not isinstance(target_bases, (list, tuple, set)):
             logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
             continue
-        if not len(target_bases):
+        if not target_bases:
             logger.warning("Source folder but no destinations!")
 
         for target_base in target_bases:

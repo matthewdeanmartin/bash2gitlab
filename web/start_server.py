@@ -33,12 +33,13 @@ def main():
     # Start the server
     try:
         import uvicorn
+
         uvicorn.run(
             "bash2gitlab_api:app",
             host="localhost",
             port=8000,
             reload=True,  # Enable auto-reload for development
-            log_level="info"
+            log_level="info",
         )
     except KeyboardInterrupt:
         print("\n✅ API server stopped")

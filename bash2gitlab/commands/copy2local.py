@@ -19,9 +19,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["fetch_repository_archive", "clone_repository_ssh"]
 
 
-def fetch_repository_archive(
-    repo_url: str, branch: str, source_dir: Path, clone_path: Path, dry_run: bool = False
-) -> None:
+def fetch_repository_archive(repo_url: str, branch: str, source_dir: Path, clone_path: Path, dry_run: bool = False) -> None:
     """Fetches and extracts a specific directory from a repository archive.
 
     This function avoids using Git by downloading the repository as a ZIP archive.

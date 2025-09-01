@@ -209,9 +209,7 @@ def test_run_compile_all_end_to_end_inlines_and_writes(tmp_path: Path, monkeypat
     uncompiled.mkdir()
 
     # tiny pipeline with a single ./script.sh reference
-    (uncompiled / ".gitlab-ci.yml").write_text(
-        "build:\n  stage: test\n  script:\n    - ./script.sh\n", encoding="utf-8"
-    )
+    (uncompiled / ".gitlab-ci.yml").write_text("build:\n  stage: test\n  script:\n    - ./script.sh\n", encoding="utf-8")
     (uncompiled / "script.sh").write_text('echo "E2E"\n', encoding="utf-8")
 
     # Keep report_targets simple: no stray files

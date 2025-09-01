@@ -36,7 +36,10 @@ _HTTP = urllib3.PoolManager(
 )
 
 
-def fetch_json(url: str, timeout: float) -> dict[str, Any]:
+def fetch_json(
+    url: str,
+    timeout: float,  # noqa
+) -> dict[str, Any]:
     """
     Fetch JSON metadata from PyPI (or any HTTPS JSON endpoint) using urllib3.
 

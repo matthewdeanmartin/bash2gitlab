@@ -148,7 +148,6 @@ def test_process_script_list_basic(mock_logger, tmp_path):
 
 def test_process_script_list_with_script_file(mock_logger, tmp_path):
     with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
-
         # Create a test script file
         script_file = tmp_path / "test.sh"
         script_file.write_text("echo 'test script'\necho 'second line'")
@@ -317,9 +316,7 @@ test-job:
         with patch("bash2gitlab.commands.compile_all.write_compiled_file") as mock_write:
             mock_write.return_value = True
 
-            inlined, written = compile_single_file(
-                source_path, output_file, scripts_path, {}, input_dir, False, "test command"
-            )
+            inlined, written = compile_single_file(source_path, output_file, scripts_path, {}, input_dir, False, "test command")
 
             assert inlined == 1
             assert written == 1

@@ -31,7 +31,7 @@ test: clean uv.lock install_plugins
 	@echo "Running unit tests"
 	# $(VENV) pytest --doctest-modules bash2gitlab
 	# $(VENV) python -m unittest discover
-	$(VENV) py.test test -vv -n 2 --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
+	$(VENV) pytest test -vv -n 2 --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
 	$(VENV) bash ./scripts/basic_checks.sh
 #	$(VENV) bash basic_test_with_logging.sh
 
@@ -83,7 +83,7 @@ bandit: .build_history/bandit
 # for when using -j (jobs, run in parallel)
 .NOTPARALLEL: .build_history/isort .build_history/black
 
-check: mypy test pylint bandit pre-commit
+check: mypy test pylint bandit pre-commit update-schema
 
 #.PHONY: publish_test
 #publish_test:
@@ -100,7 +100,7 @@ mypy:
 
 
 check_docs:
-	$(VENV) interrogate bash2gitlab --verbose
+	$(VENV) interrogate bash2gitlab --verbose  --fail-under 70
 	$(VENV) pydoctest --config .pydoctest.json | grep -v "__init__" | grep -v "__main__" | grep -v "Unable to parse"
 
 make_docs:
@@ -143,3 +143,18 @@ issues:
 core_all_tests:
 	./scripts/exercise_core_all.sh bash2gitlab "compile --in examples/compile/src --out examples/compile/out --dry-run"
 	uv sync --all-extras
+
+update-schema:
+	@mkdir -p bash2gitlab/schemas
+	@echo "Downloading GitLab CI schema..."
+	@if curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json" -o bash2gitlab/schemas/gitlab_ci_schema.json ; then \
+		echo "✅ Schema saved"; \
+	else \
+		echo "⚠️  Warning: Failed to download schema"; \
+	fi
+	@echo "Downloading NOTICE..."
+	@if curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/NOTICE?ref_type=heads" -o bash2gitlab/schemas/NOTICE.txt ; then \
+		echo "✅ NOTICE saved"; \
+	else \
+		echo "⚠️  Warning: Failed to download NOTICE"; \
+	fi

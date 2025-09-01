@@ -42,9 +42,7 @@ class InteractiveInterface:
         welcome_text.append("bash2gitlab", style="bold blue")
         welcome_text.append(" Interactive Interface\n", style="bold")
         welcome_text.append(f"Version: {__about__.__version__}\n", style="dim")
-        welcome_text.append(
-            "A tool for making development of centralized yaml gitlab templates more pleasant.", style="italic"
-        )
+        welcome_text.append("A tool for making development of centralized yaml gitlab templates more pleasant.", style="italic")
 
         panel = Panel(Align.center(welcome_text), box=box.ROUNDED, style="blue", padding=(1, 2))
 

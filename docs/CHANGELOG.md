@@ -97,11 +97,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shred` renamed to decompile.
 - Config updates to support storing almost all command options in config file
 - Inline supports Pragma commands to skip certain bash from being in-lined.
-    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
-    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
-    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
-    - `# Pragma: end-do-not-inline`: Ends the block.
-    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+  - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+  - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+  - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+  - `# Pragma: end-do-not-inline`: Ends the block.
+  - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
 
 ## [0.8.14] - 2025-08-16
 
@@ -200,7 +200,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files.
+- Map deploy and map commit now restricted to .sh, .ps1 and .y[a]ml files.
 
 ### Added
 
@@ -354,4 +354,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - verbose and quiet logging
 - CLI interface
 - supports simple in/out project structure
-- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution 
+- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution

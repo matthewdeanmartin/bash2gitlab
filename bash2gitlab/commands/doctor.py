@@ -115,9 +115,7 @@ def check_map_commit_status() -> list[str]:
         if "Creating:" in line or "Updating:" in line:
             match = re.search(r"(Creating|Updating): '([^']*)'", line)
             if match:
-                uncommitted_changes.append(
-                    f"Uncommitted change in deployed file corresponding to {short_path(Path(match.group(2)))}"
-                )
+                uncommitted_changes.append(f"Uncommitted change in deployed file corresponding to {short_path(Path(match.group(2)))}")
 
     return uncommitted_changes
 
@@ -196,15 +194,11 @@ def run_doctor() -> int:
         pass
 
     input_yaml_errors = check_yaml_validity(input_dir)
-    if not check(
-        "Input directory YAML files are valid against GitLab schema", not input_yaml_errors, input_yaml_errors
-    ):
+    if not check("Input directory YAML files are valid against GitLab schema", not input_yaml_errors, input_yaml_errors):
         flag_issue()
 
     output_yaml_errors = check_yaml_validity(output_dir)
-    if not check(
-        "Output directory YAML files are valid against GitLab schema", not output_yaml_errors, output_yaml_errors
-    ):
+    if not check("Output directory YAML files are valid against GitLab schema", not output_yaml_errors, output_yaml_errors):
         flag_issue()
 
     # --- Environment Checks ---
@@ -235,9 +229,7 @@ def run_doctor() -> int:
         print(f"\n{Colors.OKGREEN}{Colors.BOLD}✅ All checks passed. Your project looks healthy!{Colors.ENDC}")
         return 0
     else:
-        print(
-            f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}"
-        )
+        print(f"\n{Colors.FAIL}{Colors.BOLD}✖ Doctor found {issues_found} issue(s). Please review the output above.{Colors.ENDC}")
         return 1
 
 
