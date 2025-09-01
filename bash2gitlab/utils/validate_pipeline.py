@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import functools
 import logging
 import sys
 import tempfile
@@ -8,6 +7,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +25,16 @@ else:
         from importlib_resources import files
     except ImportError:
         files = None
+
+try:
+    # Python 3.9+
+    from functools import cache as _py_cache
+
+    cache = _py_cache
+except ImportError:
+    # Python <3.9 — emulate with unbounded LRU
+    def cache(func):
+        return lru_cache(maxsize=None)(func)
 
 
 class GitLabCIValidator:
@@ -130,7 +140,7 @@ class GitLabCIValidator:
 
         return None
 
-    @functools.cache  # noqa: B019
+    @cache  # noqa: B019
     def get_schema(self) -> dict[str, Any]:
         """
         Get the GitLab CI schema, trying URL first, then cache, then fallback.
