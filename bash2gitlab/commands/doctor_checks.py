@@ -203,7 +203,9 @@ def check_for_large_scripts(input_dir: Path) -> list[str]:
             try:
                 size = script_file.stat().st_size
                 if size > LARGE_SCRIPT_THRESHOLD_BYTES:
-                    warnings.append(f"Large script file found: {short_path(script_file)} ({size / 1024:.1f} KB). This may impact performance or YAML readability when inlined.")
+                    warnings.append(
+                        f"Large script file found: {short_path(script_file)} ({size / 1024:.1f} KB). This may impact performance or YAML readability when inlined."
+                    )
             except FileNotFoundError:
                 # File might be a broken symlink, ignore.
                 continue

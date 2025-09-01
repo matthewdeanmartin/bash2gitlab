@@ -32,7 +32,9 @@ class TestProcessUncompiledDirectory:
 
         # 2. Scripts
         (input_dir / "short_task.sh").write_text("echo 'Short task line 1'\necho 'Short task line 2'")
-        (input_dir / "long_task.sh").write_text("echo 'Line 1'\necho 'Line 2'\necho 'Line 3'\necho 'Line 4 is too many'")
+        (input_dir / "long_task.sh").write_text(
+            "echo 'Line 1'\necho 'Line 2'\necho 'Line 3'\necho 'Line 4 is too many'"
+        )
         (input_dir / "template_script.sh").write_text("echo 'From a template'")
 
         # 3. Root GitLab CI file

@@ -6,7 +6,6 @@
 │   ├── clean_all.py
 │   ├── compile_all.py
 │   ├── compile_bash_reader.py
-│   ├── compile_detct_last_change.py
 │   ├── compile_not_bash.py
 │   ├── copy2local.py
 │   ├── decompile_all.py
@@ -33,7 +32,8 @@
 ├── plugins.py
 ├── py.typed
 ├── schemas/
-│   └── gitlab_ci_schema.json
+│   ├── gitlab_ci_schema.json
+│   └── NOTICE.txt
 ├── tui.py
 ├── utils/
 │   ├── check_interactive.py
@@ -122,8 +122,8 @@ class Config:
     4. Hardcoded defaults (implicitly, where applicable)
     """
 
-    _ENV_VAR_PREFIX = "BASH2GITLAB_"
-    _CONFIG_FILES = ["bash2gitlab.toml", "pyproject.toml"]
+    ENV_VAR_PREFIX = "BASH2GITLAB_"
+    CONFIG_FILES = ["bash2gitlab.toml", "pyproject.toml"]
 
     def __init__(self, config_path_override: Path | None = None):
         """
@@ -141,7 +141,7 @@ class Config:
         """Searches for a configuration file in the current directory and its parents."""
         current_dir = Path.cwd()
         for directory in [current_dir, *current_dir.parents]:
-            for filename in self._CONFIG_FILES:
+            for filename in self.CONFIG_FILES:
                 config_path = directory / filename
                 if config_path.is_file():
                     logger.debug(f"Found configuration file: {config_path}")
@@ -183,9 +183,9 @@ class Config:
         """Loads configuration from environment variables."""
         env_config = {}
         for key, value in os.environ.items():
-            if key.startswith(self._ENV_VAR_PREFIX):
+            if key.startswith(self.ENV_VAR_PREFIX):
                 # Converts BASH2GITLAB_SECTION_KEY to section_key
-                config_key = key[len(self._ENV_VAR_PREFIX) :].lower()
+                config_key = key[len(self.ENV_VAR_PREFIX) :].lower()
                 env_config[config_key] = value
                 logger.debug(f"Loaded from environment: {config_key}")
         return env_config
@@ -3031,7 +3031,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.5"
+__version__ = "0.9.6"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -3425,9 +3425,8 @@ def graph_handler(args: argparse.Namespace) -> int:
     if dot_output:
         print(dot_output)
         return 0
-    else:
-        logger.warning("No graph data generated. Check input directory and file structure.")
-        return 1
+    logger.warning("No graph data generated. Check input directory and file structure.")
+    return 1
 
 
 def show_config_handler(args: argparse.Namespace) -> int:
@@ -3935,7 +3934,6 @@ def main() -> int:
 
 
 def run_cli(args: argparse.Namespace) -> ExitCode:
-
     try:
         for _ in get_pm().hook.before_command(args=args):
             pass
@@ -5921,10 +5919,6 @@ def inline_bash_source(
         return final + "\n"
     return final
 ```
-## File: commands\compile_detct_last_change.py
-```python
-
-```
 ## File: commands\compile_not_bash.py
 ```python
 """Support for inlining many types of scripts.
@@ -7479,11 +7473,10 @@ def check_precommit_hook_status(repo_root: Path) -> tuple[PrecommitStatus, list[
         content = h_path.read_text(encoding="utf-8")
         if hook_hash(content) == hook_hash(HOOK_CONTENT):
             return "Installed", [f"Hook found at: {short_path(h_path)}"]
-        else:
-            return "Foreign Hook", [
-                f"A non-bash2gitlab hook exists at: {short_path(h_path)}",
-                "Run `install-precommit --force` to overwrite it.",
-            ]
+        return "Foreign Hook", [
+            f"A non-bash2gitlab hook exists at: {short_path(h_path)}",
+            "Run `install-precommit --force` to overwrite it.",
+        ]
     except Exception as e:
         return "Error", [f"Could not check git hooks directory: {e}"]
 
@@ -7619,8 +7612,7 @@ def check_for_large_scripts(input_dir: Path) -> list[str]:
                 size = script_file.stat().st_size
                 if size > LARGE_SCRIPT_THRESHOLD_BYTES:
                     warnings.append(
-                        f"Large script file found: {short_path(script_file)} ({size / 1024:.1f} KB). "
-                        f"This may impact performance or YAML readability when inlined."
+                        f"Large script file found: {short_path(script_file)} ({size / 1024:.1f} KB). This may impact performance or YAML readability when inlined."
                     )
             except FileNotFoundError:
                 # File might be a broken symlink, ignore.
@@ -9367,7 +9359,7 @@ def run_map_deploy(
         if not isinstance(target_bases, (list, tuple, set)):
             logger.error(f"Invalid format for '{source_base}'. Targets must be a list. Skipping.")
             continue
-        if not len(target_bases):
+        if not target_bases:
             logger.warning("Source folder but no destinations!")
 
         for target_base in target_bases:
@@ -9718,7 +9710,7 @@ def get_value_and_source_details(prop_name: str, config_instance: Config) -> tup
 
     # Check Environment Variable
     env_key = f"{section}_{key}" if section else key
-    env_var_name = config_instance._ENV_VAR_PREFIX + env_key.upper()
+    env_var_name = config_instance.ENV_VAR_PREFIX + env_key.upper()
     if env_var_name in os.environ:
         return value, "Environment Variable", env_var_name
 
@@ -12402,18 +12394,44 @@ def resolve_exit_code(exc: BaseException) -> ExitCode:
                   "type": "object",
                   "description": "Used to configure the kubernetes deployment for this environment. This is currently not supported for kubernetes clusters that are managed by GitLab.",
                   "properties": {
-                    "namespace": {
-                      "type": "string",
-                      "description": "The kubernetes namespace where this environment should be deployed to.",
-                      "minLength": 1
-                    },
                     "agent": {
                       "type": "string",
                       "description": "Specifies the GitLab Agent for Kubernetes. The format is `path/to/agent/project:agent-name`."
                     },
+                    "namespace": {
+                      "type": "string",
+                      "description": "Deprecated. Use `dashboard.namespace` instead. The kubernetes namespace where this environment's dashboard should be deployed to.",
+                      "minLength": 1
+                    },
                     "flux_resource_path": {
                       "type": "string",
-                      "description": "The Flux resource path to associate with this environment. This must be the full resource path. For example, 'helm.toolkit.fluxcd.io/v2/namespaces/gitlab-agent/helmreleases/gitlab-agent'."
+                      "description": "Deprecated. Use `dashboard.flux_resource_path` instead. The Flux resource path to associate with this environment. This must be the full resource path. For example, 'helm.toolkit.fluxcd.io/v2/namespaces/gitlab-agent/helmreleases/gitlab-agent'."
+                    },
+                    "managed_resources": {
+                      "type": "object",
+                      "description": "Used to configure the managed resources for this environment.",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Indicates whether the managed resources are enabled for this environment.",
+                          "default": true
+                        }
+                      }
+                    },
+                    "dashboard": {
+                      "type": "object",
+                      "description": "Used to configure the dashboard for this environment.",
+                      "properties": {
+                        "namespace": {
+                          "type": "string",
+                          "description": "The kubernetes namespace where the dashboard for this environment should be deployed to.",
+                          "minLength": 1
+                        },
+                        "flux_resource_path": {
+                          "type": "string",
+                          "description": "The Flux resource path to associate with this environment. This must be the full resource path. For example, 'helm.toolkit.fluxcd.io/v2/namespaces/gitlab-agent/helmreleases/gitlab-agent'."
+                        }
+                      }
                     }
                   }
                 },
@@ -13194,6 +13212,15 @@ def resolve_exit_code(exc: BaseException) -> ExitCode:
   }
 }
 ```
+## File: schemas\NOTICE.txt
+```
+Copyright (c) 2015-present Mads Kristensen
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+```
 ## File: utils\check_interactive.py
 ```python
 from __future__ import annotations
@@ -13263,6 +13290,32 @@ def detect_environment() -> EnvType:
 ```
 ## File: utils\cli_suggestions.py
 ```python
+"""
+Smart argument parser with typo suggestions.
+
+This module provides a subclass of `argparse.ArgumentParser` that enhances
+the error reporting behavior when users supply invalid choices. If a user
+makes a typo in a choice, the parser will suggest the closest matches
+based on string similarity.
+
+Example:
+    ```python
+    import sys
+
+    parser = SmartParser(prog="myapp")
+    parser.add_argument("color", choices=["red", "green", "blue"])
+    args = parser.parse_args()
+
+    # If the user runs:
+    #   myapp gren
+    #
+    # The output will include:
+    #   error: invalid choice: 'gren' (choose from 'red', 'green', 'blue')
+    #
+    #   Did you mean: green?
+    ```
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -13271,7 +13324,49 @@ from difflib import get_close_matches
 
 
 class SmartParser(argparse.ArgumentParser):
+    """Argument parser that suggests similar choices on invalid input.
+
+    This class extends `argparse.ArgumentParser` to provide more helpful
+    error messages when the user provides an invalid choice for an argument.
+    Instead of only showing the list of valid choices, it also suggests the
+    closest matches using fuzzy string matching.
+
+    Example:
+        ```python
+        parser = SmartParser()
+        parser.add_argument("fruit", choices=["apple", "banana", "cherry"])
+        args = parser.parse_args()
+        ```
+
+    If the user types:
+        ```
+        myprog bannna
+        ```
+
+    The error message will include:
+        ```
+        Did you mean: banana?
+        ```
+    """
+
     def error(self, message: str):
+        """Handle parsing errors with suggestions for invalid choices.
+
+        Args:
+            message (str): The error message generated by argparse,
+                typically when parsing fails (e.g., due to invalid
+                choices or syntax errors).
+
+        Side Effects:
+            - Prints usage information to `sys.stderr`.
+            - Exits the program with status code 2.
+
+        Behavior:
+            - If the error message contains an "invalid choice" message,
+              attempts to suggest the closest valid alternatives by
+              computing string similarity.
+            - Otherwise, preserves standard argparse behavior.
+        """
         # Detect "invalid choice: 'foo' (choose from ...)"
         if "invalid choice" in message and "choose from" in message:
             bad = message.split("invalid choice:")[1].split("(")[0].strip().strip("'\"")
@@ -13281,24 +13376,9 @@ class SmartParser(argparse.ArgumentParser):
             tips = get_close_matches(bad, choices, n=3, cutoff=0.6)
             if tips:
                 message += f"\n\nDid you mean: {', '.join(tips)}?"
+
         self.print_usage(sys.stderr)
         self.exit(2, f"{self.prog}: error: {message}\n")
-
-
-def cli(argv=None):
-    p = SmartParser(prog="mycli")
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    for name in ["init", "install", "inspect", "index"]:
-        sp = sub.add_parser(name)
-        sp.set_defaults(func=lambda args, n=name: print(f"ran {n}"))
-
-    args = p.parse_args(argv)
-    args.func(args)
-
-
-if __name__ == "__main__":
-    cli()
 ```
 ## File: utils\diff_helpers.py
 ```python
@@ -14170,8 +14250,8 @@ def fetch_pypi_json(url: str, timeout: float) -> dict:
     """
     try:
         return fetch_json(url, timeout)
-    except Bash2GitlabError as error:
-        raise PackageNotFoundError() from error
+    except Bash2GitlabError as the_error:
+        raise PackageNotFoundError() from the_error
     # req = request.Request(url, headers={"User-Agent": "bash2gitlab-update-checker/2"})
     # with request.urlopen(req, timeout=timeout) as resp:  # nosec
     #     return json.loads(resp.read().decode("utf-8"))
@@ -14396,8 +14476,6 @@ def _background_update_worker(
 
 def _exit_handler() -> None:
     """Exit handler to display update message if available."""
-    global _background_check_result
-
     if _background_check_result:
         print(f"\n{_background_check_result}", file=sys.stderr)
 
@@ -14551,7 +14629,10 @@ _HTTP = urllib3.PoolManager(
 )
 
 
-def fetch_json(url: str, timeout: float) -> dict[str, Any]:
+def fetch_json(
+    url: str,
+    timeout: float,  # noqa
+) -> dict[str, Any]:
     """
     Fetch JSON metadata from PyPI (or any HTTPS JSON endpoint) using urllib3.
 
@@ -14766,7 +14847,7 @@ class GitLabCIValidator:
 
         return None
 
-    @functools.lru_cache(maxsize=None)
+    @functools.cache  # noqa: B019
     def get_schema(self) -> dict[str, Any]:
         """
         Get the GitLab CI schema, trying URL first, then cache, then fallback.

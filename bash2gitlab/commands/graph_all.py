@@ -141,7 +141,9 @@ def parse_shell_script_dependencies(
                 sourced_path = (script_path.parent / sourced_script_name).resolve()
 
                 if not is_relative_to(sourced_path, root_path):
-                    logger.error(f"Refusing to trace source '{short_path(sourced_path)}': escapes allowed root '{root_path}'.")
+                    logger.error(
+                        f"Refusing to trace source '{short_path(sourced_path)}': escapes allowed root '{root_path}'."
+                    )
                     continue
 
                 graph[script_path].add(sourced_path)
@@ -358,7 +360,9 @@ def render_graph(
             elif chosen == "networkx":
                 out_path = _render_with_networkx(model.graph, model.root_path, base)
             else:
-                raise RuntimeError("No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib.")
+                raise RuntimeError(
+                    "No suitable renderer available. Install one of: graphviz, pyvis, networkx+matplotlib."
+                )
         model.last_render_path = out_path
         logger.info("Wrote graph to %s", short_path(out_path))
         if open_in_browser and not os.environ.get("CI"):

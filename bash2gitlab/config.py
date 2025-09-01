@@ -67,7 +67,9 @@ class Config:
             return {}
 
         if not tomllib:
-            logger.warning("TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11.")
+            logger.warning(
+                "TOML library not found. Cannot load config from file. Please `pip install tomli` on Python < 3.11."
+            )
             return {}
 
         try:

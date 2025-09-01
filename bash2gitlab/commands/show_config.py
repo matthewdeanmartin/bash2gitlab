@@ -156,7 +156,11 @@ def run_show_config() -> int:
             key_padded = display_key.ljust(max_key_len)
 
             if isinstance(value, dict):
-                value_str = f"\n{Colors.BOLD}" + "\n".join(f"{' ' * (max_key_len + 5)}- {k}: {v}" for k, v in value.items()) + f"{Colors.ENDC}"
+                value_str = (
+                    f"\n{Colors.BOLD}"
+                    + "\n".join(f"{' ' * (max_key_len + 5)}- {k}: {v}" for k, v in value.items())
+                    + f"{Colors.ENDC}"
+                )
             elif value is not None:
                 value_str = f"{Colors.BOLD}{value}{Colors.ENDC}"
             else:

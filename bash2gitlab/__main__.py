@@ -449,7 +449,9 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # --- Compile Command ---
-    compile_parser = subparsers.add_parser("compile", help="Compile an uncompiled directory into a standard GitLab CI structure.")
+    compile_parser = subparsers.add_parser(
+        "compile", help="Compile an uncompiled directory into a standard GitLab CI structure."
+    )
     compile_parser.add_argument(
         "--in",
         dest="input_dir",
@@ -496,7 +498,9 @@ def main() -> int:
     decompile_parser = subparsers.add_parser(
         "decompile",
         help="Decompile GitLab CI YAML: extract scripts/variables to .sh and rewrite YAML.",
-        description=("Use either --in-file (single YAML) or --in-folder (process tree).\n--out must be a directory; output YAML and scripts are written side-by-side."),
+        description=(
+            "Use either --in-file (single YAML) or --in-folder (process tree).\n--out must be a directory; output YAML and scripts are written side-by-side."
+        ),
     )
 
     group = decompile_parser.add_mutually_exclusive_group(required=True)
@@ -526,7 +530,9 @@ def main() -> int:
     decompile_parser.set_defaults(func=decompile_handler)
 
     # detect drift command
-    detect_drift_parser = subparsers.add_parser("detect-drift", help="Detect if generated files have been edited and display what the edits are.")
+    detect_drift_parser = subparsers.add_parser(
+        "detect-drift", help="Detect if generated files have been edited and display what the edits are."
+    )
     detect_drift_parser.add_argument(
         "--out",
         dest="out",
@@ -609,7 +615,9 @@ def main() -> int:
     # --- commit-map Command ---
     commit_map_parser = subparsers.add_parser(
         "commit-map",
-        help=("Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml."),
+        help=(
+            "Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml."
+        ),
     )
     commit_map_parser.add_argument(
         "--pyproject",
@@ -630,7 +638,10 @@ def main() -> int:
     lint_parser = subparsers.add_parser(
         "lint",
         help="Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped).",
-        description=("Run GitLab CI Lint for every *.yml/*.yaml file under the output directory.\n\n" + essential_gitlab_args_help),
+        description=(
+            "Run GitLab CI Lint for every *.yml/*.yaml file under the output directory.\n\n"
+            + essential_gitlab_args_help
+        ),
     )
     lint_parser.add_argument(
         "--out",
@@ -726,12 +737,16 @@ def main() -> int:
     uninstall_pc.set_defaults(func=uninstall_precommit_handler)
 
     # --- Doctor Command ---
-    doctor_parser = subparsers.add_parser("doctor", help="Run a series of health checks on the project and environment.")
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Run a series of health checks on the project and environment."
+    )
     add_common_arguments(doctor_parser)
     doctor_parser.set_defaults(func=doctor_handler)
 
     # --- Graph Command ---
-    graph_parser = subparsers.add_parser("graph", help="Generate a DOT language dependency graph of your project's YAML and script files.")
+    graph_parser = subparsers.add_parser(
+        "graph", help="Generate a DOT language dependency graph of your project's YAML and script files."
+    )
     graph_parser.add_argument(
         "--in",
         dest="input_dir",
@@ -742,7 +757,9 @@ def main() -> int:
     graph_parser.set_defaults(func=graph_handler)
 
     # --- Show Config Command ---
-    show_config_parser = subparsers.add_parser("show-config", help="Display the current bash2gitlab configuration and its sources.")
+    show_config_parser = subparsers.add_parser(
+        "show-config", help="Display the current bash2gitlab configuration and its sources."
+    )
     add_common_arguments(show_config_parser)
     show_config_parser.set_defaults(func=show_config_handler)
 
@@ -760,10 +777,16 @@ def main() -> int:
     run_parser.set_defaults(func=best_effort_run_handler)
 
     # --- Detect Uncompiled ----
-    detect_uncompiled_parser = subparsers.add_parser("detect-uncompiled", help="Detect if input files have changed since last compilation")
+    detect_uncompiled_parser = subparsers.add_parser(
+        "detect-uncompiled", help="Detect if input files have changed since last compilation"
+    )
     """Add change detection arguments to argument parser."""
-    detect_uncompiled_parser.add_argument("--check-only", action="store_true", help="Only check if compilation is needed, do not compile")
-    detect_uncompiled_parser.add_argument("--list-changed", action="store_true", help="List files that have changed since last compilation")
+    detect_uncompiled_parser.add_argument(
+        "--check-only", action="store_true", help="Only check if compilation is needed, do not compile"
+    )
+    detect_uncompiled_parser.add_argument(
+        "--list-changed", action="store_true", help="List files that have changed since last compilation"
+    )
     detect_uncompiled_parser.add_argument(
         "--in",
         dest="input_dir",

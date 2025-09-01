@@ -178,14 +178,18 @@ class Bash2GitlabGUI:
         self.vars["compile_input"] = tk.StringVar()
         input_entry = ttk.Entry(compile_frame, textvariable=self.vars["compile_input"], width=50)
         input_entry.grid(row=0, column=1, padx=5, pady=2)
-        ttk.Button(compile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["compile_input"])).grid(row=0, column=2, padx=5)
+        ttk.Button(
+            compile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["compile_input"])
+        ).grid(row=0, column=2, padx=5)
 
         # Output directory
         ttk.Label(compile_frame, text="Output Directory:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.vars["compile_output"] = tk.StringVar()
         output_entry = ttk.Entry(compile_frame, textvariable=self.vars["compile_output"], width=50)
         output_entry.grid(row=1, column=1, padx=5, pady=2)
-        ttk.Button(compile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["compile_output"])).grid(row=1, column=2, padx=5)
+        ttk.Button(
+            compile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["compile_output"])
+        ).grid(row=1, column=2, padx=5)
 
         # Options
         options_frame = ttk.Frame(compile_frame)
@@ -195,7 +199,9 @@ class Bash2GitlabGUI:
         ttk.Checkbutton(options_frame, text="Dry Run", variable=self.vars["compile_dry_run"]).pack(side=tk.LEFT, padx=5)
 
         self.vars["compile_watch"] = tk.BooleanVar()
-        ttk.Checkbutton(options_frame, text="Watch Mode", variable=self.vars["compile_watch"]).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(options_frame, text="Watch Mode", variable=self.vars["compile_watch"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
         self.vars["compile_verbose"] = tk.BooleanVar()
         ttk.Checkbutton(options_frame, text="Verbose", variable=self.vars["compile_verbose"]).pack(side=tk.LEFT, padx=5)
@@ -203,7 +209,9 @@ class Bash2GitlabGUI:
         # Parallelism
         ttk.Label(options_frame, text="Parallelism:").pack(side=tk.LEFT, padx=(20, 5))
         self.vars["compile_parallelism"] = tk.StringVar(value="4")
-        ttk.Spinbox(options_frame, from_=1, to=16, width=5, textvariable=self.vars["compile_parallelism"]).pack(side=tk.LEFT)
+        ttk.Spinbox(options_frame, from_=1, to=16, width=5, textvariable=self.vars["compile_parallelism"]).pack(
+            side=tk.LEFT
+        )
 
         # Buttons
         button_frame = ttk.Frame(compile_frame)
@@ -220,7 +228,9 @@ class Bash2GitlabGUI:
         self.vars["clean_output"] = tk.StringVar()
         clean_entry = ttk.Entry(clean_frame, textvariable=self.vars["clean_output"], width=50)
         clean_entry.grid(row=0, column=1, padx=5, pady=2)
-        ttk.Button(clean_frame, text="Browse", command=lambda: self.browse_directory(self.vars["clean_output"])).grid(row=0, column=2, padx=5)
+        ttk.Button(clean_frame, text="Browse", command=lambda: self.browse_directory(self.vars["clean_output"])).grid(
+            row=0, column=2, padx=5
+        )
 
         # Clean options
         clean_options = ttk.Frame(clean_frame)
@@ -265,13 +275,17 @@ class Bash2GitlabGUI:
         self.vars["decompile_input_file"] = tk.StringVar()
         self.decompile_file_entry = ttk.Entry(decompile_frame, textvariable=self.vars["decompile_input_file"], width=50)
         self.decompile_file_entry.grid(row=1, column=1, padx=5, pady=2)
-        self.decompile_file_btn = ttk.Button(decompile_frame, text="Browse", command=lambda: self.browse_file(self.vars["decompile_input_file"]))
+        self.decompile_file_btn = ttk.Button(
+            decompile_frame, text="Browse", command=lambda: self.browse_file(self.vars["decompile_input_file"])
+        )
         self.decompile_file_btn.grid(row=1, column=2, padx=5)
 
         # Input folder
         ttk.Label(decompile_frame, text="Input Folder:").grid(row=2, column=0, sticky=tk.W, pady=2)
         self.vars["decompile_input_folder"] = tk.StringVar()
-        self.decompile_folder_entry = ttk.Entry(decompile_frame, textvariable=self.vars["decompile_input_folder"], width=50, state=tk.DISABLED)
+        self.decompile_folder_entry = ttk.Entry(
+            decompile_frame, textvariable=self.vars["decompile_input_folder"], width=50, state=tk.DISABLED
+        )
         self.decompile_folder_entry.grid(row=2, column=1, padx=5, pady=2)
         self.decompile_folder_btn = ttk.Button(
             decompile_frame,
@@ -284,18 +298,26 @@ class Bash2GitlabGUI:
         # Output directory
         ttk.Label(decompile_frame, text="Output Directory:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self.vars["decompile_output"] = tk.StringVar()
-        ttk.Entry(decompile_frame, textvariable=self.vars["decompile_output"], width=50).grid(row=3, column=1, padx=5, pady=2)
-        ttk.Button(decompile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["decompile_output"])).grid(row=3, column=2, padx=5)
+        ttk.Entry(decompile_frame, textvariable=self.vars["decompile_output"], width=50).grid(
+            row=3, column=1, padx=5, pady=2
+        )
+        ttk.Button(
+            decompile_frame, text="Browse", command=lambda: self.browse_directory(self.vars["decompile_output"])
+        ).grid(row=3, column=2, padx=5)
 
         # Options
         decompile_options = ttk.Frame(decompile_frame)
         decompile_options.grid(row=4, column=0, columnspan=3, sticky=tk.W, pady=10)
 
         self.vars["decompile_dry_run"] = tk.BooleanVar()
-        ttk.Checkbutton(decompile_options, text="Dry Run", variable=self.vars["decompile_dry_run"]).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(decompile_options, text="Dry Run", variable=self.vars["decompile_dry_run"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
         self.vars["decompile_verbose"] = tk.BooleanVar()
-        ttk.Checkbutton(decompile_options, text="Verbose", variable=self.vars["decompile_verbose"]).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(decompile_options, text="Verbose", variable=self.vars["decompile_verbose"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
         ttk.Button(decompile_options, text="Decompile", command=self.run_decompile).pack(side=tk.LEFT, padx=20)
 
@@ -311,7 +333,9 @@ class Bash2GitlabGUI:
         ttk.Label(init_frame, text="Directory:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.vars["init_directory"] = tk.StringVar(value=".")
         ttk.Entry(init_frame, textvariable=self.vars["init_directory"], width=50).grid(row=0, column=1, padx=5, pady=2)
-        ttk.Button(init_frame, text="Browse", command=lambda: self.browse_directory(self.vars["init_directory"])).grid(row=0, column=2, padx=5)
+        ttk.Button(init_frame, text="Browse", command=lambda: self.browse_directory(self.vars["init_directory"])).grid(
+            row=0, column=2, padx=5
+        )
 
         init_options = ttk.Frame(init_frame)
         init_options.grid(row=1, column=0, columnspan=3, pady=10)
@@ -340,7 +364,9 @@ class Bash2GitlabGUI:
         ttk.Label(copy_frame, text="Copy Directory:").grid(row=3, column=0, sticky=tk.W, pady=2)
         self.vars["copy_copy_dir"] = tk.StringVar()
         ttk.Entry(copy_frame, textvariable=self.vars["copy_copy_dir"], width=50).grid(row=3, column=1, padx=5, pady=2)
-        ttk.Button(copy_frame, text="Browse", command=lambda: self.browse_directory(self.vars["copy_copy_dir"])).grid(row=3, column=2, padx=5)
+        ttk.Button(copy_frame, text="Browse", command=lambda: self.browse_directory(self.vars["copy_copy_dir"])).grid(
+            row=3, column=2, padx=5
+        )
 
         copy_options = ttk.Frame(copy_frame)
         copy_options.grid(row=4, column=0, columnspan=3, pady=10)
@@ -357,9 +383,13 @@ class Bash2GitlabGUI:
         ttk.Label(drift_frame, text="Output Directory:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.vars["drift_output"] = tk.StringVar()
         ttk.Entry(drift_frame, textvariable=self.vars["drift_output"], width=50).grid(row=0, column=1, padx=5, pady=2)
-        ttk.Button(drift_frame, text="Browse", command=lambda: self.browse_directory(self.vars["drift_output"])).grid(row=0, column=2, padx=5)
+        ttk.Button(drift_frame, text="Browse", command=lambda: self.browse_directory(self.vars["drift_output"])).grid(
+            row=0, column=2, padx=5
+        )
 
-        ttk.Button(drift_frame, text="Detect Drift", command=self.run_detect_drift).grid(row=1, column=0, columnspan=3, pady=10)
+        ttk.Button(drift_frame, text="Detect Drift", command=self.run_detect_drift).grid(
+            row=1, column=0, columnspan=3, pady=10
+        )
 
     def create_lint_tab(self, parent: ttk.Notebook) -> None:
         """Create the lint tab."""
@@ -373,7 +403,9 @@ class Bash2GitlabGUI:
         ttk.Label(lint_frame, text="Output Directory:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.vars["lint_output"] = tk.StringVar()
         ttk.Entry(lint_frame, textvariable=self.vars["lint_output"], width=50).grid(row=0, column=1, padx=5, pady=2)
-        ttk.Button(lint_frame, text="Browse", command=lambda: self.browse_directory(self.vars["lint_output"])).grid(row=0, column=2, padx=5)
+        ttk.Button(lint_frame, text="Browse", command=lambda: self.browse_directory(self.vars["lint_output"])).grid(
+            row=0, column=2, padx=5
+        )
 
         # GitLab URL
         ttk.Label(lint_frame, text="GitLab URL:").grid(row=1, column=0, sticky=tk.W, pady=2)
@@ -401,10 +433,14 @@ class Bash2GitlabGUI:
         lint_options_frame.grid(row=5, column=0, columnspan=3, sticky=tk.W, pady=10)
 
         self.vars["lint_include_merged"] = tk.BooleanVar()
-        ttk.Checkbutton(lint_options_frame, text="Include Merged YAML", variable=self.vars["lint_include_merged"]).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(lint_options_frame, text="Include Merged YAML", variable=self.vars["lint_include_merged"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
         self.vars["lint_verbose"] = tk.BooleanVar()
-        ttk.Checkbutton(lint_options_frame, text="Verbose", variable=self.vars["lint_verbose"]).pack(side=tk.LEFT, padx=5)
+        ttk.Checkbutton(lint_options_frame, text="Verbose", variable=self.vars["lint_verbose"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
         # Parallelism and timeout
         params_frame = ttk.Frame(lint_frame)
@@ -412,7 +448,9 @@ class Bash2GitlabGUI:
 
         ttk.Label(params_frame, text="Parallelism:").pack(side=tk.LEFT, padx=5)
         self.vars["lint_parallelism"] = tk.StringVar(value="4")
-        ttk.Spinbox(params_frame, from_=1, to=16, width=5, textvariable=self.vars["lint_parallelism"]).pack(side=tk.LEFT, padx=5)
+        ttk.Spinbox(params_frame, from_=1, to=16, width=5, textvariable=self.vars["lint_parallelism"]).pack(
+            side=tk.LEFT, padx=5
+        )
 
         ttk.Label(params_frame, text="Timeout (s):").pack(side=tk.LEFT, padx=(20, 5))
         self.vars["lint_timeout"] = tk.StringVar(value="20")
@@ -431,8 +469,12 @@ class Bash2GitlabGUI:
 
         ttk.Label(precommit_frame, text="Repository Root:").grid(row=0, column=0, sticky=tk.W, pady=2)
         self.vars["git_repo_root"] = tk.StringVar(value=".")
-        ttk.Entry(precommit_frame, textvariable=self.vars["git_repo_root"], width=50).grid(row=0, column=1, padx=5, pady=2)
-        ttk.Button(precommit_frame, text="Browse", command=lambda: self.browse_directory(self.vars["git_repo_root"])).grid(row=0, column=2, padx=5)
+        ttk.Entry(precommit_frame, textvariable=self.vars["git_repo_root"], width=50).grid(
+            row=0, column=1, padx=5, pady=2
+        )
+        ttk.Button(
+            precommit_frame, text="Browse", command=lambda: self.browse_directory(self.vars["git_repo_root"])
+        ).grid(row=0, column=2, padx=5)
 
         git_options = ttk.Frame(precommit_frame)
         git_options.grid(row=1, column=0, columnspan=3, pady=10)
@@ -440,8 +482,12 @@ class Bash2GitlabGUI:
         self.vars["git_force"] = tk.BooleanVar()
         ttk.Checkbutton(git_options, text="Force", variable=self.vars["git_force"]).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(git_options, text="Install Pre-commit Hook", command=self.run_install_precommit).pack(side=tk.LEFT, padx=10)
-        ttk.Button(git_options, text="Uninstall Pre-commit Hook", command=self.run_uninstall_precommit).pack(side=tk.LEFT, padx=10)
+        ttk.Button(git_options, text="Install Pre-commit Hook", command=self.run_install_precommit).pack(
+            side=tk.LEFT, padx=10
+        )
+        ttk.Button(git_options, text="Uninstall Pre-commit Hook", command=self.run_uninstall_precommit).pack(
+            side=tk.LEFT, padx=10
+        )
 
         # Map commands section
         map_frame = ttk.LabelFrame(frame, text="Directory Mapping", padding=10)

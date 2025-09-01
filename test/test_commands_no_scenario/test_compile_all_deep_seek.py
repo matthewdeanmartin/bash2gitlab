@@ -316,7 +316,9 @@ test-job:
         with patch("bash2gitlab.commands.compile_all.write_compiled_file") as mock_write:
             mock_write.return_value = True
 
-            inlined, written = compile_single_file(source_path, output_file, scripts_path, {}, input_dir, False, "test command")
+            inlined, written = compile_single_file(
+                source_path, output_file, scripts_path, {}, input_dir, False, "test command"
+            )
 
             assert inlined == 1
             assert written == 1

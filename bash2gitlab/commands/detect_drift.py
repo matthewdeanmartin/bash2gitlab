@@ -166,7 +166,9 @@ def run_detect_drift(
             if drift_detected_count > 0:
                 print(f"{Colors.FAIL}  - Found {drift_detected_count} file(s) with manual edits.{Colors.ENDC}")
             if error_count > 0:
-                print(f"{Colors.WARNING}  - Encountered {error_count} error(s) during the check (see logs for details).{Colors.ENDC}")
+                print(
+                    f"{Colors.WARNING}  - Encountered {error_count} error(s) during the check (see logs for details).{Colors.ENDC}"
+                )
         else:
             print("\n" + "--- DRIFT DETECTION SUMMARY ---")
             if drift_detected_count > 0:

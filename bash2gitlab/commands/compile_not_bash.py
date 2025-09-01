@@ -147,7 +147,9 @@ def normalize_interp(interp: str) -> str:
     return interp
 
 
-def resolve_interpreter_target(interp: str, module: str | None, path_str: str | None, scripts_root: Path) -> tuple[Path, str]:
+def resolve_interpreter_target(
+    interp: str, module: str | None, path_str: str | None, scripts_root: Path
+) -> tuple[Path, str]:
     """Resolve the target file and a display label from either a module or a path.
     For python -m, map "a.b.c" -> a/b/c.py
     """

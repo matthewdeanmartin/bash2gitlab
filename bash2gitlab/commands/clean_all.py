@@ -176,7 +176,9 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
     for base_file, hash_file in sorted(seen_pairs):
         status = is_target_unchanged(base_file, hash_file)
         if status is None:
-            logger.warning("Refusing to remove %s (invalid/corrupt hash at %s)", short_path(base_file), short_path(hash_file))
+            logger.warning(
+                "Refusing to remove %s (invalid/corrupt hash at %s)", short_path(base_file), short_path(hash_file)
+            )
             skipped_invalid += 1
             continue
         if not status:

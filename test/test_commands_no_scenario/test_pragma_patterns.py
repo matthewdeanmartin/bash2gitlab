@@ -71,7 +71,9 @@ PRAGMA_REGEX = re.compile(
         # Category 4: On lines with other content
         pytest.param("source ./lib.sh # Pragma: do-not-inline", "do-not-inline", id="on_line_with_command"),
         pytest.param("    # Pragma: start-do-not-inline", "start-do-not-inline", id="on_line_with_leading_indent"),
-        pytest.param("# Pragma: end-do-not-inline # with extra comment", "end-do-not-inline", id="on_line_with_trailing_comment"),
+        pytest.param(
+            "# Pragma: end-do-not-inline # with extra comment", "end-do-not-inline", id="on_line_with_trailing_comment"
+        ),
     ],
 )
 def test_pragma_regex_positive_matches(input_line, expected_command):

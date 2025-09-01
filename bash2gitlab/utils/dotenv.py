@@ -63,7 +63,10 @@ def parse_env_content_with_descriptions(content: str) -> dict[str, EnvVar]:
                 value = value[1:-1]
 
             variables[key] = EnvVar(value=value, description=current_description)
-            logger.debug(f"Found variable: {key} = {value}" + (f" (description: {current_description})" if current_description else ""))
+            logger.debug(
+                f"Found variable: {key} = {value}"
+                + (f" (description: {current_description})" if current_description else "")
+            )
 
             # Reset description after using it
             current_description = None

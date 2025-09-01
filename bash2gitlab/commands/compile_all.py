@@ -147,7 +147,9 @@ def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any
     return out
 
 
-def process_script_list(script_list: list[TaggedScalar | str] | CommentedSeq | str, scripts_root: Path, collapse_lists: bool = True) -> list[Any] | CommentedSeq | LiteralScalarString:
+def process_script_list(
+    script_list: list[TaggedScalar | str] | CommentedSeq | str, scripts_root: Path, collapse_lists: bool = True
+) -> list[Any] | CommentedSeq | LiteralScalarString:
     """Process a script list, inlining shell files while preserving YAML features.
 
     The function accepts plain Python lists, ruamel ``CommentedSeq`` nodes, or a single
@@ -206,7 +208,9 @@ def process_script_list(script_list: list[TaggedScalar | str] | CommentedSeq | s
                 bash_code = read_bash_script(script_path)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(f"Could not inline script '{script_path_str}': {e}. Preserving original line.")
-                raise Bash2GitlabError(f"Could not inline script '{script_path_str}': {e}. Preserving original line.") from e
+                raise Bash2GitlabError(
+                    f"Could not inline script '{script_path_str}': {e}. Preserving original line."
+                ) from e
             bash_lines = bash_code.splitlines()
             logger.debug(
                 "Inlining script '%s' (%d lines).",
@@ -241,7 +245,9 @@ def process_script_list(script_list: list[TaggedScalar | str] | CommentedSeq | s
 
     # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)
-    has_yaml_features = contains_tagged_scalar or contains_anchors_or_tags or was_commented_seq or not only_plain_strings
+    has_yaml_features = (
+        contains_tagged_scalar or contains_anchors_or_tags or was_commented_seq or not only_plain_strings
+    )
 
     # Collapse to literal block only when no YAML features and sufficiently long
     if not has_yaml_features and only_plain_strings and len(processed_items) > 1 and collapse_lists and scripts_found:
@@ -387,7 +393,12 @@ def inline_gitlab_scripts(
                     inlined_count += 1
 
             # A simple heuristic for a "job" is a dictionary with a 'script' key.
-            if "script" in job_data or "before_script" in job_data or "after_script" in job_data or "pre_get_sources_script" in job_data:
+            if (
+                "script" in job_data
+                or "before_script" in job_data
+                or "after_script" in job_data
+                or "pre_get_sources_script" in job_data
+            ):
                 logger.debug(f"Processing job: {job_name}")
                 inlined_count += process_job(job_data, scripts_root)
             if "hooks" in job_data:
@@ -445,9 +456,13 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         current_content = output_file.read_text(encoding="utf-8")
 
         if not yaml_is_same(current_content, new_content):
-            diff_text = diff_helpers.unified_diff(normalize_for_compare(current_content), normalize_for_compare(new_content), output_file)
+            diff_text = diff_helpers.unified_diff(
+                normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
+            )
             different = diff_helpers.diff_stats(diff_text)
-            logger.info(f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions}).")
+            logger.info(
+                f"[DRY RUN] Would rewrite {short_path(output_file)}: {different.changed} lines changed (+{different.insertions}, -{different.deletions})."
+            )
             logger.debug(diff_text)
             return True
         logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")
@@ -508,7 +523,11 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             "last known good",
             "current",
         )
-        corruption_warning = "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n" if is_current_corrupt else ""
+        corruption_warning = (
+            "The file is also syntactically invalid YAML, which is why it could not be processed.\n\n"
+            if is_current_corrupt
+            else ""
+        )
 
         error_message = f"\n--- MANUAL EDIT DETECTED ---\nCANNOT OVERWRITE: The destination file below has been modified:\n  {output_file}\n\n{corruption_warning}The script detected that its data no longer matches the last generated version.\nTo prevent data loss, the process has been stopped.\n\n--- DETECTED CHANGES ---\n{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n--- HOW TO RESOLVE ---\n1. Revert the manual changes in '{output_file}' and run this script again.\nOR\n2. If the manual changes are desired, incorporate them into the source files\n   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n   to regenerate it from the new base.\n"
         print(error_message)
@@ -518,7 +537,9 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
     # Now, we check if the *newly generated* content is different from the current content.
     if not yaml_is_same(current_content, new_content):
         # NEW: log diff + counts before writing
-        diff_text = diff_helpers.unified_diff(normalize_for_compare(current_content), normalize_for_compare(new_content), output_file)
+        diff_text = diff_helpers.unified_diff(
+            normalize_for_compare(current_content), normalize_for_compare(new_content), output_file
+        )
         different = diff_helpers.diff_stats(diff_text)
         logger.info(
             "(1) Rewriting %s: %d lines changed (+%d, -%d).",
@@ -630,14 +651,19 @@ def run_compile_all(
         validator = GitLabCIValidator()
         validator.get_schema()
 
-        args_list = [(src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command) for src, out, variables in files_to_process]
+        args_list = [
+            (src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command)
+            for src, out, variables in files_to_process
+        ]
         with multiprocessing.Pool(processes=max_workers) as pool:
             results = pool.starmap(compile_single_file, args_list)
         total_inlined_count += sum(inlined for inlined, _ in results)
         written_files_count += sum(written for _, written in results)
     else:
         for src, out, variables in files_to_process:
-            inlined_for_file, wrote = compile_single_file(src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command)
+            inlined_for_file, wrote = compile_single_file(
+                src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command
+            )
             total_inlined_count += inlined_for_file
             written_files_count += wrote
 
@@ -650,7 +676,9 @@ def run_compile_all(
             logger.warning(f"Failed to update input hashes: {e}")
 
     if written_files_count == 0 and not dry_run:
-        logger.warning("No output files were written. This could be because all files are up-to-date, or due to errors.")
+        logger.warning(
+            "No output files were written. This could be because all files are up-to-date, or due to errors."
+        )
     elif not dry_run:
         logger.info(f"Successfully processed files. {written_files_count} file(s) were created or updated.")
     elif dry_run:

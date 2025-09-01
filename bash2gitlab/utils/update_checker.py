@@ -270,7 +270,9 @@ def get_version_info_from_pypi(
 
             if not releases:
                 info_ver = data.get("info", {}).get("version")
-                return VersionInfo(latest_stable=str(info_ver) if info_ver else None, latest_dev=None, current_yanked=False)
+                return VersionInfo(
+                    latest_stable=str(info_ver) if info_ver else None, latest_dev=None, current_yanked=False
+                )
 
             # Check if current version is yanked
             current_yanked = is_version_yanked(releases, current_version)
@@ -345,7 +347,9 @@ def format_update_message(
         if c:
             yank_msg = f"{c.RED}WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!{c.ENDC}"
         else:
-            yank_msg = f"WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!"
+            yank_msg = (
+                f"WARNING: Your current version {current_version_str} of {package_name} has been yanked from PyPI!"
+            )
         messages.append(yank_msg)
 
     # Check for stable updates
@@ -486,7 +490,9 @@ def check_for_updates(
         return None
 
     try:
-        version_info = get_version_info_from_pypi(package_name, current_version, include_prereleases=include_prereleases)
+        version_info = get_version_info_from_pypi(
+            package_name, current_version, include_prereleases=include_prereleases
+        )
 
         message = format_update_message(package_name, current_version, version_info)
 

@@ -20,7 +20,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from bash2gitlab.commands.clean_all import clean_targets
-
 # Import your existing bash2gitlab modules
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_tree

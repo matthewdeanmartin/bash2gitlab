@@ -186,7 +186,9 @@ def install(repo_root: Path | None = None, *, force: bool = False) -> None:
     # Validate repo and config
     _git_dir = resolve_git_dir(repo_root)  # raises if not a repo
     if not has_required_config():
-        raise PrecommitHookError("Missing bash2gitlab input/output configuration. Run `bash2gitlab init` to create TOML, or set BASH2GITLAB_INPUT_DIR and BASH2GITLAB_OUTPUT_DIR.")
+        raise PrecommitHookError(
+            "Missing bash2gitlab input/output configuration. Run `bash2gitlab init` to create TOML, or set BASH2GITLAB_INPUT_DIR and BASH2GITLAB_OUTPUT_DIR."
+        )
 
     # Ensure hooks dir exists
     hdir = hooks_dir(repo_root)
@@ -233,7 +235,9 @@ def uninstall(repo_root: Path | None = None, *, force: bool = False) -> None:
 
     content = dest.read_text(encoding="utf-8")
     if hook_hash(content) != hook_hash(HOOK_CONTENT) and not force:
-        raise PrecommitHookError(f"Pre-commit hook at {dest} does not match bash2gitlab's. Use force=True to remove anyway.")
+        raise PrecommitHookError(
+            f"Pre-commit hook at {dest} does not match bash2gitlab's. Use force=True to remove anyway."
+        )
 
     dest.unlink()
     logger.info("Removed pre-commit hook at %s", dest.relative_to(repo_root))
