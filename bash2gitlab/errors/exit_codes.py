@@ -7,6 +7,7 @@ from bash2gitlab.commands.best_effort_runner import GitlabRunnerError
 from bash2gitlab.commands.compile_bash_reader import PragmaError, SourceSecurityError
 from bash2gitlab.errors.exceptions import (
     Bash2GitlabError,
+    CompilationNeeded,
     CompileError,
     ConfigInvalid,
     NetworkIssue,
@@ -32,6 +33,7 @@ class ExitCode(IntEnum):
     SOURCE_SECURITY_ERROR = 32
     GITLAB_RUNNER_ERROR = 33
     COMPILE_ERROR = 34
+    COMPILATION_NEEDED = 35
 
     # Generic python
     FILE_EXISTS = (80,)
@@ -51,6 +53,7 @@ ERROR_CODE_MAP: dict[type[BaseException], ExitCode] = {
     SourceSecurityError: ExitCode.SOURCE_SECURITY_ERROR,
     PragmaError: ExitCode.PRAGMA_ERROR,
     CompileError: ExitCode.COMPILE_ERROR,
+    CompilationNeeded: ExitCode.COMPILATION_NEEDED,
     # You can add Python built-ins too if you want:
     FileNotFoundError: ExitCode.NOT_FOUND,
     PermissionError: ExitCode.PERMISSION_DENIED,

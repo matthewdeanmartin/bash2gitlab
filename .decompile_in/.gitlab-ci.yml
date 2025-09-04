@@ -4,12 +4,22 @@
 image: python:3.11-slim
 
 variables:
-  PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  UV_LINK_MODE: copy
-  UV_PROJECT_ENVIRONMENT: .venv
-  UV_CACHE_DIR: .uv
+  PIP_DISABLE_PIP_VERSION_CHECK:
+    value: "1"
+    description: No need to check version if not interactive
+  UV_LINK_MODE:
+    value: copy
+    description: "'copy' is more docker friendly"
+  UV_PROJECT_ENVIRONMENT:
+    value: .venv
+    description: commonn default
+  UV_CACHE_DIR:
+    value: .uv
+    description: common default
   # Adjust if your package name differs
-  PACKAGE_DIR: bash2gitlab
+  PACKAGE_DIR:
+    value: bash2gitlab
+    description: single module, no src
 
 stages:
   - test
@@ -42,6 +52,7 @@ cache:
 # TEST STAGE
 # ------------------------
 
+# @Description This is for linting, eh.
 lint:
   stage: test
   script:

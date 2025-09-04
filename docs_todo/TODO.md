@@ -1,5 +1,10 @@
 # TODO
 
+## New commands
+
+- pipeline trigger: after updating a central repo, go tell a bunch of repos to rebuild
+- upgrade pipeline: pin unpinned templates, upgrade pinned templates to latest.
+
 
 ## Bugs
 - validate fails on bad error if --out is missing.

@@ -14,12 +14,16 @@
 │   ├── doctor_checks.py
 │   ├── graph_all.py
 │   ├── init_project.py
+│   ├── inline_clone_and_run.py
 │   ├── input_change_detector.py
 │   ├── lint_all.py
 │   ├── map_commit.py
 │   ├── map_deploy.py
+│   ├── pipeline_docs.py
+│   ├── pipeline_trigger.py
 │   ├── precommit.py
 │   ├── show_config.py
+│   ├── upgrade_pinned_templates.py
 │   └── validate_all.py
 ├── config.py
 ├── errors/
@@ -3038,7 +3042,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.7"
+__version__ = "0.9.8"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
@@ -3088,7 +3092,7 @@ from urllib import error as _urlerror
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.input_change_detector import needs_compilation
 from bash2gitlab.commands.validate_all import run_validate_all
-from bash2gitlab.errors.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError, CompilationNeeded
 from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
 from bash2gitlab.install_help import print_install_help
 
@@ -3459,16 +3463,15 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
 
-def handle_change_detection_commands(args) -> bool:
+def handle_change_detection_commands(args) -> None:
     """Handle change detection specific commands. Returns True if command was handled."""
     input_dir: Path = Path(args.input_dir or "")
     if args.check_only:
         if needs_compilation(input_dir):
             print("Compilation needed: input files have changed")
-            return True
-        else:
-            print("No compilation needed: no input changes detected")
-            return True
+            raise CompilationNeeded()
+        print("No compilation needed: no input changes detected")
+        return
 
     if args.list_changed:
         changed = get_changed_files(input_dir)
@@ -3476,11 +3479,10 @@ def handle_change_detection_commands(args) -> bool:
             print("Changed files since last compilation:")
             for file_path in changed:
                 print(f"  {file_path}")
+            raise CompilationNeeded()
         else:
             print("No files have changed since last compilation")
-        return True
-
-    return False
+        return
 
 
 def main() -> int:
@@ -8246,6 +8248,102 @@ def run_init(directory, force) -> int:
         logger.exception("Unexpected error during init.")
         return 1
 ```
+## File: commands\inline_clone_and_run.py
+```python
+# TODO: haha, this should be a static resources. The function to enerate an invocation should be just a few lines and  Path logic
+
+
+def generate_bash_clone_and_execute() -> str:
+    """
+    Generates a Bash function that clones a Git repository over HTTPS using basic authentication,
+    locates a specified script file within a subfolder at the root of the cloned repository,
+    and executes it using bash while preserving the current working directory.
+
+    This function addresses the challenge of integrating scripts from a templates repository
+    in GitLab CI/CD pipelines, where 'include' is limited to YAML files. By cloning into a
+    temporary directory and executing the script with an absolute path, it avoids interfering
+    with the local filesystem or changing the working directory, ensuring the script runs
+    in the context of the project root if it relies on relative paths.
+
+    The generated Bash code includes a urlencode helper to properly encode the username and
+    password for the clone URL, handling special characters. The repo_url should be provided
+    without the 'https://' prefix or '.git' suffix. The function takes parameters as arguments
+    for flexibility, allowing sensitive values like username and password to be passed via
+    environment variables in CI environments.
+
+    Returns:
+        str: The string containing the Bash function definitions, ready to be included in a script or pipeline.
+    """
+    bash_code = """
+urlencode() {
+    # Usage: urlencode <string>
+    # URL-encodes the input string to handle special characters in usernames or passwords.
+    old_lc_collate=$LC_COLLATE
+    LC_COLLATE=C
+    local length="${#1}"
+    for (( i = 0; i < length; i++ )); do
+        local c="${1:$i:1}"
+        case $c in
+            [a-zA-Z0-9.~_-]) printf '%s' "$c" ;;
+            *) printf '%%%02X' "'$c" ;;
+        esac
+    done
+    LC_COLLATE=$old_lc_collate
+}
+
+clone_and_execute() {
+    # Usage: clone_and_execute <repo_url> <username> <password> <filename> [<subfolder>]
+    # Clones the repo into a temp directory, finds the script in the subfolder (default: 'src'),
+    # executes it from the current working directory, and cleans up.
+    #
+    # Args:
+    #   repo_url: HTTPS URL of the repo without 'https://' or '.git' (e.g., 'gitlab.com/group/templates')
+    #   username: Username for basic auth
+    #   password: Password or token for basic auth
+    #   filename: Name of the script to execute (e.g., 'script.sh')
+    #   subfolder: Optional subfolder where the script is located (default: 'src')
+    local repo_url="$1"
+    local username="$2"
+    local password="$3"
+    local filename="$4"
+    local subfolder="${5:-src}"
+
+    # Create a temporary directory to clone into, avoiding conflicts with the local filesystem
+    local temp_dir=$(mktemp -d)
+
+    # URL-encode username and password to handle special characters
+    local user_enc=$(urlencode "$username")
+    local pass_enc=$(urlencode "$password")
+
+    # Construct the authenticated clone URL, appending '.git'
+    local host_path="${repo_url#https://}"  # Remove 'https://' if present
+    local clone_url="https://${user_enc}:${pass_enc}@${host_path}.git"
+
+    # Clone the repository to the temp directory
+    git clone "$clone_url" "$temp_dir" || { echo "Git clone failed"; rm -rf "$temp_dir"; return 1; }
+
+    # Build the full path to the script
+    local script_path="${temp_dir}/${subfolder}/${filename}"
+
+    # Verify the script exists
+    if [ ! -f "$script_path" ]; then
+        echo "Script file '${filename}' not found in '${subfolder}' subfolder."
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Ensure the script is executable
+    chmod +x "$script_path"
+
+    # Execute the script using bash; the CWD remains the caller's directory, solving path issues
+    bash "$script_path" || { local exit_code=$?; echo "Script execution failed with code ${exit_code}"; rm -rf "$temp_dir"; return $exit_code; }
+
+    # Clean up the temporary directory
+    rm -rf "$temp_dir"
+}
+"""
+    return bash_code
+```
 ## File: commands\input_change_detector.py
 ```python
 """Input change detection for bash2gitlab compilation.
@@ -9265,6 +9363,909 @@ def run_map_deploy(
             target_base_path = Path(target_base).resolve()
             deploy_to_single_target(source_base_path, target_base_path, dry_run, force)
 ```
+## File: commands\pipeline_docs.py
+```python
+from __future__ import annotations
+
+import argparse
+import logging
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from ruamel.yaml import YAML
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
+
+logger = logging.getLogger(__name__)
+
+# Known non-job top-level keys in GitLab CI
+NON_JOB_TOPLEVEL = {
+    "stages",
+    "default",
+    "workflow",
+    "include",
+    "variables",
+    "cache",
+    "image",
+    "services",
+    "before_script",
+    "after_script",
+}
+
+yaml_loader = YAML(typ="rt")  # round-trip to keep comments
+
+
+@dataclass
+class RuleSummary:
+    when: str | None = None
+    if_count: int = 0
+    exists_count: int = 0
+    changes_count: int = 0
+
+    @staticmethod
+    def from_rules(rules: Any) -> RuleSummary:
+        rs = RuleSummary()
+        if not isinstance(rules, (list, CommentedSeq)):
+            return rs
+        for r in rules:
+            if not isinstance(r, (dict, CommentedMap)):
+                continue
+            when = r.get("when")
+            if when:
+                rs.when = when  # last wins (just a hint)
+            if "if" in r:
+                rs.if_count += 1
+            if "exists" in r:
+                rs.exists_count += 1
+            if "changes" in r:
+                rs.changes_count += 1
+        return rs
+
+
+@dataclass
+class ComponentInput:
+    name: str
+    description: str | None = None
+    type: str | None = None
+    default: str | None = None
+    required: bool | None = None
+
+
+@dataclass
+class VariableInfo:
+    name: str
+    value: str
+    description: str | None = None
+
+
+@dataclass
+class JobDoc:
+    name: str
+    stage: str | None = None
+    extends: list[str] = field(default_factory=list)
+    image: str | None = None
+    tags: list[str] = field(default_factory=list)
+    services: list[str] = field(default_factory=list)
+    needs: list[str] = field(default_factory=list)
+    artifacts_paths: list[str] = field(default_factory=list)
+    variables: list[VariableInfo] = field(default_factory=list)  # Changed to support descriptions
+    script_len: int = 0
+    has_before_script: bool = False
+    has_after_script: bool = False
+    rules: RuleSummary | None = None
+    description: str | None = None  # For @Description decorator
+    comment: str | None = None  # leading YAML comment for the job
+
+
+@dataclass
+class FileDoc:
+    path: Path
+    jobs: list[JobDoc] = field(default_factory=list)
+    component_inputs: list[ComponentInput] = field(default_factory=list)
+    file_comment: str | None = None
+    global_variables: list[VariableInfo] = field(default_factory=list)
+
+
+def load_yaml(path: Path) -> CommentedMap | None:  # type: ignore[return-value]
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = yaml_loader.load(f)
+        if not isinstance(data, (dict, CommentedMap)):
+            return None
+        return data  # type: ignore[return-value]
+    except Exception as e:
+        logger.warning("Failed to parse %s: %s", path, e)
+        return None
+
+
+def extract_comment_text(comment_tokens: list[Any]) -> str:
+    """
+    Extract text from comment tokens, handling the nested structure.
+    """
+    lines = []
+    for token in comment_tokens:
+        if hasattr(token, "value"):
+            value = token.value
+            # Handle case where value is a list [None, list_of_comment_tokens]
+            if isinstance(value, list) and len(value) >= 2:
+                nested_tokens = value[1] if value[1] is not None else []
+                if isinstance(nested_tokens, list):
+                    for nested_token in nested_tokens:
+                        if hasattr(nested_token, "value") and isinstance(nested_token.value, str):
+                            lines.append(nested_token.value)
+            elif isinstance(value, str):
+                lines.append(value)
+
+    # Clean up comment markers and whitespace
+    cleaned_lines = []
+    for line in lines:
+        line = line.strip()
+        if line.startswith("#"):
+            line = line[1:].strip()
+        if line:  # Only add non-empty lines
+            cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines) if cleaned_lines else ""
+
+
+def get_leading_comment_for_key(cm: CommentedMap, key: str) -> str | None:
+    """
+    Extract the leading comment (above the key) if present.
+    """
+    if getattr(cm, "ca", None) and cm.ca.items and key in cm.ca.items:
+        entry = cm.ca.items[key]
+        # entry is a 4-tuple (pre, post, inline, ...)
+        pre = entry[0]
+        if pre and isinstance(pre, list):
+            text = extract_comment_text(pre)
+            return text if text else None
+    return None
+
+
+def get_file_leading_comment(doc: CommentedMap) -> str | None:
+    """
+    Extract file-level header comment (comment before the first key).
+    """
+    if getattr(doc, "ca", None) and hasattr(doc.ca, "comment") and doc.ca.comment:
+        text = extract_comment_text(doc.ca.comment)
+        return text if text else None
+    return None
+
+
+def as_list(val: Any) -> list[str]:
+    if val is None:
+        return []
+    if isinstance(val, (list, CommentedSeq)):
+        return [str(x) for x in val]
+    return [str(val)]
+
+
+def parse_description_from_comment(comment_text: str) -> tuple[str | None, str]:
+    """
+    Parses a clean comment string to find a @Description decorator.
+    The description can be multi-line, continuing until a blank line or another decorator.
+    Returns a tuple of (description, remaining_comment).
+    """
+    lines = comment_text.splitlines()
+    description_lines = []
+    remaining_lines = []
+    in_description = False
+
+    for line in lines:
+        stripped_line = line.strip()
+        if not in_description and stripped_line.startswith("@Description"):
+            in_description = True
+            desc_part = stripped_line[len("@Description") :].strip()
+            if desc_part:
+                description_lines.append(desc_part)
+        elif in_description:
+            if not stripped_line or stripped_line.startswith("@"):
+                in_description = False
+                remaining_lines.append(line)
+            else:
+                description_lines.append(stripped_line)
+        else:
+            remaining_lines.append(line)
+
+    description = " ".join(description_lines) if description_lines else None
+    remaining_comment = "\n".join(remaining_lines).strip()
+    return description, remaining_comment if remaining_comment else ""
+
+
+def parse_variables(vars_node: Any) -> list[VariableInfo]:
+    """
+    Parse variables supporting both simple and complex syntax:
+    - Simple: VAR_NAME: "value"
+    - Complex: VAR_NAME: { value: "value", description: "desc" }
+    """
+    variables: list[VariableInfo] = []
+
+    if not isinstance(vars_node, (dict, CommentedMap)):
+        return variables
+
+    for k, v in vars_node.items():
+        var_name = str(k)
+
+        if isinstance(v, (dict, CommentedMap)):
+            # Complex syntax with value/description
+            value = v.get("value", "")
+            description = v.get("description")
+            variables.append(
+                VariableInfo(
+                    name=var_name,
+                    value=str(value) if value is not None else "",
+                    description=str(description) if description is not None else None,
+                )
+            )
+        else:
+            # Simple syntax - just a value
+            variables.append(VariableInfo(name=var_name, value=str(v) if v is not None else "", description=None))
+
+    return variables
+
+
+def collect_component_inputs(doc: CommentedMap) -> list[ComponentInput]:
+    """
+    Component templates can expose `inputs` with descriptions/defaults/types.
+    These are part of the component template contract.
+    """
+    inputs_node = doc.get("spec", {}).get("inputs")  # Also checking inside spec for component structure
+    if not inputs_node:
+        inputs_node = doc.get("inputs")
+
+    out: list[ComponentInput] = []
+    if not isinstance(inputs_node, (dict, CommentedMap)):
+        return out
+    for name, spec in inputs_node.items():
+        if not isinstance(spec, (dict, CommentedMap)):
+            continue
+        out.append(
+            ComponentInput(
+                name=str(name),
+                description=spec.get("description"),
+                type=spec.get("type"),
+                default=spec.get("default"),
+                required=spec.get("required"),
+            )
+        )
+    return out
+
+
+def summarize_job(name: str, body: CommentedMap) -> JobDoc:
+    stage = body.get("stage")
+    extends = as_list(body.get("extends"))
+    image_val = body.get("image")
+    image = None
+    if isinstance(image_val, (dict, CommentedMap)):
+        image = image_val.get("name")
+    elif isinstance(image_val, str):
+        image = image_val
+
+    tags = as_list(body.get("tags"))
+    services = []
+    raw_services = body.get("services")
+    if isinstance(raw_services, (list, CommentedSeq)):
+        for s in raw_services:
+            if isinstance(s, (dict, CommentedMap)):
+                services.append(str(s.get("name") or s.get("alias") or "service"))
+            else:
+                services.append(str(s))
+    needs = []
+    raw_needs = body.get("needs")
+    if isinstance(raw_needs, (list, CommentedSeq)):
+        for n in raw_needs:
+            if isinstance(n, (dict, CommentedMap)):
+                needs.append(str(n.get("job") or n.get("project") or "need"))
+            else:
+                needs.append(str(n))
+    artifacts_paths: list[str] = []
+    artifacts = body.get("artifacts")
+    if isinstance(artifacts, (dict, CommentedMap)):
+        paths = artifacts.get("paths")
+        if isinstance(paths, (list, CommentedSeq)):
+            artifacts_paths = [str(p) for p in paths]
+
+    # Parse variables with new function
+    variables = parse_variables(body.get("variables"))
+
+    def script_len_of(key: str) -> int:
+        s = body.get(key)
+        if isinstance(s, (list, CommentedSeq)):
+            return len(s)
+        if isinstance(s, str):
+            return 1
+        return 0
+
+    script_len = script_len_of("script")
+    has_before = bool(script_len_of("before_script"))
+    has_after = bool(script_len_of("after_script"))
+
+    rules_summary = None
+    if "rules" in body:
+        rules_summary = RuleSummary.from_rules(body.get("rules"))
+
+    jd = JobDoc(
+        name=name,
+        stage=str(stage) if stage is not None else None,
+        extends=extends,
+        image=str(image) if image else None,
+        tags=tags,
+        services=services,
+        needs=needs,
+        artifacts_paths=artifacts_paths,
+        variables=variables,
+        script_len=script_len,
+        has_before_script=has_before,
+        has_after_script=has_after,
+        rules=rules_summary,
+        description=None,  # filled by caller
+        comment=None,  # filled by caller using container map
+    )
+    return jd
+
+
+def is_likely_job_key(key: str, value: Any) -> bool:
+    if key in NON_JOB_TOPLEVEL:
+        return False
+    if key.startswith("."):  # Hidden jobs are templates, not executable jobs
+        return False
+    # A job is generally a mapping with job keywords like 'script', 'stage', etc.
+    if not isinstance(value, (dict, CommentedMap)):
+        return False
+    # GitLab CI components use 'spec', so we shouldn't treat them as jobs
+    if "spec" in value:
+        return False
+    return "script" in value or "stage" in value or "extends" in value or "rules" in value
+
+
+def parse_file(path: Path) -> FileDoc | None:
+    root = load_yaml(path)
+    if root is None:
+        return None
+
+    file_doc = FileDoc(path=path)
+    file_doc.file_comment = get_file_leading_comment(root)
+
+    # Collect component inputs if present
+    file_doc.component_inputs = collect_component_inputs(root)
+
+    if "variables" in root:
+        file_doc.global_variables = parse_variables(root.get("variables"))
+
+    for key, val in root.items():
+        if not is_likely_job_key(str(key), val):
+            continue
+        job = summarize_job(str(key), val)
+
+        raw_comment = get_leading_comment_for_key(root, str(key))
+        if raw_comment:
+            description, remaining_comment = parse_description_from_comment(raw_comment)
+            job.description = description
+            job.comment = remaining_comment if remaining_comment else None
+
+        file_doc.jobs.append(job)
+
+    return file_doc
+
+
+def iter_yaml_files(base: Path) -> Iterable[Path]:
+    for p in base.rglob("*"):
+        if p.is_file() and p.suffix.lower() in {".yml", ".yaml"}:
+            yield p
+
+
+def render_markdown(files: list[FileDoc]) -> str:
+    lines: list[str] = []
+    lines.append("# GitLab CI Job Catalog\n")
+
+    for f in sorted(files, key=lambda x: str(x.path)):
+        rel = f.path.as_posix()
+        lines.append(f"## `{rel}`\n")
+
+        if f.file_comment:
+            lines.append("> " + "\n> ".join(f.file_comment.splitlines()) + "\n")
+
+        if f.component_inputs:
+            lines.append("### Component Inputs\n")
+            lines.append("| Name | Description | Type | Default | Required |")
+            lines.append("|---|---|---|---|:---:|")
+            for inp in sorted(f.component_inputs, key=lambda x: x.name):
+                desc = inp.description or ""
+                typ = f"`{inp.type}`" if inp.type else ""
+                dfl = f"`{str(inp.default)}`" if inp.default is not None else ""
+                req = "✔️" if inp.required else ""
+                lines.append(f"| `{inp.name}` | {desc} | {typ} | {dfl} | {req} |")
+            lines.append("")
+
+        if f.global_variables:
+            lines.append("### Global Variables\n")
+            if any(var.description for var in f.global_variables):
+                # Use 3-column table if any variables have descriptions
+                lines.append("| Name | Default Value | Description |")
+                lines.append("|---|---|---|")
+                for var in sorted(f.global_variables, key=lambda x: x.name):
+                    desc = var.description or ""
+                    lines.append(f"| `{var.name}` | `{var.value}` | {desc} |")
+            else:
+                # Use simple 2-column table if no descriptions
+                lines.append("| Name | Default Value |")
+                lines.append("|---|---|")
+                for var in sorted(f.global_variables, key=lambda x: x.name):
+                    lines.append(f"| `{var.name}` | `{var.value}` |")
+            lines.append("")
+
+        if not f.jobs and not f.component_inputs and not f.global_variables:
+            lines.append("_No jobs, inputs, or global variables detected in this file._\n")
+        elif not f.jobs:
+            lines.append("_No runnable jobs detected in this file._\n")
+
+        if f.jobs:
+            lines.append("### Jobs\n")
+            for j in sorted(f.jobs, key=lambda x: x.name):
+                lines.append(f"#### `{j.name}`\n")
+                if j.description:
+                    lines.append(j.description + "\n")
+                if j.comment:
+                    lines.append("> " + "\n> ".join(j.comment.splitlines()) + "\n")
+
+                meta_rows: list[tuple[str, str]] = []
+                if j.stage:
+                    meta_rows.append(("Stage", f"`{j.stage}`"))
+                if j.extends:
+                    meta_rows.append(("Extends", ", ".join(f"`{e}`" for e in j.extends)))
+                if j.image:
+                    meta_rows.append(("Image", f"`{j.image}`"))
+                if j.tags:
+                    meta_rows.append(("Tags", ", ".join(f"`{t}`" for t in j.tags)))
+                if j.services:
+                    meta_rows.append(("Services", ", ".join(f"`{s}`" for s in j.services)))
+                if j.needs:
+                    meta_rows.append(("Needs", ", ".join(f"`{n}`" for n in j.needs)))
+                if j.artifacts_paths:
+                    meta_rows.append(("Artifacts", ", ".join(f"`{p}`" for p in j.artifacts_paths)))
+                if j.script_len:
+                    meta_rows.append(("Script lines", str(j.script_len)))
+                if j.has_before_script or j.has_after_script:
+                    hooks = []
+                    if j.has_before_script:
+                        hooks.append("`before_script`")
+                    if j.has_after_script:
+                        hooks.append("`after_script`")
+                    meta_rows.append(("Hooks", " ".join(hooks)))
+                if j.rules:
+                    rs = j.rules
+                    rule_bits = []
+                    if rs.when:
+                        rule_bits.append(f"when=`{rs.when}`")
+                    if rs.if_count:
+                        rule_bits.append(f"{rs.if_count} `if`")
+                    if rs.exists_count:
+                        rule_bits.append(f"{rs.exists_count} `exists`")
+                    if rs.changes_count:
+                        rule_bits.append(f"{rs.changes_count} `changes`")
+                    if rule_bits:
+                        meta_rows.append(("Rules", ", ".join(rule_bits)))
+
+                if meta_rows:
+                    lines.append("| Key | Value |")
+                    lines.append("|---|---|")
+                    for k, v in meta_rows:
+                        lines.append(f"| {k} | {v} |")
+                    lines.append("")
+
+                if j.variables:
+                    lines.append("**Job-Specific Variables**")
+                    lines.append("")
+                    if any(var.description for var in j.variables):
+                        # Use 3-column table if any variables have descriptions
+                        lines.append("| Name | Default Value | Description |")
+                        lines.append("|---|---|---|")
+                        for var in sorted(j.variables, key=lambda x: x.name):
+                            desc = var.description or ""
+                            lines.append(f"| `{var.name}` | `{var.value}` | {desc} |")
+                    else:
+                        # Use simple 2-column table if no descriptions
+                        lines.append("| Name | Default Value |")
+                        lines.append("|---|---|")
+                        for var in sorted(j.variables, key=lambda x: x.name):
+                            lines.append(f"| `{var.name}` | `{var.value}` |")
+                    lines.append("")
+
+        lines.append("---\n")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def build_catalog(root_dir: Path) -> str:
+    files: list[FileDoc] = []
+    for p in iter_yaml_files(root_dir):
+        fd = parse_file(p)
+        if fd:
+            files.append(fd)
+    return render_markdown(files)
+
+
+def main():
+    """
+    Entrypoint for command-line execution.
+    """
+    parser = argparse.ArgumentParser(description="Generate Markdown documentation from GitLab CI YAML files.")
+    parser.add_argument(
+        "root_dir",
+        type=Path,
+        help="The root directory to scan for .yml/.yaml files.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=Path("gitlab-ci-docs.md"),
+        help="The output Markdown file path (default: gitlab-ci-docs.md).",
+    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose logging.")
+    args = parser.parse_args()
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO)
+    else:
+        logging.basicConfig(level=logging.WARNING)
+
+    if not args.root_dir.is_dir():
+        print(f"Error: Provided root directory '{args.root_dir}' does not exist or is not a directory.")
+        return
+
+    print(f"Scanning for YAML files in '{args.root_dir}'...")
+    markdown_content = build_catalog(args.root_dir)
+
+    try:
+        with args.output.open("w", encoding="utf-8") as f:
+            f.write(markdown_content)
+        print(f"Successfully generated documentation at '{args.output}'.")
+    except OSError as e:
+        print(f"Error writing to output file '{args.output}': {e}")
+
+
+# if __name__ == "__main__":
+#     main()
+#
+
+
+if __name__ == "__main__":
+    # main()
+    md = build_catalog(Path("../../.decompile_in/"))
+    output = Path("../../.decompile_in/docs.md")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(md, encoding="utf-8")
+```
+## File: commands\pipeline_trigger.py
+```python
+# gitlab_pipeline_trigger.py
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+import gitlab
+from gitlab import Gitlab
+from gitlab.exceptions import GitlabAuthenticationError, GitlabHttpError
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
+
+@dataclass(frozen=True)
+class ProjectSpec:
+    """A single project's pipeline trigger specification.
+
+    Attributes:
+        project_id: Numeric GitLab project ID (not path).
+        ref: The Git ref (branch, tag, or SHA) to run the pipeline on.
+        variables: Optional CI/CD variables to pass to the pipeline.
+                   Keys must be strings; values are strings.
+    """
+
+    project_id: int
+    ref: str
+    variables: Mapping[str, str] | None = field(default=None)
+
+
+@dataclass(frozen=True)
+class TriggerResult:
+    """Represents a triggered pipeline."""
+
+    project_id: int
+    pipeline_id: int
+    web_url: str
+
+
+@dataclass(frozen=True)
+class PollResult:
+    """Represents the final status of a pipeline after polling."""
+
+    project_id: int
+    pipeline_id: int
+    status: str
+    web_url: str
+
+
+# Terminal (complete) pipeline states as defined by GitLab API
+# https://docs.gitlab.com/ee/ci/pipelines/#pipeline-statuses
+TERMINAL_STATUSES = {"success", "failed", "canceled", "skipped", "manual", "scheduled"}
+
+
+def get_gitlab_client(
+    url: str | None = None,
+    token: str | None = None,
+    per_page: int = 50,
+    timeout: int = 30,
+) -> Gitlab:
+    """Create and return an authenticated python-gitlab client.
+
+    Args:
+        url: Base GitLab URL (default: env GITLAB_URL or 'https://gitlab.com').
+        token: Personal Access Token with `api` scope
+               (default: env GITLAB_TOKEN).
+        per_page: Pagination page size for API calls.
+        timeout: HTTP timeout in seconds for API requests.
+
+    Returns:
+        An authenticated Gitlab client.
+
+    Raises:
+        GitlabAuthenticationError: If authentication fails.
+        ValueError: If token is missing.
+    """
+    base_url = url or os.getenv("GITLAB_URL", "https://gitlab.com")
+    api_token = token or os.getenv("GITLAB_TOKEN")
+
+    if not api_token:
+        raise ValueError("A GitLab API token is required. Provide `token=` or set GITLAB_TOKEN.")
+
+    gl = gitlab.Gitlab(url=base_url, private_token=api_token, per_page=per_page, timeout=timeout)
+    try:
+        gl.auth()  # Validates token; inexpensive call
+    except GitlabAuthenticationError as e:
+        raise GitlabAuthenticationError(
+            "Failed to authenticate to GitLab. Ensure your token is valid and has 'api' scope."
+        ) from e
+    return gl
+
+
+def trigger_pipelines(
+    gl: Gitlab,
+    specs: Iterable[ProjectSpec],
+) -> list[TriggerResult]:
+    """Trigger pipelines for a set of projects.
+
+    Args:
+        gl: An authenticated python-gitlab client.
+        specs: Iterable of ProjectSpec, each with project_id, ref, and optional variables.
+
+    Returns:
+        list of TriggerResult with pipeline IDs and web URLs.
+
+    Notes:
+        - Uses the Pipeline Create endpoint via python-gitlab.
+        - If a project's ref is invalid or user lacks permission, an exception will be raised.
+    """
+    results: list[TriggerResult] = []
+
+    for spec in specs:
+        logger.info("Triggering pipeline: project_id=%s ref=%s", spec.project_id, spec.ref)
+        project = gl.projects.get(spec.project_id)
+
+        data: dict[str, Any] = {"ref": spec.ref}
+        # GitLab expects variables list of dicts: [{"key": "FOO", "value": "BAR"}, ...]
+        if spec.variables:
+            data["variables"] = [{"key": k, "value": v} for k, v in spec.variables.items()]
+
+        try:
+            pipeline = project.pipelines.create(data)
+        except GitlabHttpError as e:
+            # Common causes: 400 invalid ref, 403/404 permission, 409 conflict
+            logger.error("Failed to trigger pipeline for project %s on ref '%s': %s", spec.project_id, spec.ref, e)
+            raise
+
+        results.append(
+            TriggerResult(
+                project_id=spec.project_id,
+                pipeline_id=int(pipeline.id),
+                web_url=str(pipeline.web_url),
+            )
+        )
+        logger.info("Triggered: project_id=%s pipeline_id=%s url=%s", spec.project_id, pipeline.id, pipeline.web_url)
+
+    return results
+
+
+def poll_pipelines_until_complete(
+    gl: Gitlab,
+    triggered: Iterable[TriggerResult],
+    *,
+    timeout_seconds: int = 1800,
+    poll_interval_seconds: int = 30,
+    initial_delay_seconds: int | None = 30,
+) -> list[PollResult]:
+    """Politely poll pipelines until they reach a terminal state or timeout.
+
+    Args:
+        gl: An authenticated python-gitlab client.
+        triggered: Iterable of TriggerResult from `trigger_pipelines`.
+        timeout_seconds: Maximum total time to wait before giving up.
+        poll_interval_seconds: Time between polls. Must be >= 30 to be polite.
+        initial_delay_seconds: Optional initial delay before the first poll.
+                               Defaults to 30 to avoid immediate API pressure.
+
+    Returns:
+        list of PollResult, one for each triggered pipeline. If timed out, the
+        last observed non-terminal status will be reported.
+
+    Raises:
+        ValueError: If poll_interval_seconds < 30 (politeness guard).
+    """
+    if poll_interval_seconds < 30:
+        raise ValueError("poll_interval_seconds must be >= 30 seconds to be polite.")
+
+    # Optional initial wait to avoid hammering right after creation
+    if initial_delay_seconds is None:
+        initial_delay_seconds = 30
+    if initial_delay_seconds > 0:
+        logger.info("Initial delay before polling: %s seconds", initial_delay_seconds)
+        time.sleep(initial_delay_seconds)
+
+    # Prepare lookup table for projects/pipelines
+    pending: dict[tuple[int, int], TriggerResult] = {(t.project_id, t.pipeline_id): t for t in triggered}
+    results: dict[tuple[int, int], PollResult] = {}
+
+    start = time.time()
+    while pending and (time.time() - start) < timeout_seconds:
+        to_remove: list[tuple[int, int]] = []
+
+        for (project_id, pipeline_id), _trig in list(pending.items()):
+            try:
+                project = gl.projects.get(project_id)
+                pipeline = project.pipelines.get(pipeline_id)
+                status = str(pipeline.status)
+                web_url = str(pipeline.web_url)
+                logger.debug("Poll status: project=%s pipeline=%s status=%s", project_id, pipeline_id, status)
+            except GitlabHttpError as e:
+                # Treat as transient; keep waiting unless timeout. Log and continue.
+                logger.warning("Transient error polling project=%s pipeline=%s: %s", project_id, pipeline_id, e)
+                continue  # Next item
+
+            if status in TERMINAL_STATUSES:
+                results[(project_id, pipeline_id)] = PollResult(
+                    project_id=project_id,
+                    pipeline_id=pipeline_id,
+                    status=status,
+                    web_url=web_url,
+                )
+                to_remove.append((project_id, pipeline_id))
+
+        for key in to_remove:
+            pending.pop(key, None)
+
+        if not pending:
+            break
+
+        # Sleep between polite polls
+        remaining = timeout_seconds - (time.time() - start)
+        if remaining <= 0:
+            break
+        sleep_for = min(poll_interval_seconds, max(1, int(remaining)))
+        logger.info("Waiting %s seconds before next poll (%s pipeline(s) pending)...", sleep_for, len(pending))
+        time.sleep(sleep_for)
+
+    # Anything still pending after timeout gets its last known status (best-effort)
+    for (project_id, pipeline_id), trig in pending.items():
+        try:
+            project = gl.projects.get(project_id)
+            pipeline = project.pipelines.get(pipeline_id)
+            status = str(pipeline.status)
+            web_url = str(pipeline.web_url)
+        except Exception:
+            status = "unknown"
+            web_url = trig.web_url
+
+        results[(project_id, pipeline_id)] = PollResult(
+            project_id=project_id,
+            pipeline_id=pipeline_id,
+            status=status,
+            web_url=web_url,
+        )
+
+    return list(results.values())
+
+
+# ---------- Convenience helpers ----------
+
+
+def trigger_from_mapping(
+    gl: Gitlab,
+    project_to_ref: Mapping[int, str],
+    *,
+    variables_by_project: Mapping[int, Mapping[str, str]] | None = None,
+) -> list[TriggerResult]:
+    """Helper to build specs from a {project_id: ref} mapping and trigger pipelines.
+
+    Args:
+        gl: Authenticated GitLab client.
+        project_to_ref: dict mapping project_id -> ref (branch/tag/SHA).
+        variables_by_project: Optional dict mapping project_id -> variables dict.
+
+    Returns:
+        list of TriggerResult.
+    """
+    specs = []
+    for pid, ref in project_to_ref.items():
+        vars_for_project = variables_by_project.get(pid) if variables_by_project else None
+        specs.append(ProjectSpec(project_id=pid, ref=ref, variables=vars_for_project))
+    return trigger_pipelines(gl, specs)
+
+
+def run_all(
+    project_to_ref: Mapping[int, str],
+    *,
+    variables_by_project: Mapping[int, Mapping[str, str]] | None = None,
+    url: str | None = None,
+    token: str | None = None,
+    timeout_seconds: int = 1800,
+    poll_interval_seconds: int = 30,
+    initial_delay_seconds: int = 30,
+) -> list[PollResult]:
+    """One-shot helper: auth, trigger across projects, and poll to completion.
+
+    Args:
+        project_to_ref: dict mapping project_id -> ref.
+        variables_by_project: Optional dict mapping project_id -> variables dict.
+        url: GitLab URL (default env or https://gitlab.com).
+        token: API token (default env).
+        timeout_seconds: Max total wait.
+        poll_interval_seconds: Interval between polls (>= 30).
+        initial_delay_seconds: Initial wait before first poll (default 30).
+
+    Returns:
+        Final PollResult list (status per pipeline).
+    """
+    gl = get_gitlab_client(url=url, token=token)
+    triggered = trigger_from_mapping(gl, project_to_ref, variables_by_project=variables_by_project)
+    return poll_pipelines_until_complete(
+        gl,
+        triggered,
+        timeout_seconds=timeout_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+        initial_delay_seconds=initial_delay_seconds,
+    )
+
+
+# ---------- Minimal CLI for ad-hoc use (optional) ----------
+
+if __name__ == "__main__":
+
+    def run():
+        # Example usage:
+        #   GITLAB_TOKEN=... python gitlab_pipeline_trigger.py
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+        example_projects: dict[int, str] = {
+            # Replace with your project IDs and branches:
+            # 12345678: "main",
+            # 87654321: "develop",
+        }
+        if not example_projects:
+            logger.info("Populate `example_projects` in __main__ for a quick test.")
+        else:
+            results = run_all(example_projects)
+            for r in results:
+                print(f"[{r.project_id}] pipeline {r.pipeline_id} -> {r.status} ({r.web_url})")
+
+    run()
+```
 ## File: commands\precommit.py
 ```python
 #!/usr/bin/env python3
@@ -9694,6 +10695,539 @@ def run_show_config() -> int:
 
     return 0
 ```
+## File: commands\upgrade_pinned_templates.py
+```python
+from __future__ import annotations
+
+import dataclasses
+import re
+import ssl
+from collections.abc import Iterable
+from dataclasses import dataclass
+from typing import Any, Literal
+from urllib.parse import quote_plus
+
+import certifi
+import orjson  # Using orjson for JSON operations as in the helper
+import urllib3
+from packaging.version import InvalidVersion, Version
+from ruamel.yaml import YAML
+from urllib3.util import Retry
+
+# -------------------------------
+# Types and data structures
+# -------------------------------
+
+RefType = Literal["none", "branch", "tag", "commit", "unknown"]
+
+
+@dataclass(frozen=True)
+class SimpleResponse:
+    """A minimal, requests.Response-like object for urllib3 responses."""
+
+    status_code: int
+    data: bytes
+
+    def json(self) -> Any:
+        """Parse response data as JSON."""
+        if not self.data:
+            return None
+        return orjson.loads(self.data)
+
+
+@dataclass(frozen=True)
+class IncludeSpec:
+    kind: Literal["project", "remote", "local", "template"]
+    raw: dict[str, Any]  # Original mapping from YAML for this include
+    project: str | None = None
+    ref: str | None = None
+    file: str | None | list[str] = None
+    remote: str | None = None
+    local: str | None = None
+    template: str | None = None
+
+
+@dataclass(frozen=True)
+class Suggestion:
+    new_ref: str
+    reason: str  # e.g., "newer tag available", "un pinned; suggesting latest tag"
+
+
+@dataclass(frozen=True)
+class IncludeAnalysis:
+    include: IncludeSpec
+    ref_type: RefType
+    pinned: bool
+    current_ref: str | None
+    suggestion: Suggestion | None
+    notes: str | None = None
+
+
+# -------------------------------
+# GitLab API client (minimal, using urllib3)
+# -------------------------------
+
+
+class GitLabClient:
+    """
+    Minimal GitLab API helper using urllib3.
+
+    Auth: Personal Access Token (header: PRIVATE-TOKEN) or OAuth Bearer (header: Authorization).
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        token: str | None = None,
+        oauth_token: str | None = None,
+        timeout: float = 15.0,
+        max_retries: int = 2,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+
+        # Setup headers
+        self.headers = {
+            "User-Agent": "gitlab-include-pin-checker/1.0",
+            "Accept": "application/json",
+        }
+        if token:
+            self.headers["PRIVATE-TOKEN"] = token
+        if oauth_token:
+            self.headers["Authorization"] = f"Bearer {oauth_token}"
+
+        # Setup urllib3 PoolManager based on the provided helper's pattern
+        _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+        _RETRIES = Retry(
+            total=max_retries,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            raise_on_status=False,
+        )
+        self.http = urllib3.PoolManager(
+            maxsize=10,
+            retries=_RETRIES,
+            ssl_context=_SSL_CTX,
+        )
+
+    def _get(self, path: str, ok=(200,)) -> SimpleResponse:
+        url = f"{self.base_url}{path}"
+        try:
+            with self.http.request(
+                "GET",
+                url,
+                headers=self.headers,
+                timeout=self.timeout,
+                preload_content=False,
+                decode_content=True,
+            ) as r:
+                # The caller will check the status code against its 'ok' tuple.
+                # We read the data inside the `with` block to release the connection.
+                data = r.read()
+                return SimpleResponse(status_code=r.status, data=data)
+        except urllib3.exceptions.MaxRetryError as e:
+            raise RuntimeError(f"GET failed for {url} too many retries") from e
+        except urllib3.exceptions.HTTPError as e:
+            raise RuntimeError(f"A network error occurred for GET {url}") from e
+
+    @staticmethod
+    def _proj_id(project_path: str) -> str:
+        # project path like "group/subgroup/name" must be URL-encoded
+        return quote_plus(project_path)
+
+    # ---- project info ----
+
+    def get_project(self, project_path: str) -> dict[str, Any] | None:
+        r = self._get(f"/api/v4/projects/{self._proj_id(project_path)}", ok=(200, 404))
+        return None if r.status_code == 404 else r.json()
+
+    def get_default_branch(self, project_path: str) -> str | None:
+        proj = self.get_project(project_path)
+        if not proj:
+            return None
+        return proj.get("default_branch")
+
+    # ---- tags, branches, commits ----
+
+    def list_tags(self, project_path: str, per_page: int = 100) -> list[dict[str, Any]]:
+        tags: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            r = self._get(
+                f"/api/v4/projects/{self._proj_id(project_path)}/repository/tags" f"?per_page={per_page}&page={page}",
+                ok=(200, 404),
+            )
+            if r.status_code != 200:
+                break
+            batch = r.json()
+            if not batch:
+                break
+            tags.extend(batch)
+            if len(batch) < per_page:
+                break
+            page += 1
+        return tags
+
+    def get_branch(self, project_path: str, branch: str) -> dict[str, Any] | None:
+        r = self._get(
+            f"/api/v4/projects/{self._proj_id(project_path)}/repository/branches/{quote_plus(branch)}",
+            ok=(200, 404),
+        )
+        return None if r.status_code == 404 else r.json()
+
+    def get_tag(self, project_path: str, tag: str) -> dict[str, Any] | None:
+        r = self._get(
+            f"/api/v4/projects/{self._proj_id(project_path)}/repository/tags/{quote_plus(tag)}",
+            ok=(200, 404),
+        )
+        return None if r.status_code == 404 else r.json()
+
+    def get_commit(self, project_path: str, sha: str) -> dict[str, Any] | None:
+        r = self._get(
+            f"/api/v4/projects/{self._proj_id(project_path)}/repository/commits/{quote_plus(sha)}",
+            ok=(200, 404),
+        )
+        return None if r.status_code == 404 else r.json()
+
+
+# -------------------------------
+# YAML parsing helpers
+# -------------------------------
+
+_HEX40 = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+
+
+def _load_yaml(path: str) -> dict[str, Any]:
+    yaml = YAML(typ="rt")  # round-trip preserves formatting if you later want to write
+    with open(path, encoding="utf-8") as f:
+        data = yaml.load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError("Root of .gitlab-ci.yml must be a mapping.")
+    return data
+
+
+def _normalize_includes(root: dict[str, Any]) -> list[IncludeSpec]:
+    """
+    Normalize every include into IncludeSpec with 'kind' in {'project', 'remote', 'local', 'template'}.
+
+    GitLab allows:
+      include:
+        - local: path.yml
+        - remote: https://...
+        - template: Auto-DevOps.gitlab-ci.yml
+        - project: group/repo
+          ref: v1.2.3
+          file:
+            - path1.yml
+            - path2.yml
+      include: 'path.yml'           # shorthand local
+      include: { local: 'x.yml' }   # mapping
+    """
+
+    def one_include(obj: Any) -> Iterable[IncludeSpec]:
+        if isinstance(obj, str):
+            yield IncludeSpec(kind="local", raw={"local": obj}, local=obj)
+            return
+        if isinstance(obj, dict):
+            if "project" in obj:
+                yield IncludeSpec(
+                    kind="project",
+                    raw=obj,
+                    project=obj.get("project"),
+                    ref=obj.get("ref"),
+                    file=obj.get("file"),
+                )
+            elif "remote" in obj:
+                yield IncludeSpec(kind="remote", raw=obj, remote=obj.get("remote"))
+            elif "local" in obj:
+                yield IncludeSpec(kind="local", raw=obj, local=obj.get("local"))
+            elif "template" in obj:
+                yield IncludeSpec(kind="template", raw=obj, template=obj.get("template"))
+            else:
+                # Unknown mapping; keep raw for transparency
+                yield IncludeSpec(kind="local", raw=obj)  # safest default
+            return
+        # Unknown scalar/sequence -> ignore
+        return
+
+    inc = root.get("include")
+    specs: list[IncludeSpec] = []
+    if inc is None:
+        return specs
+    if isinstance(inc, list):
+        for entry in inc:
+            specs.extend(list(one_include(entry)))
+    else:
+        # single include (scalar or mapping)
+        specs.extend(list(one_include(inc)))
+    return specs
+
+
+# -------------------------------
+# SemVer + Tag sorting helpers
+# -------------------------------
+
+
+def _sort_tags_semver_first(tags: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Return tags sorted preferring SemVer (descending), then by commit date (newest first).
+    """
+    # def parse_created_at(tag: dict[str, Any]) -> float:
+    #     # GitLab tag JSON usually includes 'commit': {'created_at': "..."}; be defensive.
+    #     try:
+    #         # crude parse: "2024-08-30T12:34:56.000+00:00"
+    #         s = tag.get("commit", {}).get("created_at") or tag.get("release", {}).get("created_at")
+    #         return time.mktime(time.strptime(s[:19], "%Y-%m-%dT%H:%M:%S")) if s else 0.0
+    #     except Exception:
+    #         return 0.0
+    #
+    # def semver_key(name: str) -> Tuple[int, dict[str, Any] | None]:
+    #     # Returns (is_semver, Version or None)
+    #     try:
+    #         # Accept tags like "v1.2.3" or "1.2.3"
+    #         normalized = name[1:] if name.startswith("v") else name
+    #         return (1, Version(normalized))
+    #     except InvalidVersion:
+    #         return (0, None)
+
+    # unused?
+    # def composite_key(tag: dict[str, Any]):
+    #     name = tag.get("name", "")
+    #     is_semver, ver = semver_key(name)
+    #     # Sort: semver first and higher version first; else by created_at descending.
+    #     return (
+    #         -is_semver,
+    #         -(ver or Version("0"))._key if ver else 0,  # using Version's internal sortable key
+    #         -parse_created_at(tag),
+    #     )
+
+    # Python can't sort by Version's private key directly inside tuple cleanly; workaround:
+    # We'll sort in two passes: semver desc by Version, then date desc for non-semver.
+    semver_tags = []
+    other_tags = []
+    for t in tags:
+        name = t.get("name", "")
+        try:
+            v = Version(name[1:] if name.startswith("v") else name)
+            semver_tags.append((v, t))
+        except InvalidVersion:
+            other_tags.append(t)
+    semver_tags.sort(key=lambda vt: vt[0], reverse=True)
+    other_tags.sort(key=lambda t: t.get("commit", {}).get("created_at", ""), reverse=True)
+    return [t for _, t in semver_tags] + other_tags
+
+
+# -------------------------------
+# Ref classification
+# -------------------------------
+
+
+def _classify_ref(gl: GitLabClient, project: str, ref: str | None) -> RefType:
+    if not ref:
+        return "none"
+    if _HEX40.match(ref):
+        # make sure commit exists
+        return "commit" if gl.get_commit(project, ref) else "unknown"
+    if gl.get_tag(project, ref):
+        return "tag"
+    if gl.get_branch(project, ref):
+        return "branch"
+    return "unknown"
+
+
+# -------------------------------
+# Core: analyze includes and suggest pins
+# -------------------------------
+
+
+def suggest_include_pins(
+    gitlab_ci_path: str,
+    gitlab_base_url: str,
+    *,
+    token: str | None = None,
+    oauth_token: str | None = None,
+    pin_tags_only: bool = True,
+) -> list[IncludeAnalysis]:
+    """
+    Analyze `.gitlab-ci.yml` includes and suggest re-pinning strategies.
+
+    Args:
+        gitlab_ci_path: Path to the .gitlab-ci.yml file.
+        gitlab_base_url: Base URL of GitLab instance, e.g., "https://gitlab.com".
+        token: GitLab Personal Access Token (PRIVATE-TOKEN), if needed for private projects.
+        oauth_token: OAuth token (Bearer), alternative to 'token'.
+        pin_tags_only: If True, suggestions always use tags. If False, may return branch's latest commit (but still prefers tags).
+
+    Returns:
+        A list of IncludeAnalysis entries (one per include item).
+    """
+    root = _load_yaml(gitlab_ci_path)
+    includes = _normalize_includes(root)
+    gl = GitLabClient(gitlab_base_url, token=token, oauth_token=oauth_token)
+
+    analyses: list[IncludeAnalysis] = []
+    for spec in includes:
+        # Only 'project' kind can/should be repinned via project/ref/file.
+        if spec.kind != "project" or not spec.project:
+            analyses.append(
+                IncludeAnalysis(
+                    include=spec,
+                    ref_type="unknown" if spec.kind == "remote" else "none",
+                    pinned=False,
+                    current_ref=None,
+                    suggestion=None,
+                    notes="Non-project include (remote/local/template) not analyzed for pinning.",
+                )
+            )
+            continue
+
+        ref_type = _classify_ref(gl, spec.project, spec.ref)
+        pinned = ref_type in ("tag", "commit")
+        current_ref = spec.ref
+
+        # Gather tags; we prefer tags for stability.
+        tags = gl.list_tags(spec.project)
+        latest_tag_name: str | None = None
+        if tags:
+            latest_tag_name = tags_sorted[0]["name"] if (tags_sorted := _sort_tags_semver_first(tags)) else None
+
+        suggestion: Suggestion | None = None
+        notes: str | None = None
+
+        if ref_type == "none":
+            # No ref: GitLab uses project's default branch -> unpinned
+            if pin_tags_only:
+                if latest_tag_name:
+                    suggestion = Suggestion(
+                        new_ref=latest_tag_name, reason="no ref (default branch); suggesting latest tag"
+                    )
+                else:
+                    notes = "No tags found to suggest; consider creating and pinning a release tag."
+            else:
+                # Could choose branch tip; still prefer tags if present
+                if latest_tag_name:
+                    suggestion = Suggestion(new_ref=latest_tag_name, reason="no ref; suggesting latest tag")
+                else:
+                    default_branch = gl.get_default_branch(spec.project) or "main"
+                    suggestion = Suggestion(
+                        new_ref=default_branch,
+                        reason="no ref; no tags found; suggest pinning to default branch name (still unpinned)",
+                    )
+
+        elif ref_type == "branch":
+            # Unpinned; we should suggest a pin
+            if pin_tags_only:
+                if latest_tag_name:
+                    suggestion = Suggestion(
+                        new_ref=latest_tag_name, reason=f"unpinned branch '{current_ref}'; suggesting latest tag"
+                    )
+                else:
+                    notes = f"Branch '{current_ref}' is unpinned and project has no tags."
+            else:
+                # Could pin to branch tip SHA; still prefer tags first
+                if latest_tag_name:
+                    suggestion = Suggestion(
+                        new_ref=latest_tag_name, reason=f"unpinned branch '{current_ref}'; suggesting latest tag"
+                    )
+                else:
+                    # If you truly want to pin to a commit, you could fetch the branch to get its commit SHA.
+                    br = gl.get_branch(spec.project, current_ref or (gl.get_default_branch(spec.project) or "main"))
+                    if br and "commit" in br and br["commit"].get("id"):
+                        suggestion = Suggestion(
+                            new_ref=br["commit"]["id"],
+                            reason=f"unpinned branch '{current_ref}'; suggesting latest commit SHA",
+                        )
+                    else:
+                        notes = f"Could not resolve branch tip for '{current_ref}'."
+
+        elif ref_type == "tag":
+            # Pinned to a tag: see if there's a newer tag
+            if latest_tag_name and latest_tag_name != current_ref:
+                is_newer = False
+                try:
+                    newest = (
+                        Version(latest_tag_name[1:]) if latest_tag_name.startswith("v") else Version(latest_tag_name)
+                    )
+                    current = (
+                        Version(current_ref[1:])
+                        if current_ref and current_ref.startswith("v")
+                        else Version(current_ref or "")
+                    )
+                    is_newer = newest > current
+                except InvalidVersion:
+                    # fall back to position in sorted list (newest first)
+                    all_names = [t["name"] for t in _sort_tags_semver_first(tags)]
+                    if current_ref in all_names and all_names.index(latest_tag_name) < all_names.index(current_ref):
+                        is_newer = True
+                if is_newer:
+                    suggestion = Suggestion(new_ref=latest_tag_name, reason="newer tag available")
+
+        elif ref_type == "commit":
+            # Pinned to a SHA. If tags-only, suggest the latest tag (or a tag that contains the commit if you want that policy).
+            if pin_tags_only:
+                if latest_tag_name:
+                    suggestion = Suggestion(
+                        new_ref=latest_tag_name, reason="currently pinned to SHA; suggesting latest tag"
+                    )
+                else:
+                    notes = "Pinned to SHA, but no tags exist to suggest."
+            else:
+                # Could stay on SHA or suggest a newer tag if available
+                if latest_tag_name:
+                    suggestion = Suggestion(new_ref=latest_tag_name, reason="pinned to SHA; newer tag exists")
+
+        else:
+            notes = f"Ref '{current_ref}' is unknown or not found."
+
+        analyses.append(
+            IncludeAnalysis(
+                include=spec,
+                ref_type=ref_type,
+                pinned=pinned,
+                current_ref=current_ref,
+                suggestion=suggestion,
+                notes=notes,
+            )
+        )
+
+    return analyses
+
+
+# -------------------------------
+# Pretty-print / JSON helpers (optional)
+# -------------------------------
+
+
+def analyses_to_table(analyses: list[IncludeAnalysis]) -> str:
+    """
+    Render a compact table for CLI output.
+    """
+    lines = []
+    header = f"{'KIND':8} {'PROJECT':35} {'REF':22} {'TYPE':8} {'PINNED':7} {'SUGGESTION':22} {'REASON/NOTES'}"
+    lines.append(header)
+    lines.append("-" * len(header))
+    for a in analyses:
+        sug = a.suggestion.new_ref if a.suggestion else "-"
+        reason = a.suggestion.reason if a.suggestion else (a.notes or "")
+        proj = a.include.project or "-"
+        ref = a.current_ref or "-"
+        lines.append(
+            f"{a.include.kind:8} {proj:35.35} {ref:22.22} {a.ref_type:8} {str(a.pinned):7} {sug:22.22} {reason}"
+        )
+    return "\n".join(lines)
+
+
+def analyses_to_json(analyses: list[IncludeAnalysis]) -> str:
+    def encode(o: Any) -> Any:
+        if dataclasses.is_dataclass(o):
+            return dataclasses.asdict(o)  # type: ignore[arg-type]
+        if isinstance(o, set):
+            return list(o)
+        raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+    # Use orjson for performance, returns bytes so we decode to string.
+    return orjson.dumps(analyses, default=encode, option=orjson.OPT_INDENT_2).decode("utf-8")
+```
 ## File: commands\validate_all.py
 ```python
 """
@@ -9929,6 +11463,9 @@ class ValidationFailed(Bash2GitlabError): ...
 
 
 class CompileError(Bash2GitlabError): ...
+
+
+class CompilationNeeded(Bash2GitlabError): ...
 ```
 ## File: errors\exit_codes.py
 ```python
@@ -9941,6 +11478,7 @@ from bash2gitlab.commands.best_effort_runner import GitlabRunnerError
 from bash2gitlab.commands.compile_bash_reader import PragmaError, SourceSecurityError
 from bash2gitlab.errors.exceptions import (
     Bash2GitlabError,
+    CompilationNeeded,
     CompileError,
     ConfigInvalid,
     NetworkIssue,
@@ -9966,6 +11504,7 @@ class ExitCode(IntEnum):
     SOURCE_SECURITY_ERROR = 32
     GITLAB_RUNNER_ERROR = 33
     COMPILE_ERROR = 34
+    COMPILATION_NEEDED = 35
 
     # Generic python
     FILE_EXISTS = (80,)
@@ -9985,6 +11524,7 @@ ERROR_CODE_MAP: dict[type[BaseException], ExitCode] = {
     SourceSecurityError: ExitCode.SOURCE_SECURITY_ERROR,
     PragmaError: ExitCode.PRAGMA_ERROR,
     CompileError: ExitCode.COMPILE_ERROR,
+    CompilationNeeded: ExitCode.COMPILATION_NEEDED,
     # You can add Python built-ins too if you want:
     FileNotFoundError: ExitCode.NOT_FOUND,
     PermissionError: ExitCode.PERMISSION_DENIED,

@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.8] - 2025-09-04
+
+### Fixed
+
+- Wrong bash return value for `detect-uncompiled`
+
 ## [0.9.7] - 2025-09-01
 
 ### Fixed

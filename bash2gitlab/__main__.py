@@ -38,7 +38,7 @@ from urllib import error as _urlerror
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.input_change_detector import needs_compilation
 from bash2gitlab.commands.validate_all import run_validate_all
-from bash2gitlab.errors.exceptions import Bash2GitlabError
+from bash2gitlab.errors.exceptions import Bash2GitlabError, CompilationNeeded
 from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
 from bash2gitlab.install_help import print_install_help
 
@@ -409,16 +409,15 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
 
 
-def handle_change_detection_commands(args) -> bool:
+def handle_change_detection_commands(args) -> None:
     """Handle change detection specific commands. Returns True if command was handled."""
     input_dir: Path = Path(args.input_dir or "")
     if args.check_only:
         if needs_compilation(input_dir):
             print("Compilation needed: input files have changed")
-            return True
-        else:
-            print("No compilation needed: no input changes detected")
-            return True
+            raise CompilationNeeded()
+        print("No compilation needed: no input changes detected")
+        return
 
     if args.list_changed:
         changed = get_changed_files(input_dir)
@@ -426,11 +425,10 @@ def handle_change_detection_commands(args) -> bool:
             print("Changed files since last compilation:")
             for file_path in changed:
                 print(f"  {file_path}")
+            raise CompilationNeeded()
         else:
             print("No files have changed since last compilation")
-        return True
-
-    return False
+        return
 
 
 def main() -> int:

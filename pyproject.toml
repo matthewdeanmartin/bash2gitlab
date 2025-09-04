@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.9.7"
+version = "0.9.8"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -56,6 +56,10 @@ issues = "https://github.com/matthewdeanmartin/bash2gitlab/issues/"
 all = [
     # CLI
     "argcomplete", # could be optional
+
+    # gitlab API
+    "python-gitlab",
+
     # UI
     "textual", # could be optional
     "colorlog", # could be optional
