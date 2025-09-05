@@ -3056,28 +3056,29 @@ __status__ = "4 - Beta"
 Handles CLI interactions for bash2gitlab
 
 usage: bash2gitlab [-h] [--version]
-                   {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
+                   {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit,check-pins}
                    ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit}
-    compile               Compile an uncompiled directory into a standard GitLab CI structure.
-    decompile                 Decompile a GitLab CI file, extracting inline scripts into separate .sh files.
-    detect-drift          Detect if generated files have been edited and display what the edits are.
-    copy2local            Copy folder(s) from a repo to local, for testing bash in the dependent repo
-    init                  Initialize a new bash2gitlab project and config file.
-    map-deploy            Deploy files from source to target directories based on a mapping in pyproject.toml.
-    commit-map            Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
-    clean                 Clean output folder, removing only unmodified files previously written by bash2gitlab.
-    lint                  Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
-    install-precommit     Install a Git pre-commit hook that runs `bash2gitlab compile` (honors core.hooksPath/worktrees).
-    uninstall-precommit   Remove the bash2gitlab pre-commit hook.
+  {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit,check-pins}
+    compile             Compile an uncompiled directory into a standard GitLab CI structure.
+    decompile           Decompile a GitLab CI file, extracting inline scripts into separate .sh files.
+    detect-drift        Detect if generated files have been edited and display what the edits are.
+    copy2local          Copy folder(s) from a repo to local, for testing bash in the dependent repo
+    init                Initialize a new bash2gitlab project and config file.
+    map-deploy          Deploy files from source to target directories based on a mapping in pyproject.toml.
+    commit-map          Copy changed files from deployed directories back to their source locations based on a mapping in pyproject.toml.
+    clean               Clean output folder, removing only unmodified files previously written by bash2gitlab.
+    lint                Validate compiled GitLab CI YAML against a GitLab instance (global or project-scoped CI Lint).
+    install-precommit   Install a Git pre-commit hook that runs `bash2gitlab compile` (honors core.hooksPath/worktrees).
+    uninstall-precommit Remove the bash2gitlab pre-commit hook.
+    check-pins          Analyze GitLab CI 'include' statements and suggest pinning to tags.
 
 options:
-  -h, --help              show this help message and exit
-  --version               show program's version number and exit
+  -h, --help            show this help message and exit
+  --version             show program's version number and exit
 """
 
 from __future__ import annotations
@@ -3089,10 +3090,13 @@ import sys
 from pathlib import Path
 from urllib import error as _urlerror
 
+# Import urllib3 for the new pin checker's exceptions
+import urllib3
+
 from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.input_change_detector import needs_compilation
 from bash2gitlab.commands.validate_all import run_validate_all
-from bash2gitlab.errors.exceptions import Bash2GitlabError, CompilationNeeded
+from bash2gitlab.errors.exceptions import Bash2GitlabError, CompilationNeeded, NetworkIssue, NotFound
 from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
 from bash2gitlab.install_help import print_install_help
 
@@ -3100,6 +3104,8 @@ try:
     import argcomplete
 except ModuleNotFoundError:
     argcomplete = None  # type: ignore[assignment]
+
+from gitlab.exceptions import GitlabAuthenticationError, GitlabHttpError
 
 # Core
 from bash2gitlab import __about__
@@ -3110,7 +3116,16 @@ from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_de
 from bash2gitlab.commands.detect_drift import run_detect_drift
 from bash2gitlab.commands.input_change_detector import get_changed_files
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
+from bash2gitlab.commands.pipeline_trigger import (
+    ProjectSpec,
+    get_gitlab_client,
+    poll_pipelines_until_complete,
+    trigger_pipelines,
+)
 from bash2gitlab.commands.show_config import run_show_config
+
+# Import the new pin checker functions
+from bash2gitlab.commands.upgrade_pinned_templates import analyses_to_json, analyses_to_table, suggest_include_pins
 from bash2gitlab.config import config
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
@@ -3142,16 +3157,11 @@ sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 logger = logging.getLogger(__name__)
 
 
-def clean_handler(args: argparse.Namespace) -> int:
+def clean_handler(args: argparse.Namespace) -> None:
     """Handles the `clean` command logic."""
     logger.info("Starting cleaning output folder...")
     out_dir = Path(args.output_dir).resolve()
-    try:
-        clean_targets(out_dir, dry_run=args.dry_run)
-    except (KeyboardInterrupt, EOFError):
-        logger.warning("\nClean cancelled by user.")
-        return 1
-    return 0
+    clean_targets(out_dir, dry_run=args.dry_run)
 
 
 essential_gitlab_args_help = "GitLab connection options. For private instances require --gitlab-url and possibly --token. Use --project-id for project-scoped lint when your config relies on includes or project context."
@@ -3171,7 +3181,7 @@ def lint_handler(args: argparse.Namespace) -> int:
     out_dir = Path(args.output_dir).resolve()
     if not out_dir.exists():
         logger.error("Output directory does not exist: %s", out_dir)
-        return 10
+        raise NotFound(out_dir)
 
     try:
         results = lint_output_folder(
@@ -3186,14 +3196,118 @@ def lint_handler(args: argparse.Namespace) -> int:
         )
     except (_urlerror.URLError, _urlerror.HTTPError) as e:  # pragma: no cover - network
         logger.error("Failed to contact GitLab CI Lint API: %s", e)
-        return 12
+        raise NetworkIssue() from e
     # defensive logging of unexpected failures
     except Exception as e:  # nosec
         logger.error("Unexpected error during lint: %s", e)
-        return 1
+        raise
 
     _ok, fail = summarize_results(results)
     return 0 if fail == 0 else 2
+
+
+def check_pins_handler(args: argparse.Namespace) -> int:
+    """Handler for the `check-pins` command."""
+    logger.info("Analyzing include pins for %s...", args.file)
+    try:
+        analyses = suggest_include_pins(
+            gitlab_ci_path=args.file,
+            gitlab_base_url=args.gitlab_url,
+            token=args.token,
+            oauth_token=args.oauth_token,
+            pin_tags_only=args.pin_tags_only,
+        )
+
+        if args.json:
+            print(analyses_to_json(analyses))
+        else:
+            print(analyses_to_table(analyses))
+
+    except (urllib3.exceptions.HTTPError, RuntimeError) as e:
+        logger.error("Failed to contact GitLab API: %s", e)
+        raise NetworkIssue() from e
+    except FileNotFoundError as e:
+        logger.error("Input file not found: %s", e.filename)
+        raise NotFound(Path(e.filename)) from e
+    except ValueError as e:  # Raised by _load_yaml for bad root element
+        logger.error("Invalid YAML file structure: %s", e)
+        raise Bash2GitlabError(f"Invalid YAML file structure: {e}") from e
+
+    return 0
+
+
+def trigger_pipelines_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'trigger-pipelines' command."""
+    # 1. Parse variables
+    variables = {}
+    if args.variable:
+        for var_str in args.variable:
+            if "=" not in var_str:
+                msg = f"Invalid variable format: '{var_str}'. Must be 'KEY=VALUE'."
+                logger.error(msg)
+                raise Bash2GitlabError(msg)
+            key, value = var_str.split("=", 1)
+            variables[key] = value
+
+    # 2. Parse project specs
+    specs = []
+    for proj_str in args.project:
+        if ":" not in proj_str:
+            msg = f"Invalid project format: '{proj_str}'. Must be 'PROJECT_ID:REF'."
+            logger.error(msg)
+            raise Bash2GitlabError(msg)
+        try:
+            pid_str, ref = proj_str.split(":", 1)
+            specs.append(ProjectSpec(project_id=int(pid_str), ref=ref, variables=variables))
+        except ValueError as e:
+            msg = f"Project ID in '{proj_str}' must be a number."
+            logger.error(msg)
+            raise Bash2GitlabError(msg) from e
+
+    # 3. Connect and trigger
+    try:
+        gl = get_gitlab_client(url=args.gitlab_url, token=args.token)
+        triggered = trigger_pipelines(gl, specs)
+        for t in triggered:
+            logger.info(f"✅ Triggered pipeline for project {t.project_id}: {t.web_url}")
+
+        if not args.wait:
+            return 0
+
+        # 4. Poll if requested
+        logger.info("Polling pipelines until completion (Timeout: %s seconds)...", args.timeout)
+        final_results = poll_pipelines_until_complete(
+            gl,
+            triggered,
+            timeout_seconds=args.timeout,
+            poll_interval_seconds=args.poll_interval,
+        )
+
+        # 5. Report final status and determine exit code
+        logger.info("--- Final Pipeline Statuses ---")
+        failures = 0
+        for r in final_results:
+            log_func = logger.error if r.status == "failed" else logger.info
+            log_func(f"Project {r.project_id} | Pipeline {r.pipeline_id} | Status: {r.status.upper()} | {r.web_url}")
+            if r.status in ("failed", "canceled"):
+                failures += 1
+
+        if failures > 0:
+            logger.error("\n%d pipeline(s) did not succeed.", failures)
+            return 1  # Return a non-zero exit code for failure
+
+        logger.info("\nAll pipelines succeeded.")
+        return 0
+
+    except GitlabAuthenticationError as gae:
+        logger.error("GitLab authentication failed. Check your token and permissions.")
+        raise Bash2GitlabError("GitLab authentication failed") from gae
+    except GitlabHttpError as ghe:
+        logger.error("GitLab API error: %s", ghe.error_message)
+        raise NetworkIssue(f"GitLab API Error: {ghe.error_message}") from ghe
+    except ValueError as e:
+        logger.error("Configuration error: %s", e)
+        raise Bash2GitlabError(str(e)) from e
 
 
 def init_handler(args: argparse.Namespace) -> int:
@@ -3201,12 +3315,7 @@ def init_handler(args: argparse.Namespace) -> int:
     logger.info("Starting interactive project initializer...")
     directory = args.directory
     force = args.force
-    try:
-        run_init(directory, force)
-    except (KeyboardInterrupt, EOFError):
-        logger.warning("\nInitialization cancelled by user.")
-        return 1
-    return 0
+    return run_init(directory, force)
 
 
 def copy2local_handler(args: argparse.Namespace) -> int:
@@ -3249,18 +3358,15 @@ def compile_handler(args: argparse.Namespace) -> int:
         )
         return 0
 
-    try:
-        run_compile_all(input_dir=in_dir, output_path=out_dir, dry_run=dry_run, parallelism=parallelism, force=force)
-
-        logger.info("✅ GitLab CI processing complete.")
-
-    except FileNotFoundError as e:
-        logger.error(f"❌ An error occurred: {e}")
-        return 10
-    except (RuntimeError, ValueError) as e:
-        logger.error(f"❌ An error occurred: {e}")
-        return 1
-    return 0
+    result = run_compile_all(
+        input_dir=in_dir,
+        output_path=out_dir,
+        dry_run=dry_run,
+        parallelism=parallelism,
+        force=force,
+    )
+    logger.info("✅ GitLab CI processing complete.")
+    return result
 
 
 def validate_handler(args: argparse.Namespace) -> int:
@@ -3272,28 +3378,19 @@ def validate_handler(args: argparse.Namespace) -> int:
     out_dir = Path(args.output_dir).resolve()
     parallelism = args.parallelism
 
-    try:
-        run_validate_all(
-            input_dir=in_dir,
-            output_path=out_dir,
-            parallelism=parallelism,
-        )
+    result = run_validate_all(
+        input_dir=in_dir,
+        output_path=out_dir,
+        parallelism=parallelism,
+    )
 
-        logger.info("✅ GitLab CI validating complete.")
-
-    except FileNotFoundError as e:
-        logger.error(f"❌ An error occurred: {e}")
-        return 10
-    except (RuntimeError, ValueError) as e:
-        logger.error(f"❌ An error occurred: {e}")
-        return 1
-    return 0
+    logger.info("✅ GitLab CI validating complete.")
+    return result
 
 
 def drift_handler(args: argparse.Namespace) -> int:
     """Handler for the 'detect-drift' command."""
-    run_detect_drift(Path(args.out))
-    return 0
+    return run_detect_drift(Path(args.out))
 
 
 def decompile_handler(args: argparse.Namespace) -> int:
@@ -3305,54 +3402,43 @@ def decompile_handler(args: argparse.Namespace) -> int:
 
     dry_run = bool(args.dry_run)
 
-    try:
-        if args.input_file:
-            jobs, scripts, out_yaml = run_decompile_gitlab_file(
-                input_yaml_path=Path(args.input_file).resolve(),
-                output_dir=out_dir,
-                dry_run=dry_run,
-            )
-            if dry_run:
-                logger.info("DRY RUN: Would have processed %s jobs and created %s script(s).", jobs, scripts)
-            else:
-                logger.info("✅ Processed %s jobs and created %s script(s).", jobs, scripts)
-                logger.info("Modified YAML written to: %s", out_yaml)
+    if args.input_file:
+        jobs, scripts, out_yaml = run_decompile_gitlab_file(
+            input_yaml_path=Path(args.input_file).resolve(),
+            output_dir=out_dir,
+            dry_run=dry_run,
+        )
+        if dry_run:
+            logger.info("DRY RUN: Would have processed %s jobs and created %s script(s).", jobs, scripts)
         else:
-            yml_count, jobs, scripts = run_decompile_gitlab_tree(
-                input_root=Path(args.input_folder).resolve(),
-                output_dir=out_dir,
-                dry_run=dry_run,
+            logger.info("✅ Processed %s jobs and created %s script(s).", jobs, scripts)
+            logger.info("Modified YAML written to: %s", out_yaml)
+    else:
+        yml_count, jobs, scripts = run_decompile_gitlab_tree(
+            input_root=Path(args.input_folder).resolve(),
+            output_dir=out_dir,
+            dry_run=dry_run,
+        )
+        if dry_run:
+            logger.info(
+                "DRY RUN: Would have processed %s YAML file(s), %s jobs, and created %s script(s).",
+                yml_count,
+                jobs,
+                scripts,
             )
-            if dry_run:
-                logger.info(
-                    "DRY RUN: Would have processed %s YAML file(s), %s jobs, and created %s script(s).",
-                    yml_count,
-                    jobs,
-                    scripts,
-                )
-            else:
-                logger.info(
-                    "✅ Processed %s YAML file(s), %s jobs, and created %s script(s).",
-                    yml_count,
-                    jobs,
-                    scripts,
-                )
-        return 0
-    except FileNotFoundError as e:
-        logger.error("❌ An error occurred: %s", e)
-        return 10
+        else:
+            logger.info(
+                "✅ Processed %s YAML file(s), %s jobs, and created %s script(s).",
+                yml_count,
+                jobs,
+                scripts,
+            )
+    return 0
 
 
 def commit_map_handler(args: argparse.Namespace) -> int:
     """Handler for the 'commit-map' command."""
-    try:
-        mapping = config.map_folders
-    except FileNotFoundError as e:
-        logger.error(f"❌ {e}")
-        return 10
-    except KeyError as ke:
-        logger.error(f"❌ {ke}")
-        return 11
+    mapping = config.map_folders
 
     run_commit_map(mapping, dry_run=args.dry_run, force=args.force)
     return 0
@@ -3360,15 +3446,7 @@ def commit_map_handler(args: argparse.Namespace) -> int:
 
 def map_deploy_handler(args: argparse.Namespace) -> int:
     """Handler for the 'map-deploy' command."""
-    try:
-        mapping = config.map_folders
-    except FileNotFoundError as e:
-        logger.error(f"❌ {e}")
-        return 10
-    except KeyError as ke:
-        logger.error(f"❌ {ke}")
-        return 11
-
+    mapping = config.map_folders
     run_map_deploy(mapping, dry_run=args.dry_run, force=args.force)
     return 0
 
@@ -3395,7 +3473,7 @@ def install_precommit_handler(args: argparse.Namespace) -> int:
         return 0
     except PrecommitHookError as e:
         logger.error("Failed to install pre-commit hook: %s", e)
-        return 199
+        raise
 
 
 def uninstall_precommit_handler(args: argparse.Namespace) -> int:
@@ -3416,7 +3494,7 @@ def uninstall_precommit_handler(args: argparse.Namespace) -> int:
         return 0
     except PrecommitHookError as e:
         logger.error("Failed to uninstall pre-commit hook: %s", e)
-        return 200
+        raise
 
 
 def doctor_handler(args: argparse.Namespace) -> int:
@@ -3430,14 +3508,14 @@ def graph_handler(args: argparse.Namespace) -> int:
     in_dir = Path(args.input_dir).resolve()
     if not in_dir.is_dir():
         logger.error(f"Input directory does not exist or is not a directory: {in_dir}")
-        return 10
+        raise NotFound(in_dir)
 
     dot_output = generate_dependency_graph(in_dir)
     if dot_output:
         print(dot_output)
         return 0
     logger.warning("No graph data generated. Check input directory and file structure.")
-    return 1
+    return 0
 
 
 def show_config_handler(args: argparse.Namespace) -> int:
@@ -3583,7 +3661,8 @@ def main() -> int:
 
     # detect drift command
     detect_drift_parser = subparsers.add_parser(
-        "detect-drift", help="Detect if generated files have been edited and display what the edits are."
+        "detect-drift",
+        help="Detect if generated files have been edited and display what the edits are.",
     )
     detect_drift_parser.add_argument(
         "--out",
@@ -3748,6 +3827,109 @@ def main() -> int:
     )
     add_common_arguments(lint_parser)
     lint_parser.set_defaults(func=lint_handler)
+
+    # --- check-pins Command ---
+    check_pins_parser = subparsers.add_parser(
+        "check-pins",
+        help="Analyze GitLab CI 'include' statements and suggest pinning to tags.",
+        description=(
+            "Scans a .gitlab-ci.yml file for 'project' includes and checks their refs (tags, branches, commits).\n"
+            "Suggests pinning to the latest semantic version tag for stability.\n\n"
+            + "GitLab connection options are required via CLI or config."
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    check_pins_parser.add_argument(
+        "--file",
+        dest="file",
+        default=".gitlab-ci.yml",
+        help="Path to the .gitlab-ci.yml file to analyze (default: .gitlab-ci.yml).",
+    )
+    check_pins_parser.add_argument(
+        "--gitlab-url",
+        default=config.lint_gitlab_url,
+        dest="gitlab_url",
+        required=not bool(config.lint_gitlab_url),
+        help="Base GitLab URL (e.g., https://gitlab.com).",
+    )
+    check_pins_parser.add_argument(
+        "--token",
+        dest="token",
+        help="PRIVATE-TOKEN for API authentication.",
+    )
+    check_pins_parser.add_argument(
+        "--oauth-token",
+        dest="oauth_token",
+        default=None,
+        help="OAuth bearer token, an alternative to --token.",
+    )
+    check_pins_parser.add_argument(
+        "--pin-all",
+        dest="pin_tags_only",
+        action="store_false",
+        help="Suggest pinning to latest commit SHA if no tags are available (default is to only suggest tags).",
+    )
+    check_pins_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results in JSON format instead of a table.",
+    )
+    add_common_arguments(check_pins_parser)
+    check_pins_parser.set_defaults(func=check_pins_handler)
+
+    # --- Trigger Pipelines Command ---
+    trigger_parser = subparsers.add_parser(
+        "trigger-pipelines",
+        help="Trigger pipelines in one or more GitLab projects and optionally wait for completion.",
+        description=(
+            "Triggers pipelines for specified projects and refs. Can pass variables and wait for results.\n\n"
+            + "Requires GitLab connection options."
+        ),
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+    trigger_parser.add_argument(
+        "--project",
+        action="append",
+        required=True,
+        dest="project",
+        help="Specify a project and ref in 'PROJECT_ID:REF' format. Can be used multiple times.",
+    )
+    trigger_parser.add_argument(
+        "--variable",
+        action="append",
+        dest="variable",
+        help="A 'KEY=VALUE' variable to pass to all triggered pipelines. Can be used multiple times.",
+    )
+    trigger_parser.add_argument(
+        "--gitlab-url",
+        default=config.lint_gitlab_url,
+        dest="gitlab_url",
+        help="Base GitLab URL (e.g., https://gitlab.com).",
+    )
+    trigger_parser.add_argument(
+        "--token",
+        dest="token",
+        help="PRIVATE-TOKEN for API authentication.",
+    )
+    trigger_parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="Wait for all triggered pipelines to complete.",
+    )
+    trigger_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=1800,
+        help="Polling timeout in seconds when --wait is used (default: 1800).",
+    )
+    trigger_parser.add_argument(
+        "--poll-interval",
+        type=int,
+        default=30,
+        help="Seconds between polls when --wait is used (default: 30, min: 30).",
+    )
+    add_common_arguments(trigger_parser)
+    trigger_parser.set_defaults(func=trigger_pipelines_handler)
 
     # --- install-precommit Command ---
     install_pc = subparsers.add_parser(
@@ -3917,6 +4099,14 @@ def main() -> int:
         args.output_dir = args.output_dir or config.output_dir
         if not args.output_dir:
             lint_parser.error("argument --out is required")
+    elif args.command == "check-pins":
+        args.gitlab_url = args.gitlab_url or config.lint_gitlab_url  # reuse lint config
+        if not args.gitlab_url:
+            check_pins_parser.error("argument --gitlab-url is required")
+    elif args.command == "trigger-pipelines":
+        args.gitlab_url = args.gitlab_url or config.lint_gitlab_url
+        if not args.gitlab_url:
+            trigger_parser.error("argument --gitlab-url is required")
     elif args.command == "graph":
         # Only merge --out from config; GitLab connection is explicit via CLI
         args.input_dir = args.input_dir or config.input_dir
@@ -11474,6 +11664,7 @@ from __future__ import annotations
 from enum import IntEnum
 from subprocess import CalledProcessError  # nosec
 
+from bash2gitlab import PrecommitHookError
 from bash2gitlab.commands.best_effort_runner import GitlabRunnerError
 from bash2gitlab.commands.compile_bash_reader import PragmaError, SourceSecurityError
 from bash2gitlab.errors.exceptions import (
@@ -11505,10 +11696,15 @@ class ExitCode(IntEnum):
     GITLAB_RUNNER_ERROR = 33
     COMPILE_ERROR = 34
     COMPILATION_NEEDED = 35
+    PRECOMMIT_HOOK_ERROR = 36
 
     # Generic python
     FILE_EXISTS = (80,)
     EXTERNAL_COMMAND_ERROR = 81
+    KEYBOARD_INTERRUPT = 82
+    RUNTIME_ERROR = (83,)
+    VALUE_ERROR = (84,)
+    KEY_ERROR = (85,)
 
     INTERRUPTED = 130  # 128 + SIGINT
     UNEXPECTED = 70  # similar to sysexits EX_SOFTWARE
@@ -11525,12 +11721,17 @@ ERROR_CODE_MAP: dict[type[BaseException], ExitCode] = {
     PragmaError: ExitCode.PRAGMA_ERROR,
     CompileError: ExitCode.COMPILE_ERROR,
     CompilationNeeded: ExitCode.COMPILATION_NEEDED,
+    PrecommitHookError: ExitCode.PRECOMMIT_HOOK_ERROR,
     # You can add Python built-ins too if you want:
+    KeyboardInterrupt: ExitCode.KEYBOARD_INTERRUPT,
+    RuntimeError: ExitCode.RUNTIME_ERROR,
+    ValueError: ExitCode.VALUE_ERROR,
     FileNotFoundError: ExitCode.NOT_FOUND,
     PermissionError: ExitCode.PERMISSION_DENIED,
     FileExistsError: ExitCode.FILE_EXISTS,
     CalledProcessError: ExitCode.EXTERNAL_COMMAND_ERROR,
     ConnectionError: ExitCode.NETWORK_ERROR,
+    KeyError: ExitCode.KEY_ERROR,
 }
 
 

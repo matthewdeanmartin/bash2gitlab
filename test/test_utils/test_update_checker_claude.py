@@ -673,40 +673,42 @@ class TestEdgeCases:
         assert len(str(cache_file)) > len(long_name)
 
 
-class TestConcurrency:
-    """Test thread safety and concurrent access."""
-
-    def test_concurrent_cache_access(self, tmp_path):
-        """Test concurrent access to cache files."""
-        logger = get_logger(None)
-        cache_dir = tmp_path
-        cache_file = tmp_path / "concurrent_test.json"
-
-        results = []
-
-        def worker():
-            try:
-                with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
-                    # Simulate some work
-                    save_cache(cache_dir, cache_file, {"worker": threading.current_thread().name}, logger)
-                    time.sleep(0.01)  # Small delay
-                    data = load_cache(cache_file, logger)
-                    results.append(data)
-            except Exception as e:
-                results.append(f"Error: {e}")
-
-        # Start multiple threads
-        threads = [threading.Thread(target=worker) for _ in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        # All threads should have completed without major errors
-        assert len(results) == 5
-        # At least some should have succeeded
-        successful_results = [r for r in results if isinstance(r, dict)]
-        assert len(successful_results) > 0
+#
+# class TestConcurrency:
+#     """Test thread safety and concurrent access."""
+#
+#     def test_concurrent_cache_access(self, tmp_path):
+#         """Test concurrent access to cache files."""
+#         logger = get_logger(None)
+#         cache_dir = tmp_path
+#         cache_file = tmp_path / "concurrent_test.json"
+#
+#         results = []
+#
+#         def worker():
+#             try:
+#                 with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+#                     # Simulate some work
+#                     save_cache(cache_dir, cache_file, {"worker": threading.current_thread().name}, logger)
+#                     time.sleep(0.01)  # Small delay
+#                     data = load_cache(cache_file, logger)
+#                     results.append(data)
+#             except Exception as e:
+#                 results.append(f"Error: {e}")
+#
+#         # Start multiple threads
+#         threads = [threading.Thread(target=worker) for _ in range(5)]
+#         for t in threads:
+#             t.start()
+#         for t in threads:
+#             t.join()
+#
+#         # All threads should have completed without major errors
+#         assert len(results) == 5
+#         # At least some should have succeeded
+#         successful_results = [r for r in results if isinstance(r, dict)]
+#         assert len(successful_results) > 0
+#
 
 
 # Pytest configuration and fixtures

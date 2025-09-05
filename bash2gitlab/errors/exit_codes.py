@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import IntEnum
 from subprocess import CalledProcessError  # nosec
 
+from bash2gitlab import PrecommitHookError
 from bash2gitlab.commands.best_effort_runner import GitlabRunnerError
 from bash2gitlab.commands.compile_bash_reader import PragmaError, SourceSecurityError
 from bash2gitlab.errors.exceptions import (
@@ -34,10 +35,15 @@ class ExitCode(IntEnum):
     GITLAB_RUNNER_ERROR = 33
     COMPILE_ERROR = 34
     COMPILATION_NEEDED = 35
+    PRECOMMIT_HOOK_ERROR = 36
 
     # Generic python
     FILE_EXISTS = (80,)
     EXTERNAL_COMMAND_ERROR = 81
+    KEYBOARD_INTERRUPT = 82
+    RUNTIME_ERROR = (83,)
+    VALUE_ERROR = (84,)
+    KEY_ERROR = (85,)
 
     INTERRUPTED = 130  # 128 + SIGINT
     UNEXPECTED = 70  # similar to sysexits EX_SOFTWARE
@@ -54,12 +60,17 @@ ERROR_CODE_MAP: dict[type[BaseException], ExitCode] = {
     PragmaError: ExitCode.PRAGMA_ERROR,
     CompileError: ExitCode.COMPILE_ERROR,
     CompilationNeeded: ExitCode.COMPILATION_NEEDED,
+    PrecommitHookError: ExitCode.PRECOMMIT_HOOK_ERROR,
     # You can add Python built-ins too if you want:
+    KeyboardInterrupt: ExitCode.KEYBOARD_INTERRUPT,
+    RuntimeError: ExitCode.RUNTIME_ERROR,
+    ValueError: ExitCode.VALUE_ERROR,
     FileNotFoundError: ExitCode.NOT_FOUND,
     PermissionError: ExitCode.PERMISSION_DENIED,
     FileExistsError: ExitCode.FILE_EXISTS,
     CalledProcessError: ExitCode.EXTERNAL_COMMAND_ERROR,
     ConnectionError: ExitCode.NETWORK_ERROR,
+    KeyError: ExitCode.KEY_ERROR,
 }
 
 

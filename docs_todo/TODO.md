@@ -1,5 +1,9 @@
 # TODO
 
+## Concurrency bug?
+
+- see TestConcurrency, update checker problem.
+
 ## New commands
 
 - pipeline trigger: after updating a central repo, go tell a bunch of repos to rebuild

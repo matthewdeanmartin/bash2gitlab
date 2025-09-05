@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Wrong bash return value for `detect-uncompiled`
+- Fixed other ad hoc return values
+
+### Added 
+
+- `check-pins` to attempt to upgrade `include:` elements to latest hash or git tag.
 
 ## [0.9.7] - 2025-09-01
 
