@@ -52,9 +52,7 @@ def _paths_under_repo(repo_root: Path, *paths: Path) -> list[Path]:
         try:
             rel = p.resolve().relative_to(repo_root)
         except ValueError as ve:
-            raise Bash2GitlabError(
-                f"Configured path {p} is not inside repository root {repo_root}."
-            ) from ve
+            raise Bash2GitlabError(f"Configured path {p} is not inside repository root {repo_root}.") from ve
         # Keep if either the absolute path exists or the relative path exists in the worktree
         if p.exists() or (repo_root / rel).exists():
             kept.append(rel)
@@ -139,9 +137,7 @@ def run_autogit(config: Config, commit_message: str | None = None) -> int:
             if not branch:
                 branch = _current_branch(repo_root)
                 if branch == "HEAD":
-                    raise Bash2GitlabError(
-                        "Detached HEAD; set [autogit].branch or check out a branch before pushing."
-                    )
+                    raise Bash2GitlabError("Detached HEAD; set [autogit].branch or check out a branch before pushing.")
             push_args = ["push", remote, branch]
             # For a first push where upstream isn't set, choose -u
             if not _has_upstream(repo_root):

@@ -3148,6 +3148,7 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
+from typing import Any
 from urllib import error as _urlerror
 
 # Import urllib3 for the new pin checker's exceptions
@@ -3644,10 +3645,19 @@ def main() -> int:
     if start_background_update_check:  # type: ignore[truthy-function]
         start_background_update_check(__about__.__title__, __about__.__version__)
 
+    try:
+        import argparse
+
+        from rich_argparse import RichHelpFormatter
+
+        formatter_class: Any = RichHelpFormatter
+    except:
+        formatter_class = argparse.RawTextHelpFormatter
+
     parser = SmartParser(
         prog=__about__.__title__,
         description=root_doc,
-        formatter_class=argparse.RawTextHelpFormatter,
+        formatter_class=formatter_class,
     )
 
     parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
@@ -4316,6 +4326,39 @@ def _get_repo_root(path: Path) -> Path:
     return Path(_run_git_command(["rev-parse", "--show-toplevel"], cwd=path))
 
 
+def _paths_under_repo(repo_root: Path, *paths: Path) -> list[Path]:
+    """Return the subset of *existing* paths that are under the given repo root.
+
+    Raises Bash2GitlabError if any provided path is outside the repository.
+    """
+    kept: list[Path] = []
+    for p in paths:
+        try:
+            rel = p.resolve().relative_to(repo_root)
+        except ValueError as ve:
+            raise Bash2GitlabError(f"Configured path {p} is not inside repository root {repo_root}.") from ve
+        # Keep if either the absolute path exists or the relative path exists in the worktree
+        if p.exists() or (repo_root / rel).exists():
+            kept.append(rel)
+        else:
+            logger.info("Skipping non-existent path: %s", p)
+    return kept
+
+
+def _current_branch(repo_root: Path) -> str:
+    """Return current branch name or 'HEAD' if detached."""
+    return _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_root)
+
+
+def _has_upstream(repo_root: Path) -> bool:
+    """Return True iff the current branch has an upstream set."""
+    try:
+        _run_git_command(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], cwd=repo_root)
+        return True
+    except Bash2GitlabError:
+        return False
+
+
 def run_autogit(config: Config, commit_message: str | None = None) -> int:
     """
     Performs git operations (stage, commit, push) based on configuration.
@@ -4350,14 +4393,17 @@ def run_autogit(config: Config, commit_message: str | None = None) -> int:
         repo_root = _get_repo_root(input_dir)
         logger.info(f"Git repository root found at: {repo_root}")
 
-        paths_to_add = {
-            input_dir.relative_to(repo_root),
-            output_dir.relative_to(repo_root),
-        }
+        rel_paths = _paths_under_repo(repo_root, input_dir, output_dir)
+        # Keep log output deterministic
+        rel_paths_str = sorted(str(p) for p in rel_paths)
 
-        # Stage files
-        logger.info(f"Staging changed files in: {', '.join(str(p) for p in paths_to_add)}")
-        _run_git_command(["add", *[str(p) for p in paths_to_add]], cwd=repo_root)
+        if not rel_paths_str:
+            logger.info("No existing configured paths to stage.")
+            return 0
+
+        # Stage files, including deletions (use -A) and protect against pathspec issues by using '--'
+        logger.info("Staging changed files in: %s", ", ".join(rel_paths_str))
+        _run_git_command(["add", "-A", "--", *rel_paths_str], cwd=repo_root)
 
         status_output = _run_git_command(["status", "--porcelain"], cwd=repo_root)
         if not status_output:
@@ -4371,9 +4417,17 @@ def run_autogit(config: Config, commit_message: str | None = None) -> int:
 
         if mode == "push":
             remote = config.autogit_remote or "origin"
-            branch = config.autogit_branch or _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_root)
-            logger.info(f"Pushing to {remote}/{branch}...")
-            _run_git_command(["push", remote, branch], cwd=repo_root)
+            branch = config.autogit_branch
+            if not branch:
+                branch = _current_branch(repo_root)
+                if branch == "HEAD":
+                    raise Bash2GitlabError("Detached HEAD; set [autogit].branch or check out a branch before pushing.")
+            push_args = ["push", remote, branch]
+            # For a first push where upstream isn't set, choose -u
+            if not _has_upstream(repo_root):
+                push_args = ["push", "-u", remote, branch]
+            logger.info("Pushing to %s/%s...", remote, branch)
+            _run_git_command(push_args, cwd=repo_root)
 
         logger.info(f"Autogit action '{mode}' completed successfully.")
         return 0

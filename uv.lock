@@ -495,6 +495,7 @@ all = [
     { name = "pyvis" },
     { name = "rich", version = "14.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "rich", version = "14.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+    { name = "rich-argparse" },
     { name = "textual", version = "0.73.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.8.1'" },
     { name = "textual", version = "5.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.8.1'" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
@@ -549,6 +550,8 @@ dev = [
     { name = "ruff" },
     { name = "strip-docs", marker = "python_full_version >= '3.12'" },
     { name = "troml-dev-status", marker = "python_full_version >= '3.9'" },
+    { name = "types-jsonschema", version = "4.23.0.20241208", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "types-jsonschema", version = "4.25.1.20250822", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "types-toml" },
     { name = "vermin" },
 ]
@@ -568,6 +571,7 @@ requires-dist = [
     { name = "python-gitlab" },
     { name = "pyvis", marker = "extra == 'all'" },
     { name = "rich", marker = "extra == 'all'" },
+    { name = "rich-argparse", marker = "extra == 'all'" },
     { name = "rtoml" },
     { name = "ruamel-yaml" },
     { name = "textual", marker = "extra == 'all'" },
@@ -614,6 +618,7 @@ dev = [
     { name = "ruff", marker = "python_full_version >= '3.8'", specifier = ">=0.12.0" },
     { name = "strip-docs", marker = "python_full_version >= '3.12'", specifier = ">=1.0" },
     { name = "troml-dev-status", marker = "python_full_version >= '3.9'", specifier = ">=0.4.0" },
+    { name = "types-jsonschema", marker = "python_full_version >= '3.8'" },
     { name = "types-toml", marker = "python_full_version >= '3.8'" },
     { name = "vermin", marker = "python_full_version >= '3.8'" },
 ]
@@ -5862,6 +5867,19 @@ wheels = [
 ]
 
 [[package]]
+name = "rich-argparse"
+version = "1.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "rich", version = "14.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+    { name = "rich", version = "14.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/a6/34460d81e5534f6d2fc8e8d91ff99a5835fdca53578eac89e4f37b3a7c6d/rich_argparse-1.7.1.tar.gz", hash = "sha256:d7a493cde94043e41ea68fb43a74405fa178de981bf7b800f7a3bd02ac5c27be", size = 38094, upload-time = "2025-05-25T20:20:35.335Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/31/f6/5fc0574af5379606ffd57a4b68ed88f9b415eb222047fe023aefcc00a648/rich_argparse-1.7.1-py3-none-any.whl", hash = "sha256:a8650b42e4a4ff72127837632fba6b7da40784842f08d7395eb67a9cbd7b4bf9", size = 25357, upload-time = "2025-05-25T20:20:33.793Z" },
+]
+
+[[package]]
 name = "rpds-py"
 version = "0.20.1"
 source = { registry = "https://pypi.org/simple" }
@@ -6766,6 +6784,40 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/38/04/1cd43f72c241fedcf0d9a18d0783953ee301eac9e5d9db1df0f0f089d9af/trove_classifiers-2025.5.9.12.tar.gz", hash = "sha256:7ca7c8a7a76e2cd314468c677c69d12cc2357711fcab4a60f87994c1589e5cb5", size = 16940, upload-time = "2025-05-09T12:04:48.829Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/92/ef/c6deb083748be3bcad6f471b6ae983950c161890bf5ae1b2af80cc56c530/trove_classifiers-2025.5.9.12-py3-none-any.whl", hash = "sha256:e381c05537adac78881c8fa345fd0e9970159f4e4a04fcc42cfd3129cca640ce", size = 14119, upload-time = "2025-05-09T12:04:46.38Z" },
+]
+
+[[package]]
+name = "types-jsonschema"
+version = "4.23.0.20241208"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.8.1' and python_full_version < '3.9'",
+    "python_full_version < '3.8.1'",
+]
+dependencies = [
+    { name = "referencing", version = "0.35.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ad/e6/9e5cd771687086844caa43dbb211ec0d1cfa899d17c110f3220efcd46e83/types_jsonschema-4.23.0.20241208.tar.gz", hash = "sha256:e8b15ad01f290ecf6aea53f93fbdf7d4730e4600313e89e8a7f95622f7e87b7c", size = 14770, upload-time = "2024-12-08T03:02:21.995Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/64/4b2fba8b7cb0104ba013f2a1bf6f39a98e927e14befe1ef947d373b25218/types_jsonschema-4.23.0.20241208-py3-none-any.whl", hash = "sha256:87934bd9231c99d8eff94cacfc06ba668f7973577a9bd9e1f9de957c5737313e", size = 15021, upload-time = "2024-12-08T03:02:20.528Z" },
+]
+
+[[package]]
+name = "types-jsonschema"
+version = "4.25.1.20250822"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12'",
+    "python_full_version == '3.11.*'",
+    "python_full_version == '3.10.*'",
+    "python_full_version == '3.9.*'",
+]
+dependencies = [
+    { name = "referencing", version = "0.36.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/64/7f/369b54dad6eb6b5adc1fb1c53edbed18e6c32cbc600357135308902fdbdc/types_jsonschema-4.25.1.20250822.tar.gz", hash = "sha256:aac69ed4b23f49aaceb7fcb834141d61b9e4e6a7f6008cb2f0d3b831dfa8464a", size = 15628, upload-time = "2025-08-22T03:04:18.293Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/3d/bc1d171f032fcf63cedd4ade241f3f4e66d7e3bb53ee1da3c8f2f043eb0b/types_jsonschema-4.25.1.20250822-py3-none-any.whl", hash = "sha256:f82c2d7fa1ce1c0b84ba1de4ed6798469768188884db04e66421913a4e181294", size = 15923, upload-time = "2025-08-22T03:04:17.346Z" },
 ]
 
 [[package]]

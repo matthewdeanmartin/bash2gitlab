@@ -97,6 +97,7 @@ dev = [
     # mpy
     "mypy; python_version >= '3.8'",
     "types-toml; python_version >= '3.8'",
+    "types-jsonschema; python_version >= '3.8'",
     # reports
 
     # build

@@ -127,7 +127,7 @@ def test_autogit_stage_no_changes(monkeypatch, tmp_path):
     # Confirm add used relative paths from repo root
     add_idx = next(i for i, c in enumerate(calls) if c["args"][1] == "add")
     add_args = calls[add_idx]["args"][2:]  # after 'git add'
-    assert set(add_args) == {'-A', '--', 'in', 'out'}
+    assert set(add_args) == {"-A", "--", "in", "out"}
     # cwd should be repo root for all calls
     # assert all(c["cwd"] == repo for c in calls)
 

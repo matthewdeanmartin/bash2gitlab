@@ -34,6 +34,7 @@ import logging
 import logging.config
 import sys
 from pathlib import Path
+from typing import Any
 from urllib import error as _urlerror
 
 # Import urllib3 for the new pin checker's exceptions
@@ -532,8 +533,10 @@ def main() -> int:
 
     try:
         import argparse
+
         from rich_argparse import RichHelpFormatter
-        formatter_class = RichHelpFormatter
+
+        formatter_class: Any = RichHelpFormatter
     except:
         formatter_class = argparse.RawTextHelpFormatter
 
