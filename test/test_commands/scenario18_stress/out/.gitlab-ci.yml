@@ -12,25 +12,25 @@ default:
   image: python:3.12
   tags: [docker]
   before_script:
-  - |-
-    # >>> BEGIN inline: default_before.sh
-          echo "Global before_script (runs before each job unless overridden)"
-    # <<< END inline
+    - |-
+      # >>> BEGIN inline: default_before.sh
+            echo "Global before_script (runs before each job unless overridden)"
+      # <<< END inline
 workflow:
   rules:
-  - if: $CI_COMMIT_BRANCH == "main"
-    when: always
-  - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    when: always
-  - when: never    # default fallback
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: always
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+    - when: never  # default fallback
 
 # Stages
 stages:
-- lint
-- test
-- build
-- deploy
-- cleanup
+  - lint
+  - test
+  - build
+  - deploy
+  - cleanup
 
 # Anchors, aliases, and YAML merge
 .base_job: &base_job
@@ -44,43 +44,43 @@ stages:
 
 # Include external configs (remote, local, template)
 include:
-- local: .gitlab-ci-templates.yml
-- remote: "https://gitlab.com/example/ci-templates/-/raw/main/python.yml"
-- template: Code-Quality.gitlab-ci.yml
+  - local: .gitlab-ci-templates.yml
+  - remote: "https://gitlab.com/example/ci-templates/-/raw/main/python.yml"
+  - template: Code-Quality.gitlab-ci.yml
 
 # Job with rules, needs, variables, and services
 lint:
   <<: *base_job
   stage: lint
   script:
-  - |-
-    # >>> BEGIN inline: lint.sh
-    echo "Linting..."
-    pip install ruff
-    ruff check .
-    # <<< END inline
+    - |-
+      # >>> BEGIN inline: lint.sh
+      echo "Linting..."
+      pip install ruff
+      ruff check .
+      # <<< END inline
   rules:
-  - if: '$CI_COMMIT_MESSAGE =~ /skip-lint/'
-    when: never
-  - when: on_success
+    - if: '$CI_COMMIT_MESSAGE =~ /skip-lint/'
+      when: never
+    - when: on_success
 
 test:py38:
   <<: *base_job
   stage: test
   image: python:3.8
   services:
-  - name: postgres:15
-    alias: db
+    - name: postgres:15
+      alias: db
   variables:
     POSTGRES_DB: testdb
     POSTGRES_USER: user
     POSTGRES_PASSWORD: pass
   script:
-  - |-
-    # >>> BEGIN inline: test.sh
-    pip install pytest
-    pytest -vv
-    # <<< END inline
+    - |-
+      # >>> BEGIN inline: test.sh
+      pip install pytest
+      pytest -vv
+      # <<< END inline
   needs: [lint]
   artifacts:
     reports:
@@ -95,11 +95,11 @@ test:py312:
   image: python:3.12
   parallel: 3   # parallel matrix
   script:
-  - |-
-    # >>> BEGIN inline: test12.sh
-    pip install pytest
-    pytest -vv
-    # <<< END inline
+    - |-
+      # >>> BEGIN inline: test12.sh
+      pip install pytest
+      pytest -vv
+      # <<< END inline
   needs: [lint]
 
 build:docker:
@@ -107,16 +107,16 @@ build:docker:
   stage: build
   image: docker:24
   services:
-  - docker:dind
+    - docker:dind
   script:
-  - |-
-    # >>> BEGIN inline: docker.sh
-    echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
-    docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
-    # <<< END inline
+    - |-
+      # >>> BEGIN inline: docker.sh
+      echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+      docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
+      docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+      # <<< END inline
   only:
-  - branches
+    - branches
 
 deploy:staging:
   <<: *base_job
@@ -126,15 +126,15 @@ deploy:staging:
     url: https://staging.example.com
     on_stop: stop:staging
   script:
-  - echo "Deploying to staging..."
+    - echo "Deploying to staging..."
   only:
-  - merge_requests
-  - /^release\/.*$/
+    - merge_requests
+    - /^release\/.*$/
 
 stop:staging:
   stage: cleanup
   script:
-  - echo "Stopping staging..."
+    - echo "Stopping staging..."
   when: manual
   environment:
     name: staging
@@ -147,15 +147,15 @@ deploy:production:
     name: production
     url: https://prod.example.com
   script:
-  - echo "Deploying to production..."
+    - echo "Deploying to production..."
   only:
-  - main
+    - main
   when: manual
 
 cleanup:
   stage: cleanup
   script:
-  - echo "Cleaning up temp files"
+    - echo "Cleaning up temp files"
   when: always
 
 # Dynamic child pipeline
@@ -165,17 +165,17 @@ generate-child-pipeline:
     include: child-pipeline.yml
     strategy: depend
   rules:
-  - if: '$CI_COMMIT_BRANCH == "feature/*"'
+    - if: '$CI_COMMIT_BRANCH == "feature/*"'
 
 # YAML features: multiline strings, folded style, and comments
 notes:
   stage: lint
   script:
-  - |
-    echo """
-    Multiline literal block example.
-    This job doesn’t actually do work,
-    but demonstrates YAML features.
-    """
+    - |
+      echo """
+      Multiline literal block example.
+      This job doesn’t actually do work,
+      but demonstrates YAML features.
+      """
 
-    echo "Folded block: This is a single line despite being written across multiple lines in YAML"
+      echo "Folded block: This is a single line despite being written across multiple lines in YAML"

@@ -460,7 +460,7 @@ wheels = [
 
 [[package]]
 name = "bash2gitlab"
-version = "0.9.8"
+version = "0.9.9"
 source = { editable = "." }
 dependencies = [
     { name = "certifi" },
@@ -617,7 +617,7 @@ dev = [
     { name = "pytest-xdist", marker = "python_full_version >= '3.8'", specifier = ">=3.5.0" },
     { name = "ruff", marker = "python_full_version >= '3.8'", specifier = ">=0.12.0" },
     { name = "strip-docs", marker = "python_full_version >= '3.12'", specifier = ">=1.0" },
-    { name = "troml-dev-status", marker = "python_full_version >= '3.9'", specifier = ">=0.4.0" },
+    { name = "troml-dev-status", marker = "python_full_version >= '3.9'", specifier = ">=0.4.1" },
     { name = "types-jsonschema", marker = "python_full_version >= '3.8'" },
     { name = "types-toml", marker = "python_full_version >= '3.8'" },
     { name = "vermin", marker = "python_full_version >= '3.8'" },
@@ -6755,7 +6755,7 @@ wheels = [
 
 [[package]]
 name = "troml-dev-status"
-version = "0.4.0"
+version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx", extra = ["http2"], marker = "python_full_version >= '3.9'" },
@@ -6772,9 +6772,9 @@ dependencies = [
     { name = "tomli", marker = "python_full_version >= '3.9' and python_full_version < '3.11'" },
     { name = "tomlkit", marker = "python_full_version >= '3.9'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/e6/e5500aa91630762befa2d81c2cff9c12c18b3edcf5d2a28758193d3bdc38/troml_dev_status-0.4.0.tar.gz", hash = "sha256:5c0b880bcf3b818adb8193563178ac6baad37c8c72d85f0dc60ffaba631bdf5d", size = 51118, upload-time = "2025-09-21T01:35:09.745Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/03/e2/9230b92a15ce5e94822c8e554667452a02c7895ebc1390bdd23f2c65ea22/troml_dev_status-0.4.1.tar.gz", hash = "sha256:f02ee95954d6c821b7881dd9176e67d307d748da7e78f91973ff2fb8feb0e100", size = 56306, upload-time = "2025-09-22T02:34:39.214Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/40/e5/717f3bd8636bea84c4afc5b763880ba2bbc6b847beaafb987f56499bb949/troml_dev_status-0.4.0-py3-none-any.whl", hash = "sha256:ae2e952ef3d02fba7086728f07d49df55629e7ce0f613607a882ad70d5bceed3", size = 59051, upload-time = "2025-09-21T01:35:08.46Z" },
+    { url = "https://files.pythonhosted.org/packages/74/3e/c6154f8d93a723794030a5147980f545f383e262cdb51ef26a64520bddc8/troml_dev_status-0.4.1-py3-none-any.whl", hash = "sha256:f4c5658fc18a21a0bb6d1f2a24df990712581fb7bf2d9de69951815bb23133ad", size = 65410, upload-time = "2025-09-22T02:34:37.784Z" },
 ]
 
 [[package]]
