@@ -530,10 +530,17 @@ def main() -> int:
     if start_background_update_check:  # type: ignore[truthy-function]
         start_background_update_check(__about__.__title__, __about__.__version__)
 
+    try:
+        import argparse
+        from rich_argparse import RichHelpFormatter
+        formatter_class = RichHelpFormatter
+    except:
+        formatter_class = argparse.RawTextHelpFormatter
+
     parser = SmartParser(
         prog=__about__.__title__,
         description=root_doc,
-        formatter_class=argparse.RawTextHelpFormatter,
+        formatter_class=formatter_class,
     )
 
     parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")

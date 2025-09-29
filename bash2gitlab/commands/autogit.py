@@ -51,10 +51,10 @@ def _paths_under_repo(repo_root: Path, *paths: Path) -> list[Path]:
     for p in paths:
         try:
             rel = p.resolve().relative_to(repo_root)
-        except ValueError:
+        except ValueError as ve:
             raise Bash2GitlabError(
                 f"Configured path {p} is not inside repository root {repo_root}."
-            )
+            ) from ve
         # Keep if either the absolute path exists or the relative path exists in the worktree
         if p.exists() or (repo_root / rel).exists():
             kept.append(rel)

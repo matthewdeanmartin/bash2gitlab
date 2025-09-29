@@ -10,6 +10,15 @@ best of both worlds.
 Bash in YAML is Bash without quality gates. Also, includes support for inlining a large number of scripts from other
 language, from Python to PHP.
 
+[![tests](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml/badge.svg)
+](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/tests.yml)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/matthewdeanmartin/bash2gitlab/main.svg)
+](https://results.pre-commit.ci/latest/github/matthewdeanmartin/bash2gitlab/main)
+[![Downloads](https://img.shields.io/pypi/dm/bash2gitlab)](https://pypistats.org/packages/bash2gitlab)
+[![Python Version](https://img.shields.io/pypi/pyversions/bash2gitlab)
+![Release](https://img.shields.io/pypi/v/bash2gitlab)
+](https://pypi.org/project/bash2gitlab/)
+
 ______________________________________________________________________
 
 ## Before

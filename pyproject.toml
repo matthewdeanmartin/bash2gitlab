@@ -58,8 +58,7 @@ issues = "https://github.com/matthewdeanmartin/bash2gitlab/issues/"
 all = [
     # CLI
     "argcomplete", # could be optional
-
-
+    "rich_argparse", # could be optional
 
     # UI
     "textual", # could be optional
