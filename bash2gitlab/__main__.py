@@ -56,6 +56,7 @@ from gitlab.exceptions import GitlabAuthenticationError, GitlabHttpError
 # Core
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.commands.autogit import run_autogit
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
@@ -475,6 +476,11 @@ def best_effort_run_handler(args: argparse.Namespace) -> None:
     best_efforts_run(Path(args.input_file))
 
 
+def autogit_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'autogit' command."""
+    return run_autogit(config=config, commit_message=args.message)
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared CLI flags to a subparser."""
     parser.add_argument(
@@ -485,6 +491,16 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+
+
+def add_autogit_argument(parser: argparse.ArgumentParser) -> None:
+    """Adds the --autogit flag to a parser."""
+    parser.add_argument(
+        "--autogit",
+        action="store_true",
+        help="Automatically stage, commit, and/or push changes after the command succeeds. "
+        "Behavior is configured in [tool.bash2gitlab.autogit].",
+    )
 
 
 def handle_change_detection_commands(args) -> None:
@@ -554,6 +570,7 @@ def main() -> int:
     )
     parser.add_argument("--force", action="store_true", help="Force compilation even if no input changes detected")
     add_common_arguments(compile_parser)
+    add_autogit_argument(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
 
     # Clean Parser
@@ -568,6 +585,7 @@ def main() -> int:
         help="Output directory for the compiled GitLab CI files.",
     )
     add_common_arguments(clean_parser)
+    add_autogit_argument(clean_parser)
     clean_parser.set_defaults(func=clean_handler)
 
     # --- Decompile Command ---
@@ -602,6 +620,7 @@ def main() -> int:
     )
 
     add_common_arguments(decompile_parser)
+    add_autogit_argument(decompile_parser)
 
     decompile_parser.set_defaults(func=decompile_handler)
 
@@ -687,6 +706,7 @@ def main() -> int:
         help="Overwrite target files even if they have been modified since the last deployment.",
     )
     add_common_arguments(map_deploy_parser)
+    add_autogit_argument(map_deploy_parser)
     map_deploy_parser.set_defaults(func=map_deploy_handler)
 
     # --- commit-map Command ---
@@ -708,6 +728,7 @@ def main() -> int:
         help=("Overwrite source files even if they have been modified since the last deployment."),
     )
     add_common_arguments(commit_map_parser)
+    add_autogit_argument(commit_map_parser)
 
     commit_map_parser.set_defaults(func=commit_map_handler)
 
@@ -998,6 +1019,21 @@ def main() -> int:
     )
     add_common_arguments(validate_parser)
     validate_parser.set_defaults(func=validate_handler)
+
+    # --- Autogit Command ---
+    autogit_parser = subparsers.add_parser(
+        "autogit",
+        help="Manually trigger the autogit process based on your configuration.",
+        description="Stages, commits, and/or pushes changes in your configured input_dir and output_dir.",
+    )
+    autogit_parser.add_argument(
+        "-m",
+        "--message",
+        help="Override the commit message defined in your config file.",
+    )
+    add_common_arguments(autogit_parser)
+    autogit_parser.set_defaults(func=autogit_handler)
+
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
     if argcomplete:
@@ -1058,7 +1094,7 @@ def main() -> int:
         args.input_dir = args.input_dir or config.input_dir
         if not args.input_dir:
             lint_parser.error("argument --in is required")
-    # install-precommit / uninstall-precommit / doctor / graph / show-config do not merge config
+    # install-precommit / uninstall-precommit / doctor / graph / show-config / autogit do not merge config
 
     # Merge boolean flags
     args.verbose = getattr(args, "verbose", False) or config.verbose or False

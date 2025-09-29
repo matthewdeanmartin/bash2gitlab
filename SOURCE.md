@@ -2,6 +2,7 @@
 ```
 ├── builtin_plugins.py
 ├── commands/
+│   ├── autogit.py
 │   ├── best_effort_runner.py
 │   ├── clean_all.py
 │   ├── compile_all.py
@@ -70,14 +71,20 @@
 
 from __future__ import annotations
 
+import argparse
+import logging
 from pathlib import Path
 
 from pluggy import HookimplMarker
 
+from bash2gitlab.commands.autogit import run_autogit
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
+from bash2gitlab.config import config
+from bash2gitlab.errors.exit_codes import ExitCode
 from bash2gitlab.utils.parse_bash import extract_script_path as _extract
 
 hookimpl = HookimplMarker("bash2gitlab")
+logger = logging.getLogger(__name__)
 
 
 class Defaults:
@@ -88,6 +95,26 @@ class Defaults:
     @hookimpl(tryfirst=True)  # firstresult=True
     def inline_command(self, line: str, scripts_root: Path) -> tuple[list[str], Path] | tuple[None, None]:
         return maybe_inline_interpreter_command(line, scripts_root)
+
+    @hookimpl
+    def after_command(self, result: int, args: argparse.Namespace) -> None:
+        """If a command was successful and --autogit was passed, run autogit."""
+        if result != ExitCode.OK:
+            return
+
+        if not getattr(args, "autogit", False):
+            return
+
+        logger.info("Command successful, triggering autogit...")
+        try:
+            # The message for --autogit will always come from config.
+            autogit_result = run_autogit(config=config, commit_message=None)
+            if autogit_result != 0:
+                logger.error("Autogit process failed.")
+
+        except Exception as e:
+            logger.error("An unexpected error occurred during autogit: %s", e, exc_info=False)
+            logger.debug("Traceback for autogit failure:", exc_info=True)
 ```
 ## File: config.py
 ```python
@@ -97,7 +124,7 @@ import logging
 import os
 from collections.abc import Collection
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from bash2gitlab.errors.exceptions import ConfigInvalid
 from bash2gitlab.utils.utils import short_path
@@ -114,6 +141,8 @@ except Exception as _e:  # pragma: no cover - only hit if import fails entirely
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+AutogitMode = Literal["off", "stage", "commit", "push"]
 
 
 class Config:
@@ -391,6 +420,37 @@ class Config:
     @property
     def map_force(self) -> bool | None:
         return self.get_bool("force", section="map")
+
+    # --- `autogit` Command Properties ---
+    @property
+    def autogit_mode(self) -> AutogitMode | None:
+        """The mode for autogit: 'off', 'stage', 'commit', or 'push'."""
+        value = self.get_str("mode", section="autogit")
+        if value is None:
+            return None
+        if value not in ("off", "stage", "commit", "push"):
+            logger.warning(
+                "Invalid value for [autogit].mode: '%s'. "
+                "Must be one of 'off', 'stage', 'commit', 'push'. Defaulting to 'off'.",
+                value,
+            )
+            return "off"
+        return value  # type: ignore[return-value]
+
+    @property
+    def autogit_commit_message(self) -> str | None:
+        """The default commit message for autogit."""
+        return self.get_str("commit_message", section="autogit")
+
+    @property
+    def autogit_remote(self) -> str | None:
+        """The git remote to push to."""
+        return self.get_str("remote", section="autogit")
+
+    @property
+    def autogit_branch(self) -> str | None:
+        """The git branch to push to. Defaults to the current branch."""
+        return self.get_str("branch", section="autogit")
 
 
 config = Config()
@@ -3110,6 +3170,7 @@ from gitlab.exceptions import GitlabAuthenticationError, GitlabHttpError
 # Core
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
+from bash2gitlab.commands.autogit import run_autogit
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
@@ -3529,6 +3590,11 @@ def best_effort_run_handler(args: argparse.Namespace) -> None:
     best_efforts_run(Path(args.input_file))
 
 
+def autogit_handler(args: argparse.Namespace) -> int:
+    """Handler for the 'autogit' command."""
+    return run_autogit(config=config, commit_message=args.message)
+
+
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared CLI flags to a subparser."""
     parser.add_argument(
@@ -3539,6 +3605,16 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose (DEBUG) logging output.")
     parser.add_argument("-q", "--quiet", action="store_true", help="Disable output.")
+
+
+def add_autogit_argument(parser: argparse.ArgumentParser) -> None:
+    """Adds the --autogit flag to a parser."""
+    parser.add_argument(
+        "--autogit",
+        action="store_true",
+        help="Automatically stage, commit, and/or push changes after the command succeeds. "
+        "Behavior is configured in [tool.bash2gitlab.autogit].",
+    )
 
 
 def handle_change_detection_commands(args) -> None:
@@ -3608,6 +3684,7 @@ def main() -> int:
     )
     parser.add_argument("--force", action="store_true", help="Force compilation even if no input changes detected")
     add_common_arguments(compile_parser)
+    add_autogit_argument(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
 
     # Clean Parser
@@ -3622,6 +3699,7 @@ def main() -> int:
         help="Output directory for the compiled GitLab CI files.",
     )
     add_common_arguments(clean_parser)
+    add_autogit_argument(clean_parser)
     clean_parser.set_defaults(func=clean_handler)
 
     # --- Decompile Command ---
@@ -3656,6 +3734,7 @@ def main() -> int:
     )
 
     add_common_arguments(decompile_parser)
+    add_autogit_argument(decompile_parser)
 
     decompile_parser.set_defaults(func=decompile_handler)
 
@@ -3741,6 +3820,7 @@ def main() -> int:
         help="Overwrite target files even if they have been modified since the last deployment.",
     )
     add_common_arguments(map_deploy_parser)
+    add_autogit_argument(map_deploy_parser)
     map_deploy_parser.set_defaults(func=map_deploy_handler)
 
     # --- commit-map Command ---
@@ -3762,6 +3842,7 @@ def main() -> int:
         help=("Overwrite source files even if they have been modified since the last deployment."),
     )
     add_common_arguments(commit_map_parser)
+    add_autogit_argument(commit_map_parser)
 
     commit_map_parser.set_defaults(func=commit_map_handler)
 
@@ -4052,6 +4133,21 @@ def main() -> int:
     )
     add_common_arguments(validate_parser)
     validate_parser.set_defaults(func=validate_handler)
+
+    # --- Autogit Command ---
+    autogit_parser = subparsers.add_parser(
+        "autogit",
+        help="Manually trigger the autogit process based on your configuration.",
+        description="Stages, commits, and/or pushes changes in your configured input_dir and output_dir.",
+    )
+    autogit_parser.add_argument(
+        "-m",
+        "--message",
+        help="Override the commit message defined in your config file.",
+    )
+    add_common_arguments(autogit_parser)
+    autogit_parser.set_defaults(func=autogit_handler)
+
     get_pm().hook.register_cli(subparsers=subparsers, config=config)
 
     if argcomplete:
@@ -4112,7 +4208,7 @@ def main() -> int:
         args.input_dir = args.input_dir or config.input_dir
         if not args.input_dir:
             lint_parser.error("argument --in is required")
-    # install-precommit / uninstall-precommit / doctor / graph / show-config do not merge config
+    # install-precommit / uninstall-precommit / doctor / graph / show-config / autogit do not merge config
 
     # Merge boolean flags
     args.verbose = getattr(args, "verbose", False) or config.verbose or False
@@ -4173,6 +4269,121 @@ def run_cli(args: argparse.Namespace) -> ExitCode:
 
 if __name__ == "__main__":
     sys.exit(main())
+```
+## File: commands\autogit.py
+```python
+# bash2gitlab/commands/autogit.py
+
+from __future__ import annotations
+
+import logging
+import subprocess  # nosec: B404
+from pathlib import Path
+from typing import Literal
+
+from bash2gitlab.config import Config
+from bash2gitlab.errors.exceptions import Bash2GitlabError, ConfigInvalid
+
+logger = logging.getLogger(__name__)
+
+AutogitMode = Literal["off", "stage", "commit", "push"]
+
+
+def _run_git_command(command: list[str], cwd: Path) -> str:
+    """Runs a Git command, captures its output, and handles errors."""
+    try:
+        logger.debug("Running git command: git %s", " ".join(command))
+        result = subprocess.run(  # nosec
+            ["git", *command],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=cwd,
+            encoding="utf-8",
+        )
+        logger.debug("Git command stdout:\n%s", result.stdout)
+        return result.stdout.strip()
+    except FileNotFoundError:
+        raise Bash2GitlabError("Git command not found. Is Git installed and in your PATH?") from None
+    except subprocess.CalledProcessError as e:
+        logger.error("Git command failed: git %s", " ".join(command))
+        logger.error("Stderr:\n%s", e.stderr)
+        raise Bash2GitlabError(f"Git command failed. Stderr: {e.stderr.strip()}") from e
+
+
+def _get_repo_root(path: Path) -> Path:
+    """Finds the git repository root from a given path."""
+    return Path(_run_git_command(["rev-parse", "--show-toplevel"], cwd=path))
+
+
+def run_autogit(config: Config, commit_message: str | None = None) -> int:
+    """
+    Performs git operations (stage, commit, push) based on configuration.
+
+    This function reads the `input_dir` and `output_dir` from the global
+    configuration to determine which folders to operate on.
+
+    Args:
+        config: The application's configuration object.
+        commit_message: An optional commit message to override the config.
+
+    Returns:
+        0 on success, 1 on failure.
+    """
+    mode = config.autogit_mode
+    if not mode or mode == "off":
+        logger.debug("Autogit is disabled ('off' or not set in config).")
+        return 0
+
+    input_dir_str = config.input_dir
+    output_dir_str = config.output_dir
+
+    if not input_dir_str or not output_dir_str:
+        msg = "Autogit failed: 'input_dir' and 'output_dir' must be set in the global config."
+        logger.error(msg)
+        raise ConfigInvalid(msg)
+
+    try:
+        input_dir = Path(input_dir_str).resolve()
+        output_dir = Path(output_dir_str).resolve()
+
+        repo_root = _get_repo_root(input_dir)
+        logger.info(f"Git repository root found at: {repo_root}")
+
+        paths_to_add = {
+            input_dir.relative_to(repo_root),
+            output_dir.relative_to(repo_root),
+        }
+
+        # Stage files
+        logger.info(f"Staging changed files in: {', '.join(str(p) for p in paths_to_add)}")
+        _run_git_command(["add", *[str(p) for p in paths_to_add]], cwd=repo_root)
+
+        status_output = _run_git_command(["status", "--porcelain"], cwd=repo_root)
+        if not status_output:
+            logger.info("No changes to commit.")
+            return 0
+
+        if mode in ["commit", "push"]:
+            message = commit_message or config.autogit_commit_message or "chore: auto-commit by bash2gitlab"
+            logger.info(f"Committing with message: '{message}'")
+            _run_git_command(["commit", "-m", message], cwd=repo_root)
+
+        if mode == "push":
+            remote = config.autogit_remote or "origin"
+            branch = config.autogit_branch or _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], cwd=repo_root)
+            logger.info(f"Pushing to {remote}/{branch}...")
+            _run_git_command(["push", remote, branch], cwd=repo_root)
+
+        logger.info(f"Autogit action '{mode}' completed successfully.")
+        return 0
+
+    except Bash2GitlabError as e:
+        logger.error(f"Autogit failed: {e}")
+        return 1
+    except Exception as e:
+        logger.error(f"An unexpected error occurred during autogit: {e}", exc_info=True)
+        return 1
 ```
 ## File: commands\best_effort_runner.py
 ```python
@@ -13447,7 +13658,16 @@ def resolve_exit_code(exc: BaseException) -> ExitCode:
               "type": "object",
               "properties": {
                 "files": {
-                  "markdownDescription": "Use the `cache:key:files` keyword to generate a new key when one or two specific files change. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekeyfiles)",
+                  "markdownDescription": "Use the `cache:key:files` keyword to generate a new cache key when specified file content changes. Cache keys remain stable across branches with identical file content. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekeyfiles)",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "maxItems": 2
+                },
+                "files_commits": {
+                  "markdownDescription": "Use the `cache:key:files_commits` keyword to generate a new cache key when the latest commit changes for the specified files. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekeyfiles_commits)",
                   "type": "array",
                   "items": {
                     "type": "string"
@@ -13456,7 +13676,7 @@ def resolve_exit_code(exc: BaseException) -> ExitCode:
                   "maxItems": 2
                 },
                 "prefix": {
-                  "markdownDescription": "Use `cache:key:prefix` to combine a prefix with the SHA computed for `cache:key:files`. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekeyprefix)",
+                  "markdownDescription": "Use `cache:key:prefix` to combine a prefix with the SHA computed for `cache:key:files` or `cache:key:files_commits`. [Learn More](https://docs.gitlab.com/ci/yaml/#cachekeyprefix)",
                   "type": "string"
                 }
               }
@@ -14077,14 +14297,7 @@ def resolve_exit_code(exc: BaseException) -> ExitCode:
                 },
                 "deployment_tier": {
                   "type": "string",
-                  "description": "Explicitly specifies the tier of the deployment environment if non-standard environment name is used.",
-                  "enum": [
-                    "production",
-                    "staging",
-                    "testing",
-                    "development",
-                    "other"
-                  ]
+                  "description": "Explicitly specifies the tier of the deployment environment if non-standard environment name is used."
                 }
               },
               "required": [

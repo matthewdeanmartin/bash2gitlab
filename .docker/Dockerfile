@@ -2,7 +2,7 @@
 FROM python:3.13-slim
 
 # ---- Build-time pin (override with --build-arg) ----
-ARG B2G_VERSION=0.9.1
+ARG B2G_VERSION=0.9.8
 
 # ---- Helpful envs ----
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \

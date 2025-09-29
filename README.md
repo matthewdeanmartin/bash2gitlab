@@ -152,11 +152,11 @@ Run with
 
 | Command             | Description                                                      |
 |:--------------------|:-----------------------------------------------------------------|
-| `lint`              | Call gitlab APIs to lint you yaml                                |
+| `lint`              | Call gitlab APIs to lint your yaml                               |
 | `detect-drift`      | Report what unexpected changes were made to the generated files. |
 | `show-config`       | Display config after cascade                                     |
 | `doctor`            | Look for environment problems                                    |
-| `graph`             | Generate graph inline relationships                              |
+| `graph`             | Generate graph of inline relationships                           |
 | `detect-uncompiled` | Detect if you forgot to compile                                  |
 | `validate`          | Validate json schema of all yaml in input and output             |
 

@@ -6,8 +6,10 @@
 
 ## New commands
 
-- pipeline trigger: after updating a central repo, go tell a bunch of repos to rebuild
-- upgrade pipeline: pin unpinned templates, upgrade pinned templates to latest.
+- autodetect cloned client repos
+- "find usages" - scan remote repos for usages of templates in central template repo
+- pipeline trigger: after updating a central repo, go tell a bunch of repos to rebuild (untested)
+- upgrade pipeline: pin unpinned templates, upgrade pinned templates to latest. (untested)
 
 
 ## Bugs

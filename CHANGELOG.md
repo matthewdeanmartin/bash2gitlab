@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.9] - 2025-09-29
+
+### Fixed
+
+- Gitlab library included
+
+### Added
+
+- `autogit` command and switches
+
 ## [0.9.8] - 2025-09-04
 
 ### Fixed
@@ -19,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wrong bash return value for `detect-uncompiled`
 - Fixed other ad hoc return values
 
-### Added 
+### Added
 
 - `check-pins` to attempt to upgrade `include:` elements to latest hash or git tag.
 

@@ -4,7 +4,7 @@ import logging
 import os
 from collections.abc import Collection
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from bash2gitlab.errors.exceptions import ConfigInvalid
 from bash2gitlab.utils.utils import short_path
@@ -21,6 +21,8 @@ except Exception as _e:  # pragma: no cover - only hit if import fails entirely
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+AutogitMode = Literal["off", "stage", "commit", "push"]
 
 
 class Config:
@@ -298,6 +300,37 @@ class Config:
     @property
     def map_force(self) -> bool | None:
         return self.get_bool("force", section="map")
+
+    # --- `autogit` Command Properties ---
+    @property
+    def autogit_mode(self) -> AutogitMode | None:
+        """The mode for autogit: 'off', 'stage', 'commit', or 'push'."""
+        value = self.get_str("mode", section="autogit")
+        if value is None:
+            return None
+        if value not in ("off", "stage", "commit", "push"):
+            logger.warning(
+                "Invalid value for [autogit].mode: '%s'. "
+                "Must be one of 'off', 'stage', 'commit', 'push'. Defaulting to 'off'.",
+                value,
+            )
+            return "off"
+        return value  # type: ignore[return-value]
+
+    @property
+    def autogit_commit_message(self) -> str | None:
+        """The default commit message for autogit."""
+        return self.get_str("commit_message", section="autogit")
+
+    @property
+    def autogit_remote(self) -> str | None:
+        """The git remote to push to."""
+        return self.get_str("remote", section="autogit")
+
+    @property
+    def autogit_branch(self) -> str | None:
+        """The git branch to push to. Defaults to the current branch."""
+        return self.get_str("branch", section="autogit")
 
 
 config = Config()

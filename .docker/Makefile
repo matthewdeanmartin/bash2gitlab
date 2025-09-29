@@ -1,6 +1,6 @@
 # -------- Config (override on the CLI: make build IMAGE_NAME=youruser/bash2gitlab) --------
 IMAGE_NAME ?= matthewdeanmartin/bash2gitlab
-B2G_VERSION ?= 0.9.2           # bash2gitlab version to install in the image
+B2G_VERSION ?= 0.9.8           # bash2gitlab version to install in the image
 TAG ?= $(B2G_VERSION)          # image tag; default to the same as B2G version
 IMG := $(IMAGE_NAME):$(TAG)
 LATEST := $(IMAGE_NAME):latest
@@ -17,7 +17,7 @@ build:
 	  -f Dockerfile .
 
 .PHONY: tag-latest
-tag-latest:
+tag-latest: build
 	docker tag $(IMG) $(LATEST)
 
 # Convenience run wrapper (mount PWD, keep file ownership)

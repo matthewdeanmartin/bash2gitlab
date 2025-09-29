@@ -23,6 +23,8 @@ dependencies = [
     # Extensibility
     "pluggy", # required to compile
 
+    # gitlab API
+    "python-gitlab",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -57,8 +59,7 @@ all = [
     # CLI
     "argcomplete", # could be optional
 
-    # gitlab API
-    "python-gitlab",
+
 
     # UI
     "textual", # could be optional
@@ -84,6 +85,7 @@ all = [
 
 [dependency-groups]
 dev = [
+    "troml-dev-status>=0.4.0; python_version >= '3.9'",
     "git2md; python_version >= '3.10'",
     "pyclean; python_version >= '3.12'",
     "strip-docs>=1.0; python_version >= '3.12'",
@@ -172,7 +174,6 @@ include = [
     "bash2gitlab/schemas/**/*.json",
     "bash2gitlab/py.typed",
     "/README.md", "LICENSE",
-    "/tests"
 ]
 
 [tool.hatch.build.targets.sdist]
