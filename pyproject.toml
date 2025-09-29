@@ -1,6 +1,6 @@
 [project]
 name = "bash2gitlab"
-version = "0.9.9"
+version = "0.9.10"
 description = "Compile bash to gitlab pipeline yaml"
 readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
@@ -9,25 +9,25 @@ license = "MIT"
 requires-python = ">=3.8"
 dependencies = [
     # Core enables compile, decompile, validate, best effort runner
-    "ruamel.yaml", # required to compile
-    "jsonschema", # required to compile
-    "importlib_resources", # Used by validator
-    "toml", # backwards compat, required to compile
+    "ruamel.yaml>=0.18.14", # required to compile
+    "jsonschema>=4.23.0", # required to compile
+    "importlib_resources>=6.4.5", # Used by validator
+    "toml>=0.10.2", # backwards compat, required to compile
     # native libs to speed things up
-    "rtoml",
-    "urllib3",
-    "orjson",
-    "certifi",
+    "rtoml>=0.5.0",
+    "urllib3>=2.0.0",
+    "orjson>=3.10.8",
+    "certifi>=2025.8.3",
     # "rapidyaml==0.9.0", # API too radically different to use yet.
 
     # Extensibility
-    "pluggy", # required to compile
+    "pluggy>=1.0.0", # required to compile
 
     # gitlab API
-    "python-gitlab",
+    "python-gitlab>=1.0.0",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
