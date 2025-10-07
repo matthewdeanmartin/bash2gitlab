@@ -3,7 +3,6 @@ ci:
   autoupdate_schedule: monthly
   autofix_commit_msg: |
     [pre-commit.ci] Apply automatic pre-commit fixes
-  # this does not work on pre-commit ci
   skip: []
   
 repos:

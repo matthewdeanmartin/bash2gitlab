@@ -47,7 +47,19 @@ test: clean uv.lock install_plugins
 .PHONY: isort
 isort: .build_history/isort
 
-.build_history/black: .build_history .build_history/isort $(FILES)
+.PHONY: jiggle_version
+
+jiggle_version:
+ifeq ($(CI),true)
+	@echo "Running in CI mode"
+	jiggle_version check
+else
+	@echo "Running locally"
+	jiggle_version hash-all
+	# jiggle_version bump --increment auto
+endif
+
+.build_history/black: .build_history .build_history/isort jiggle_version $(FILES)
 	@echo "Formatting code"
 	$(VENV) metametameta pep621
 	$(VENV) black bash2gitlab # --exclude .venv

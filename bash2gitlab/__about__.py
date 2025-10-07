@@ -12,10 +12,10 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.9"
+__version__ = "0.9.11"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
 __license__ = "MIT"
 __requires_python__ = ">=3.8"
-__status__ = "4 - Beta"
+__status__ = "5 - Production/Stable"

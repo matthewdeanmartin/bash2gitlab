@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.9.10] - 2025-10-04
+
+### Added
+
+- `--totalhelp` switch added to list all help
+
 ## [0.9.9] - 2025-09-29
 
 ### Fixed

@@ -532,8 +532,6 @@ def main() -> int:
         start_background_update_check(__about__.__title__, __about__.__version__)
 
     try:
-        import argparse
-
         from rich_argparse import RichHelpFormatter
 
         formatter_class: Any = RichHelpFormatter
@@ -548,7 +546,15 @@ def main() -> int:
 
     parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    totalhelp: Any = None
+    try:
+        import totalhelp
+
+        totalhelp.add_totalhelp_flag(parser)
+    except:
+        totalhelp = None
+
+    subparsers = parser.add_subparsers(dest="command", required=False)
 
     # --- Compile Command ---
     compile_parser = subparsers.add_parser(
@@ -1050,6 +1056,11 @@ def main() -> int:
         argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
+    if totalhelp and getattr(args, "totalhelp", False):
+        doc = totalhelp.full_help_from_parser(parser, fmt=getattr(args, "format", "text"))
+        totalhelp.print_output(doc, fmt=getattr(args, "format", "text"), open_browser=getattr(args, "open", False))
+        sys.exit(0)
+
     # --- Configuration Precedence: CLI > ENV > TOML ---
     # Merge string/path arguments
     if args.command == "compile":
@@ -1121,6 +1132,9 @@ def main() -> int:
         log_level = "INFO"
     logging.config.dictConfig(generate_config(level=log_level))
 
+    if not hasattr(args, "func"):
+        print("Command required.")
+        sys.exit(ExitCode.USAGE)
     return run_cli(args)
 
 

@@ -3102,13 +3102,13 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.9"
+__version__ = "0.9.11"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]
 __license__ = "MIT"
 __requires_python__ = ">=3.8"
-__status__ = "4 - Beta"
+__status__ = "5 - Production/Stable"
 ```
 ## File: __main__.py
 ```python
@@ -3646,8 +3646,6 @@ def main() -> int:
         start_background_update_check(__about__.__title__, __about__.__version__)
 
     try:
-        import argparse
-
         from rich_argparse import RichHelpFormatter
 
         formatter_class: Any = RichHelpFormatter
@@ -3662,7 +3660,15 @@ def main() -> int:
 
     parser.add_argument("--version", action="version", version=f"%(prog)s {__about__.__version__}")
 
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    totalhelp: Any = None
+    try:
+        import totalhelp
+
+        totalhelp.add_totalhelp_flag(parser)
+    except:
+        totalhelp = None
+
+    subparsers = parser.add_subparsers(dest="command", required=False)
 
     # --- Compile Command ---
     compile_parser = subparsers.add_parser(
@@ -4164,6 +4170,11 @@ def main() -> int:
         argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
+    if totalhelp and getattr(args, "totalhelp", False):
+        doc = totalhelp.full_help_from_parser(parser, fmt=getattr(args, "format", "text"))
+        totalhelp.print_output(doc, fmt=getattr(args, "format", "text"), open_browser=getattr(args, "open", False))
+        sys.exit(0)
+
     # --- Configuration Precedence: CLI > ENV > TOML ---
     # Merge string/path arguments
     if args.command == "compile":
@@ -4235,6 +4246,9 @@ def main() -> int:
         log_level = "INFO"
     logging.config.dictConfig(generate_config(level=log_level))
 
+    if not hasattr(args, "func"):
+        print("Command required.")
+        sys.exit(ExitCode.USAGE)
     return run_cli(args)
 
 
@@ -13998,6 +14012,10 @@ def resolve_exit_code(exc: BaseException) -> ExitCode:
         {
           "const": "data_integrity_failure",
           "description": "Retry if there is an unknown job problem."
+        },
+        {
+          "const": "runner_provisioning_timeout",
+          "description": "Retry if the runner manager did not provision a runner to pick up the job in time."
         }
       ]
     },
