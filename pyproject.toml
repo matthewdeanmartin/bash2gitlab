@@ -10,6 +10,8 @@ requires-python = ">=3.8"
 dependencies = [
     # Core enables compile, decompile, validate, best effort runner
     "ruamel.yaml>=0.18.14", # required to compile
+    # TODO: evaluate ruamel.yaml.clib
+
     "jsonschema>=4.23.0", # required to compile
     "importlib_resources>=6.4.5", # Used by validator
     "toml>=0.10.2", # backwards compat, required to compile
@@ -38,7 +40,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
+    # "Programming Language :: Python :: 3.14", # rtoml doesn't support
 ]
 
 [project.urls]
@@ -86,6 +88,8 @@ all = [
 [dependency-groups]
 dev = [
     "jiggle-version>=2.0.1",
+    "maturin>=1.9.6; python_version >= '3.14'",
+    "pydantic>=2.12.0; python_version >= '3.14'",
     "troml-dev-status>=0.4.1; python_version >= '3.9'",
     "git2md; python_version >= '3.10'",
     "pyclean; python_version >= '3.12'",
