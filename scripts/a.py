@@ -22,7 +22,6 @@ import concurrent.futures as cf
 import time
 import xmlrpc.client
 from dataclasses import dataclass
-from typing import Optional
 from collections.abc import Iterable
 
 import requests
