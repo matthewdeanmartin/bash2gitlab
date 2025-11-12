@@ -3102,7 +3102,7 @@ __all__ = [
 ]
 
 __title__ = "bash2gitlab"
-__version__ = "0.9.11"
+__version__ = "0.9.10"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"
 __keywords__ = ["bash", "gitlab"]

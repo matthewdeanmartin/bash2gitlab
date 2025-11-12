@@ -235,7 +235,7 @@ multi_line_output = 3
 use_parentheses = true
 
 [tool.ruff]
-line-length = 1000
+line-length = 320
 # Assume Python 3.10.
 target-version = "py39"
 
@@ -252,7 +252,8 @@ ignore = [
     "E722",
     # only track structural problems with docstrings, not whitespace, nor missing
     "D200", "D212", "D415", "D411", "D205", "D102", "D103", "D100", "D107", "D101", "D104", "D105",
-    "UP007", "UP038", # Not sure if | is well supported in lowever versions of python
+    "UP007",  # Not sure if | is well supported in lowever versions of python
+    "E501", # some long strings that probably should be templates someday
 ]
 per-file-ignores = { }
 
