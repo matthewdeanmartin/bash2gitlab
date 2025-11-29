@@ -209,3 +209,11 @@ __marimo__/
 .justlogs
 .bash2gitlab
 .venv*
+.idea
+*.flat.md
+/dependency-graph-bad
+/dependency-graph-empty
+/dependency-graph-proj
+/dependency-graph-src
+requirements.txt
+source_condensed.md
