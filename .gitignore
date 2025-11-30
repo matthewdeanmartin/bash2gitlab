@@ -217,3 +217,5 @@ __marimo__/
 /dependency-graph-src
 requirements.txt
 source_condensed.md
+junit.xml
+SOURCE.md
