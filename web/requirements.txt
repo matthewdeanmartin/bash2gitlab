@@ -4,7 +4,7 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pydantic>=2.4.0
-python-multipart>=0.0.6
+python-multipart>=0.0.22
 
 # For CORS support (already included in fastapi)
 # For async operations (already in Python 3.7+)
