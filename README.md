@@ -169,6 +169,13 @@ Run with
 | `detect-uncompiled` | Detect if you forgot to compile                                  |
 | `validate`          | Validate json schema of all yaml in input and output             |
 
+### Other
+
+| Command           | Description                                                             |
+|:------------------|:------------------------------------------------------------------------|
+| check-pins        | Analyze GitLab CI include: statements and suggest pinning to tags       |
+| trigger-pipelines | Trigger pipelines in GitLab projects and optionally wait for completion |
+
 ### Simulate Gitlab Pipeline Locally
 
 | Command | Description                                                                         |
@@ -207,7 +214,8 @@ To define variables that should be inlined into the global `variables:` block of
 - **[gitlab-ci-local](https://github.com/firecow/gitlab-ci-local):** This is an excellent tool for running your entire
   GitLab pipeline in local Docker containers. `bash2gitlab` is different—it focuses on the "unit testing" of your Bash
   logic itself, assuming you can and want to execute your scripts on your local machine without the overhead of Docker.
-- **GitHub Actions** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
+- **GitHub Actions
+  ** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
   do not have this problem. A shared GitHub action can reference a script in the shared action's repo. A GitHub
   "reusable" workflow is a single yaml file and might suffer from the same problem as Gitlab pipelines.
 - **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.
@@ -215,19 +223,18 @@ To define variables that should be inlined into the global `variables:` block of
   use other base images.
 - **Trigger remote pipeline** A remote pipeline has access to the shell files in its own repo.
 
-
 ## Project Health & Info
 
-| Metric            | Health                                                                                                                                                                                                              | Metric          | Info                                                                                                                                                                                                              |
-|:------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Metric            | Health                                                                                                                                                                                                            | Metric          | Info                                                                                                                                                                                                            |
+|:------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Tests             | [![Tests](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml/badge.svg)](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml)                                  | License         | [![License](https://img.shields.io/github/license/matthewdeanmartin/bash2gitlab)](https://github.com/matthewdeanmartin/bash2gitlab/blob/main/LICENSE.md)                                                        |
 | Coverage          | [![Codecov](https://codecov.io/gh/matthewdeanmartin/bash2gitlab/branch/main/graph/badge.svg)](https://codecov.io/gh/matthewdeanmartin/bash2gitlab)                                                                | PyPI            | [![PyPI](https://img.shields.io/pypi/v/bash2gitlab)](https://pypi.org/project/bash2gitlab/)                                                                                                                     |
 | Lint / Pre-commit | [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/matthewdeanmartin/bash2gitlab/main.svg)](https://results.pre-commit.ci/latest/github/matthewdeanmartin/bash2gitlab/main)                      | Python Versions | [![Python Version](https://img.shields.io/pypi/pyversions/bash2gitlab)](https://pypi.org/project/bash2gitlab/)                                                                                                  |
 | Quality Gate      | [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=matthewdeanmartin_bash2gitlab\&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=matthewdeanmartin_bash2gitlab)    | Docs            | [![Docs](https://readthedocs.org/projects/bash2gitlab/badge/?version=latest)](https://bash2gitlab.readthedocs.io/en/latest/)                                                                                    |
 | CI Build          | [![Build](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml/badge.svg)](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml)                                  | Downloads       | [![Downloads](https://static.pepy.tech/personalized-badge/bash2gitlab?period=total\&units=international_system\&left_color=grey\&right_color=blue\&left_text=Downloads)](https://pepy.tech/project/bash2gitlab) |
-| Maintainability   | [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=matthewdeanmartin_bash2gitlab\&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=matthewdeanmartin_bash2gitlab) | Last Commit     | ![Last Commit](https://img.shields.io/github/last-commit/matthewdeanmartin/bash2gitlab)                                                                                                                          |
+| Maintainability   | [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=matthewdeanmartin_bash2gitlab\&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=matthewdeanmartin_bash2gitlab) | Last Commit     | ![Last Commit](https://img.shields.io/github/last-commit/matthewdeanmartin/bash2gitlab)                                                                                                                         |
 
-| Category          | Health                                                                                                                                              
-|-------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Open Issues**   | ![GitHub issues](https://img.shields.io/github/issues/matthewdeanmartin/bash2gitlab)                                                               |
-| **Stars**         | ![GitHub Repo stars](https://img.shields.io/github/stars/matthewdeanmartin/bash2gitlab?style=social)                                               |
+| Category        | Health                                                                                               
+|-----------------|------------------------------------------------------------------------------------------------------|
+| **Open Issues** | ![GitHub issues](https://img.shields.io/github/issues/matthewdeanmartin/bash2gitlab)                 |
+| **Stars**       | ![GitHub Repo stars](https://img.shields.io/github/stars/matthewdeanmartin/bash2gitlab?style=social) |

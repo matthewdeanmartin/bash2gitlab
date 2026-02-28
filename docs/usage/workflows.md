@@ -8,7 +8,7 @@ bash2gitlab decompileding is not necessarily opinionated.
 - Open in your IDE for syntax highlighting
 - Lint with shellcheck
 - Find bugs and edit your original yaml to fix via copy-paste.
-- Delete the decompileded bash
+- Delete the decompiled bash
 
 Round trip decompile-compile is not guaranteed, yaml is too quirky.
 

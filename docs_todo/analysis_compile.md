@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Bash2GitLab is a sophisticated Python tool designed to solve a critical limitation in GitLab CI/CD pipelines: the
+Bash2GitLab is a Python tool designed to solve a critical limitation in GitLab CI/CD pipelines: the
 inability to reference external script files directly in pipeline definitions. The tool automatically inlines shell
 scripts and other interpreter-based scripts directly into GitLab CI YAML files, creating self-contained pipeline
 definitions that can be executed in any GitLab runner environment.

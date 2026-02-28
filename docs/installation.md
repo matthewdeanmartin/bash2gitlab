@@ -5,7 +5,7 @@ This is a standalone command, pipx is better:
 ```bash
 python -m pip install --user pipx
 python -m pipx ensurepath
-pipx install bash2gitlab
+pipx install bash2gitlab[all]
 ```
 
 To use it as a library or extend it with python:

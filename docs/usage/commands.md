@@ -135,7 +135,7 @@ external script files (e.g., `script: ./my-job.sh`). This is extremely useful fo
 1. **`decompile`**: Run `bash2gitlab decompile` on an existing `.gitlab-ci.yml` or a directory of them. This creates a
    source tree of YAML templates and associated scripts.
 2. **Review**: Manually review the generated source files and organize them as needed.
-3. **`compile`**: Configure your `bash2gitlab.toml` and run `bash2gitlab compile` to verify that the decompileded source
+3. **`compile`**: Configure your `bash2gitlab.toml` and run `bash2gitlab compile` to verify that the decompiled source
    can be compiled back into a valid GitLab CI structure. The output should be functionally identical to the original
    file.
 
@@ -152,14 +152,14 @@ external script files (e.g., `script: ./my-job.sh`). This is extremely useful fo
 ### CLI Usage and Examples
 
 ```bash
-# Decompile a single file into the 'decompileded_output' directory
-bash2gitlab decompile --in-file .gitlab-ci.yml --out decompileded_output
+# Decompile a single file into the 'decompiled_output' directory
+bash2gitlab decompile --in-file .gitlab-ci.yml --out decompiled_output
 
 # Decompile all YAML files in the 'existing_ci' directory
 bash2gitlab decompile --in-folder existing_ci --out new_project_src
 
 # Perform a dry run
-bash2gitlab decompile --in-file .gitlab-ci.yml --out decompileded_output --dry-run
+bash2gitlab decompile --in-file .gitlab-ci.yml --out decompiled_output --dry-run
 ```
 
 ### Configuration (`bash2gitlab.toml`)

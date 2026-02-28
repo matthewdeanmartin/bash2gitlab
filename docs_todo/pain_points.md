@@ -1,0 +1,4 @@
+- need support for inlining artifacts/files, e.g entire venv
+- remove best effort pipeline
+- migrate hashes to a single folder! clutter! ugly! inconsistent!
+- interactive cli, gui, tui are behind app ui
