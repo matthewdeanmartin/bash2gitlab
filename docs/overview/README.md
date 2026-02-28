@@ -88,7 +88,7 @@ pip install bash2gitlab[all]
    If you have an existing `.gitlab-ci.yml` with inline scripts, you can extract them automatically:
 
 ```bash
-bash2gitlab decompile --in .gitlab-ci.yml --out my-project/
+bash2gitlab decompile --in-file .gitlab-ci.yml --out my-project/
 ```
 
 3. **Write and Edit Your Scripts**

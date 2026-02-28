@@ -20,21 +20,18 @@ orchestrating template complexity.
 
 ```bash
 # 1) Extract shell commands from your pipeline to real scripts
-bash2gitlab decompile --in-file . --out ./compiled --scripts ./scripts
+bash2gitlab decompile --in-file .gitlab-ci.yml --out ./decompiled
 
 # 2) Edit scripts locally (lint, test, run)
-vim scripts/my_job.sh
+vim decompiled/my_job.sh
 
 # 3) Compile: inline scripts into YAML again
 bash2gitlab compile \
-  --in . \
-  --out ./compiled \
-  --scripts ./scripts \
-  --templates-in . \
-  --templates-out ./compiled
+  --in ./decompiled \
+  --out ./compiled
 
 # 4) (Optional) Watch for changes and recompile
-bash2gitlab compile --in . --out ./compiled --scripts ./scripts --watch
+bash2gitlab compile --in ./decompiled --out ./compiled --watch
 ```
 
 Results land in `./compiled` by default (customizable). Commit as needed.
@@ -62,9 +59,6 @@ Inline shell files into YAML `script:` steps.
 bash2gitlab compile \
   --in <INPUT_DIR> \
   --out <OUTPUT_DIR> \
-  [--scripts <SCRIPTS_DIR>] \
-  [--templates-in <TEMPLATES_IN>] \
-  [--templates-out <TEMPLATES_OUT>] \
   [--parallelism <N>] \
   [--dry-run] [-v|-q] [--watch]
 ```
@@ -100,12 +94,15 @@ Extract shell from YAML into real files so your IDE and shell tooling can work.
 
 ```bash
 bash2gitlab decompile \
-  --in <INPUT_DIR> \
+  --in-file <INPUT_FILE> \
   --out <OUTPUT_DIR> \
-  [--scripts <SCRIPTS_DIR>] \
-  [--templates-in <TEMPLATES_IN>] \
-  [--templates-out <TEMPLATES_OUT>] \
-  [--parallelism <N>] \
+  [--dry-run] [-v|-q]
+
+# OR
+
+bash2gitlab decompile \
+  --in-folder <INPUT_DIR> \
+  --out <OUTPUT_DIR> \
   [--dry-run] [-v|-q]
 ```
 
@@ -265,9 +262,9 @@ build:
 ### Example: decompile then edit
 
 ```bash
-bash2gitlab decompile --in-file . --out ./compiled --scripts ./scripts
-# edit ./scripts/test.sh
-bash2gitlab compile --in . --out ./compiled --scripts ./scripts
+bash2gitlab decompile --in-file .gitlab-ci.yml --out ./decompiled
+# edit ./decompiled/test.sh
+bash2gitlab compile --in ./decompiled --out ./compiled
 ```
 
 ---
