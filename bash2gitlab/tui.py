@@ -346,6 +346,7 @@ class InitForm(CommandForm):
                 yield Input(value=".", placeholder="Directory to initialize", id="directory")
 
             with Horizontal():
+                yield Checkbox("Force", id="force")
                 yield Checkbox("Dry run", id="dry-run")
                 yield Checkbox("Verbose", id="verbose")
                 yield Checkbox("Quiet", id="quiet")
@@ -357,9 +358,12 @@ class InitForm(CommandForm):
         args = ["bash2gitlab", "init"]
 
         directory = self.query_one("#directory", Input).value.strip()
+        force = self.query_one("#force", Checkbox).value
 
         if directory and directory != ".":
             args.append(directory)
+        if force:
+            args.append("--force")
 
         args.extend(self.get_common_args())
 
@@ -490,6 +494,159 @@ class CommitMapForm(CommandForm):
             args.append("--force")
 
         args.extend(self.get_common_args())
+
+        self.post_message(ExecuteCommand(args))
+
+
+class CheckPinsForm(CommandForm):
+    """Form for the check-pins command."""
+
+    def compose(self) -> ComposeResult:
+        """Build check-pins form UI with file path and GitLab connection settings."""
+        with Vertical():
+            yield Label("📌 Check Pins", classes="form-title")
+
+            with Horizontal():
+                yield Label("File:", classes="label")
+                yield Input(value=".gitlab-ci.yml", placeholder="Path to .gitlab-ci.yml", id="file")
+
+            with Horizontal():
+                yield Label("GitLab URL:", classes="label")
+                yield Input(placeholder="https://gitlab.com", id="gitlab-url")
+
+            with Horizontal():
+                yield Label("Token:", classes="label")
+                yield Input(placeholder="Private token", password=True, id="token")
+
+            with Horizontal():
+                yield Label("OAuth Token:", classes="label")
+                yield Input(placeholder="OAuth bearer token", password=True, id="oauth-token")
+
+            with Horizontal():
+                yield Checkbox("Pin all (not just tags)", id="pin-all")
+                yield Checkbox("JSON output", id="json")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("📌 Check Pins", variant="primary", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the check-pins command."""
+        args = ["bash2gitlab", "check-pins"]
+
+        file_path = self.query_one("#file", Input).value.strip()
+        gitlab_url = self.query_one("#gitlab-url", Input).value.strip()
+        token = self.query_one("#token", Input).value.strip()
+        oauth_token = self.query_one("#oauth-token", Input).value.strip()
+        pin_all = self.query_one("#pin-all", Checkbox).value
+        json_output = self.query_one("#json", Checkbox).value
+
+        if file_path:
+            args.extend(["--file", file_path])
+        if gitlab_url:
+            args.extend(["--gitlab-url", gitlab_url])
+        if token:
+            args.extend(["--token", token])
+        if oauth_token:
+            args.extend(["--oauth-token", oauth_token])
+        if pin_all:
+            args.append("--pin-all")
+        if json_output:
+            args.append("--json")
+
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+
+class TriggerPipelinesForm(CommandForm):
+    """Form for the trigger-pipelines command."""
+
+    def compose(self) -> ComposeResult:
+        """Build trigger-pipelines form UI with project/variable inputs and wait options."""
+        with Vertical():
+            yield Label("🚀 Trigger Pipelines", classes="form-title")
+
+            with Horizontal():
+                yield Label("GitLab URL:", classes="label")
+                yield Input(placeholder="https://gitlab.com", id="gitlab-url")
+
+            with Horizontal():
+                yield Label("Token:", classes="label")
+                yield Input(placeholder="Private token", password=True, id="token")
+
+            with Horizontal():
+                yield Label("Projects:", classes="label")
+                yield Input(placeholder="PROJECT_ID:REF (comma-separated)", id="projects")
+
+            with Horizontal():
+                yield Label("Variables:", classes="label")
+                yield Input(placeholder="KEY=VALUE (comma-separated)", id="variables")
+
+            with Horizontal():
+                yield Label("Timeout:", classes="label")
+                yield Input(value="1800", placeholder="Polling timeout in seconds", id="timeout")
+
+            with Horizontal():
+                yield Label("Poll Interval:", classes="label")
+                yield Input(value="30", placeholder="Seconds between polls", id="poll-interval")
+
+            with Horizontal():
+                yield Checkbox("Wait for completion", id="wait")
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("🚀 Trigger", variant="warning", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the trigger-pipelines command."""
+        args = ["bash2gitlab", "trigger-pipelines"]
+
+        gitlab_url = self.query_one("#gitlab-url", Input).value.strip()
+        token = self.query_one("#token", Input).value.strip()
+        projects = self.query_one("#projects", Input).value.strip()
+        variables = self.query_one("#variables", Input).value.strip()
+        timeout = self.query_one("#timeout", Input).value.strip()
+        poll_interval = self.query_one("#poll-interval", Input).value.strip()
+        wait = self.query_one("#wait", Checkbox).value
+
+        if gitlab_url:
+            args.extend(["--gitlab-url", gitlab_url])
+        if token:
+            args.extend(["--token", token])
+
+        # Parse projects (comma-separated PROJECT_ID:REF)
+        if projects:
+            for project in projects.split(","):
+                project = project.strip()
+                if project:
+                    args.extend(["--project", project])
+
+        # Parse variables (comma-separated KEY=VALUE)
+        if variables:
+            for variable in variables.split(","):
+                variable = variable.strip()
+                if variable:
+                    args.extend(["--variable", variable])
+
+        if wait:
+            args.append("--wait")
+        if timeout:
+            args.extend(["--timeout", timeout])
+        if poll_interval:
+            args.extend(["--poll-interval", poll_interval])
+
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
 
         self.post_message(ExecuteCommand(args))
 
@@ -661,6 +818,183 @@ class UtilityForm(CommandForm):
 
         if output_dir:
             args.extend(["--out", output_dir])
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+
+class RunForm(CommandForm):
+    """Form for the run command."""
+
+    def compose(self) -> ComposeResult:
+        """Build run form UI with input file selector."""
+        with Vertical():
+            yield Label("▶️ Run Pipeline", classes="form-title")
+
+            with Horizontal():
+                yield Label("Input File:", classes="label")
+                yield Input(value=".gitlab-ci.yml", placeholder="Path to .gitlab-ci.yml", id="input-file")
+
+            with Horizontal():
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("▶️ Run", variant="success", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the run command."""
+        args = ["bash2gitlab", "run"]
+
+        input_file = self.query_one("#input-file", Input).value.strip()
+
+        if input_file:
+            args.extend(["--in-file", input_file])
+
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+
+class DetectUncompiledForm(CommandForm):
+    """Form for the detect-uncompiled command."""
+
+    def compose(self) -> ComposeResult:
+        """Build detect-uncompiled form UI with check options."""
+        with Vertical():
+            yield Label("🔎 Detect Uncompiled", classes="form-title")
+
+            with Horizontal():
+                yield Label("Input Directory:", classes="label")
+                yield Input(
+                    value=str(config.input_dir) if config and config.input_dir else "",
+                    placeholder="Input directory",
+                    id="input-dir",
+                )
+
+            with Horizontal():
+                yield Checkbox("Check only", id="check-only")
+                yield Checkbox("List changed files", id="list-changed")
+
+            yield Button("🔎 Detect", variant="primary", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the detect-uncompiled command."""
+        args = ["bash2gitlab", "detect-uncompiled"]
+
+        input_dir = self.query_one("#input-dir", Input).value.strip()
+        check_only = self.query_one("#check-only", Checkbox).value
+        list_changed = self.query_one("#list-changed", Checkbox).value
+
+        if input_dir:
+            args.extend(["--in", input_dir])
+        if check_only:
+            args.append("--check-only")
+        if list_changed:
+            args.append("--list-changed")
+
+        self.post_message(ExecuteCommand(args))
+
+
+class ValidateForm(CommandForm):
+    """Form for the validate command."""
+
+    def compose(self) -> ComposeResult:
+        """Build validate form UI with input/output paths and parallelism."""
+        with Vertical():
+            yield Label("✅ Validate", classes="form-title")
+
+            with Horizontal():
+                yield Label("Input Directory:", classes="label")
+                yield Input(
+                    value=str(config.input_dir) if config and config.input_dir else "",
+                    placeholder="Input directory",
+                    id="input-dir",
+                )
+
+            with Horizontal():
+                yield Label("Output Directory:", classes="label")
+                yield Input(
+                    value=str(config.output_dir) if config and config.output_dir else "",
+                    placeholder="Output directory",
+                    id="output-dir",
+                )
+
+            with Horizontal():
+                yield Label("Parallelism:", classes="label")
+                yield Input(
+                    value=str(config.parallelism) if config and config.parallelism else "4",
+                    placeholder="Number of parallel processes",
+                    id="parallelism",
+                )
+
+            with Horizontal():
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("✅ Validate", variant="primary", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the validate command."""
+        args = ["bash2gitlab", "validate"]
+
+        input_dir = self.query_one("#input-dir", Input).value.strip()
+        output_dir = self.query_one("#output-dir", Input).value.strip()
+        parallelism = self.query_one("#parallelism", Input).value.strip()
+
+        if input_dir:
+            args.extend(["--in", input_dir])
+        if output_dir:
+            args.extend(["--out", output_dir])
+        if parallelism:
+            args.extend(["--parallelism", parallelism])
+
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
+        if verbose:
+            args.append("--verbose")
+        if quiet:
+            args.append("--quiet")
+
+        self.post_message(ExecuteCommand(args))
+
+
+class AutogitForm(CommandForm):
+    """Form for the autogit command."""
+
+    def compose(self) -> ComposeResult:
+        """Build autogit form UI with commit message input."""
+        with Vertical():
+            yield Label("🔄 Autogit", classes="form-title")
+
+            with Horizontal():
+                yield Label("Commit Message:", classes="label")
+                yield Input(placeholder="Optional commit message override", id="message")
+
+            with Horizontal():
+                yield Checkbox("Verbose", id="verbose")
+                yield Checkbox("Quiet", id="quiet")
+
+            yield Button("🔄 Run Autogit", variant="primary", id="execute-btn")
+
+    async def execute_command(self) -> None:
+        """Execute the autogit command."""
+        args = ["bash2gitlab", "autogit"]
+
+        message = self.query_one("#message", Input).value.strip()
+
+        if message:
+            args.extend(["--message", message])
+
+        verbose = self.query_one("#verbose", Checkbox).value
+        quiet = self.query_one("#quiet", Checkbox).value
         if verbose:
             args.append("--verbose")
         if quiet:
@@ -869,6 +1203,24 @@ class Bash2GitlabTUI(App):
 
             with TabPane("Precommit", id="precommit"):
                 yield PrecommitForm("precommit")
+
+            with TabPane("Check Pins", id="check-pins"):
+                yield CheckPinsForm("check-pins")
+
+            with TabPane("Trigger Pipelines", id="trigger-pipelines"):
+                yield TriggerPipelinesForm("trigger-pipelines")
+
+            with TabPane("Run", id="run"):
+                yield RunForm("run")
+
+            with TabPane("Detect Uncompiled", id="detect-uncompiled"):
+                yield DetectUncompiledForm("detect-uncompiled")
+
+            with TabPane("Validate", id="validate"):
+                yield ValidateForm("validate")
+
+            with TabPane("Autogit", id="autogit"):
+                yield AutogitForm("autogit")
 
             with TabPane("Utilities", id="utilities"):
                 yield UtilityForm("utilities")

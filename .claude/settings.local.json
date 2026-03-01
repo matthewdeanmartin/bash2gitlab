@@ -38,7 +38,8 @@
       "Bash(.venv/Scripts/python -m pytest test/test_gui.py::TestLogHandler -v --timeout=5)",
       "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v -p no:randomly --timeout=10)",
       "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v --timeout=10)",
-      "Bash(.venv/Scripts/python -m pytest test/test_tui.py test/test_gui.py -v)"
+      "Bash(.venv/Scripts/python -m pytest test/test_tui.py test/test_gui.py -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_tui.py -v)"
     ],
     "deny": [],
     "ask": []
