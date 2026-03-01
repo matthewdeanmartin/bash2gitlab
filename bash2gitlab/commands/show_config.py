@@ -65,7 +65,22 @@ _SECTIONS = {"compile", "decompile", "lint", "copy2local", "map"}
 
 
 def _parse_prop_name(prop_name: str) -> tuple[str, str | None]:
-    """Parses a config property name into its key and section."""
+    """
+    Parses a config property name into its key and section.
+
+    Examples:
+        >>> _parse_prop_name("lint_gitlab_url")
+        ('gitlab_url', 'lint')
+
+        >>> _parse_prop_name("input_dir")
+        ('input_dir', None)
+
+        >>> _parse_prop_name("compile_input_dir")
+        ('input_dir', 'compile')
+
+        >>> _parse_prop_name("custom_shebangs")
+        ('shebangs', None)
+    """
     parts = prop_name.split("_", 1)
     if parts[0] in _SECTIONS:
         # e.g., "lint_gitlab_url" -> ("gitlab_url", "lint")
@@ -156,11 +171,7 @@ def run_show_config() -> int:
             key_padded = display_key.ljust(max_key_len)
 
             if isinstance(value, dict):
-                value_str = (
-                    f"\n{Colors.BOLD}"
-                    + "\n".join(f"{' ' * (max_key_len + 5)}- {k}: {v}" for k, v in value.items())
-                    + f"{Colors.ENDC}"
-                )
+                value_str = f"\n{Colors.BOLD}" + "\n".join(f"{' ' * (max_key_len + 5)}- {k}: {v}" for k, v in value.items()) + f"{Colors.ENDC}"
             elif value is not None:
                 value_str = f"{Colors.BOLD}{value}{Colors.ENDC}"
             else:
