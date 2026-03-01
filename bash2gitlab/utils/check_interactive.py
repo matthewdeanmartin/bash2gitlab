@@ -50,7 +50,7 @@ def detect_environment() -> EnvType:
     if os.path.exists("/.dockerenv"):
         return "non-interactive"
     try:
-        with open("/proc/1/cgroup") as f:
+        with open("/proc/1/cgroup", encoding="utf-8") as f:
             if "docker" in f.read() or "kubepods" in f.read():
                 return "non-interactive"
     except OSError:

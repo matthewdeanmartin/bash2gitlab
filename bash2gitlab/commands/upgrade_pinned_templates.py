@@ -111,7 +111,7 @@ class GitLabClient:
             ssl_context=_SSL_CTX,
         )
 
-    def _get(self, path: str, ok=(200,)) -> SimpleResponse:
+    def _get(self, path: str, _ok=(200,)) -> SimpleResponse:
         """Execute GET request with retries and connection pooling."""
         url = f"{self.base_url}{path}"
         try:
@@ -142,7 +142,7 @@ class GitLabClient:
 
     def get_project(self, project_path: str) -> dict[str, Any] | None:
         """Fetch project metadata from GitLab API."""
-        r = self._get(f"/api/v4/projects/{self._proj_id(project_path)}", ok=(200, 404))
+        r = self._get(f"/api/v4/projects/{self._proj_id(project_path)}", _ok=(200, 404))
         return None if r.status_code == 404 else r.json()
 
     def get_default_branch(self, project_path: str) -> str | None:
@@ -161,7 +161,7 @@ class GitLabClient:
         while True:
             r = self._get(
                 f"/api/v4/projects/{self._proj_id(project_path)}/repository/tags" f"?per_page={per_page}&page={page}",
-                ok=(200, 404),
+                _ok=(200, 404),
             )
             if r.status_code != 200:
                 break
@@ -178,7 +178,7 @@ class GitLabClient:
         """Fetch branch metadata from GitLab API."""
         r = self._get(
             f"/api/v4/projects/{self._proj_id(project_path)}/repository/branches/{quote_plus(branch)}",
-            ok=(200, 404),
+            _ok=(200, 404),
         )
         return None if r.status_code == 404 else r.json()
 
@@ -186,7 +186,7 @@ class GitLabClient:
         """Fetch tag metadata from GitLab API."""
         r = self._get(
             f"/api/v4/projects/{self._proj_id(project_path)}/repository/tags/{quote_plus(tag)}",
-            ok=(200, 404),
+            _ok=(200, 404),
         )
         return None if r.status_code == 404 else r.json()
 
@@ -194,7 +194,7 @@ class GitLabClient:
         """Fetch commit metadata from GitLab API."""
         r = self._get(
             f"/api/v4/projects/{self._proj_id(project_path)}/repository/commits/{quote_plus(sha)}",
-            ok=(200, 404),
+            _ok=(200, 404),
         )
         return None if r.status_code == 404 else r.json()
 

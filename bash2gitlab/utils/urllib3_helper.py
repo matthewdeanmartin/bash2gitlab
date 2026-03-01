@@ -50,7 +50,7 @@ def get_http_pool():
 
 def fetch_json(
     url: str,
-    timeout: float,  # noqa
+    _timeout: float,  # noqa
 ) -> dict[str, Any]:
     """
     Fetch JSON metadata from PyPI (or any HTTPS JSON endpoint) using urllib3.

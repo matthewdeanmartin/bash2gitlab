@@ -83,7 +83,7 @@ def check_map_source_paths_exist() -> list[str]:
     if not deployment_map:
         return []
 
-    for source_base in deployment_map.keys():
+    for source_base in deployment_map:
         source_path = Path(source_base)
         if not source_path.is_dir():
             warnings.append(f"Source directory from 'map' config does not exist: {short_path(source_path)}")
@@ -91,7 +91,7 @@ def check_map_source_paths_exist() -> list[str]:
 
 
 # --- Refactor: GitLab lint config validity using the same PoolManager --------
-def check_lint_config_validity(config: Config) -> list[str]:
+def check_lint_config_validity(cfg: Config) -> list[str]:
     """
     Validates the GitLab URL, project ID, and token for the lint command.
 
@@ -99,8 +99,8 @@ def check_lint_config_validity(config: Config) -> list[str]:
     """
     # BUG: This is not how to reference properties on config.
 
-    gitlab_url = config.lint_gitlab_url
-    project_id = config.lint_project_id
+    gitlab_url = cfg.lint_gitlab_url
+    project_id = cfg.lint_project_id
     token = os.environ.get("GITLAB_PRIVATE_TOKEN")  # Tokens are often in env
 
     if not project_id or not gitlab_url:

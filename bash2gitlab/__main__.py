@@ -40,13 +40,6 @@ from urllib import error as _urlerror
 # Import urllib3 for the new pin checker's exceptions
 import urllib3
 
-from bash2gitlab.commands.best_effort_runner import best_efforts_run
-from bash2gitlab.commands.input_change_detector import needs_compilation
-from bash2gitlab.commands.validate_all import run_validate_all
-from bash2gitlab.errors.exceptions import Bash2GitlabError, CompilationNeeded, NetworkIssue, NotFound
-from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
-from bash2gitlab.install_help import print_install_help
-
 try:
     import argcomplete
 except ModuleNotFoundError:
@@ -58,11 +51,12 @@ from gitlab.exceptions import GitlabAuthenticationError, GitlabHttpError
 from bash2gitlab import __about__
 from bash2gitlab import __doc__ as root_doc
 from bash2gitlab.commands.autogit import run_autogit
+from bash2gitlab.commands.best_effort_runner import best_efforts_run
 from bash2gitlab.commands.clean_all import clean_targets
 from bash2gitlab.commands.compile_all import run_compile_all
 from bash2gitlab.commands.decompile_all import run_decompile_gitlab_file, run_decompile_gitlab_tree
 from bash2gitlab.commands.detect_drift import run_detect_drift
-from bash2gitlab.commands.input_change_detector import get_changed_files
+from bash2gitlab.commands.input_change_detector import get_changed_files, needs_compilation
 from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
 from bash2gitlab.commands.pipeline_trigger import (
     ProjectSpec,
@@ -71,17 +65,15 @@ from bash2gitlab.commands.pipeline_trigger import (
     trigger_pipelines,
 )
 from bash2gitlab.commands.show_config import run_show_config
-# Import the new pin checker functions
 from bash2gitlab.commands.upgrade_pinned_templates import analyses_to_json, analyses_to_table, suggest_include_pins
+from bash2gitlab.commands.validate_all import run_validate_all
 from bash2gitlab.config import config
+from bash2gitlab.errors.exceptions import Bash2GitlabError, CompilationNeeded, NetworkIssue, NotFound
+from bash2gitlab.errors.exit_codes import ExitCode, resolve_exit_code
+from bash2gitlab.install_help import print_install_help
 from bash2gitlab.plugins import get_pm
 from bash2gitlab.utils.cli_suggestions import SmartParser
 from bash2gitlab.utils.logging_config import generate_config
-
-try:
-    import argcomplete
-except ModuleNotFoundError:
-    argcomplete = None  # type: ignore[assignment]
 
 # Interactive
 try:
@@ -327,7 +319,7 @@ def validate_handler(args: argparse.Namespace) -> int:
 
     result = run_validate_all(
         input_dir=in_dir,
-        output_path=out_dir,
+        _output_path=out_dir,
         parallelism=parallelism,
     )
 
@@ -444,7 +436,7 @@ def uninstall_precommit_handler(args: argparse.Namespace) -> int:
         raise
 
 
-def doctor_handler(args: argparse.Namespace) -> int:
+def doctor_handler(_args: argparse.Namespace) -> int:
     """Handler for the 'doctor' command."""
     # The run_doctor function already prints messages and returns an exit code.
     return run_doctor()
@@ -465,7 +457,7 @@ def graph_handler(args: argparse.Namespace) -> int:
     return 0
 
 
-def show_config_handler(args: argparse.Namespace) -> int:
+def show_config_handler(_args: argparse.Namespace) -> int:
     """Handler for the 'show-config' command."""
     # The run_show_config function already prints messages and returns an exit code.
     return run_show_config()
@@ -533,7 +525,7 @@ def main() -> int:
         from rich_argparse import RichHelpFormatter
 
         formatter_class: Any = RichHelpFormatter
-    except:
+    except (ImportError, ModuleNotFoundError):
         formatter_class = argparse.RawTextHelpFormatter
 
     parser = SmartParser(
@@ -549,7 +541,7 @@ def main() -> int:
         import totalhelp
 
         totalhelp.add_totalhelp_flag(parser)
-    except:
+    except (ImportError, ModuleNotFoundError, AttributeError):
         totalhelp = None
 
     subparsers = parser.add_subparsers(dest="command", required=False)
@@ -992,10 +984,10 @@ def main() -> int:
     run_parser.set_defaults(func=best_effort_run_handler)
 
     # --- Detect Uncompiled ----
+    # Add change detection arguments to argument parser
     detect_uncompiled_parser = subparsers.add_parser(
         "detect-uncompiled", help="Detect if input files have changed since last compilation"
     )
-    """Add change detection arguments to argument parser."""
     detect_uncompiled_parser.add_argument(
         "--check-only", action="store_true", help="Only check if compilation is needed, do not compile"
     )

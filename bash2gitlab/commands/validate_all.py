@@ -112,7 +112,7 @@ def print_validation_summary(results: list[ValidationResult]) -> None:
 
 def run_validate_all(
     input_dir: Path,
-    output_path: Path,
+    _output_path: Path,
     parallelism: int | None = None,
 ) -> int:
     """

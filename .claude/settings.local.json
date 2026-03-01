@@ -23,7 +23,9 @@
       "Bash(bash --version)",
       "Bash(cygpath -w /usr/bin/bash.exe)",
       "Bash(just --list)",
-      "Bash(just quick-check)"
+      "Bash(just quick-check)",
+      "Bash(make pylint)",
+      "Bash(PYTHONUTF8=1 make pylint)"
     ],
     "deny": [],
     "ask": []

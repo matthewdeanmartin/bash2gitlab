@@ -79,7 +79,7 @@ def run_colored(script: str, env=None, cwd=None) -> int:
     if os.environ.get("BASH2GITLAB_RUN_LOAD_BASHRC"):
         bash.append("-l")
     # Start the subprocess
-    process = subprocess.Popen(  # nosec
+    with subprocess.Popen(  # nosec
         # , "-l"  # -l loads .bashrc and make it really, really slow.
         bash,  # bash reads script from stdin
         env=env,
@@ -89,53 +89,53 @@ def run_colored(script: str, env=None, cwd=None) -> int:
         stderr=subprocess.PIPE,
         text=True,  # to prevent \r
         bufsize=1,  # line-buffered
-    )
+    ) as process:
 
-    def stream(pipe, color, target):
-        """
-        Stream output from a pipe to a target with optional color.
+        def stream(pipe, color, target):
+            """
+            Stream output from a pipe to a target with optional color.
 
-        Args:
-            pipe: The pipe to read from.
-            color: The color to apply to the output.
-            target: The target to write the output to.
-        """
-        for line in iter(pipe.readline, ""):  # text mode here, so sentinel is ""
-            if not line:
-                break
-            target.write(f"{color}{line}{reset}")
-            target.flush()
-        pipe.close()
+            Args:
+                pipe: The pipe to read from.
+                color: The color to apply to the output.
+                target: The target to write the output to.
+            """
+            for line in iter(pipe.readline, ""):  # text mode here, so sentinel is ""
+                if not line:
+                    break
+                target.write(f"{color}{line}{reset}")
+                target.flush()
+            pipe.close()
 
-    # Start threads to stream stdout and stderr in parallel
-    threads = [
-        threading.Thread(target=stream, args=(process.stdout, g, sys.stdout)),
-        threading.Thread(target=stream, args=(process.stderr, r, sys.stderr)),
-    ]
-    for t in threads:
-        t.start()
+        # Start threads to stream stdout and stderr in parallel
+        threads = [
+            threading.Thread(target=stream, args=(process.stdout, g, sys.stdout)),
+            threading.Thread(target=stream, args=(process.stderr, r, sys.stderr)),
+        ]
+        for t in threads:
+            t.start()
 
-    # Feed the script and close stdin
+        # Feed the script and close stdin
 
-    if os.name == "nt":
-        script = script.replace("\r\n", "\n")
+        if os.name == "nt":
+            script = script.replace("\r\n", "\n")
 
-    if process.stdin:
-        # without this it will keep going on errors
-        robust_script_content = f"set -eo pipefail\n{script}"
-        process.stdin.write(robust_script_content)
-        process.stdin.close()
+        if process.stdin:
+            # without this it will keep going on errors
+            robust_script_content = f"set -eo pipefail\n{script}"
+            process.stdin.write(robust_script_content)
+            process.stdin.close()
 
-    # Wait for process to finish
-    for t in threads:
-        t.join()
+        # Wait for process to finish
+        for t in threads:
+            t.join()
 
-    process.wait()
+        process.wait()
 
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, script)
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, script)
 
-    return process.returncode
+        return process.returncode
 
 
 @dataclass

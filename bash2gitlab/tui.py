@@ -11,7 +11,10 @@ import subprocess  # nosec
 import sys
 from typing import Any
 
+from bash2gitlab import __about__
+from bash2gitlab.config import config
 from bash2gitlab.install_help import print_install_help
+from bash2gitlab.utils.logging_config import generate_config
 
 try:
     from textual import on, work
@@ -37,10 +40,6 @@ from textual.widgets import (
     TabbedContent,
     TabPane,
 )
-
-from bash2gitlab import __about__
-from bash2gitlab.config import config
-from bash2gitlab.utils.logging_config import generate_config
 
 # emoji support
 sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -716,6 +715,7 @@ class CommandScreen(Screen):
             for key, value in os.environ.items():
                 env[key] = value
             env["NO_COLOR"] = "1"
+            # pylint: disable=consider-using-with
             self.process = subprocess.Popen(  # nosec
                 self.command_args,
                 stdout=subprocess.PIPE,
@@ -995,7 +995,7 @@ def main() -> None:
 
     try:
         logging.config.dictConfig(generate_config(level=log_level))
-    except:
+    except Exception:  # pylint: disable=broad-except
         # Fallback logging setup
         logging.basicConfig(level=getattr(logging, log_level))
 

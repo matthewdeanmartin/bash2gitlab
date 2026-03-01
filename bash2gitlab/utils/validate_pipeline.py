@@ -26,9 +26,9 @@ else:
     except ImportError:
         files = None
 
+# Python 3.9+ cache support
 try:
-    # Python 3.9+
-    from functools import cache as _py_cache
+    from functools import cache as _py_cache  # pylint: disable=ungrouped-imports
 
     cache = _py_cache
 except ImportError:
@@ -140,7 +140,7 @@ class GitLabCIValidator:
 
         return None
 
-    @cache  # noqa: B019
+    @cache  # noqa: B019  # pylint: disable=method-cache-max-size-none
     def get_schema(self) -> dict[str, Any]:
         """
         Get the GitLab CI schema, trying URL first, then cache, then fallback.

@@ -10,6 +10,8 @@ from __future__ import annotations
 import sys
 from typing import Any
 
+from bash2gitlab import __about__
+from bash2gitlab.config import config
 from bash2gitlab.install_help import print_install_help
 
 try:
@@ -24,9 +26,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 from rich.text import Text
-
-from bash2gitlab import __about__
-from bash2gitlab.config import config
 
 
 class InteractiveInterface:

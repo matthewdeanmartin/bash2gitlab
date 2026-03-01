@@ -84,6 +84,7 @@ class CommandRunner:
             for key, value in os.environ.items():
                 env[key] = value
             env["NO_COLOR"] = "1"
+            # pylint: disable=consider-using-with
             self.current_process = subprocess.Popen(  # nosec
                 cmd,
                 stdout=subprocess.PIPE,
@@ -146,6 +147,14 @@ class Bash2GitlabGUI:
 
         # Variables for form fields
         self.vars: dict[str, tk.Variable] = {}
+
+        # UI elements (initialized in setup methods)
+        self.decompile_file_entry: ttk.Entry | None = None
+        self.decompile_file_btn: ttk.Button | None = None
+        self.decompile_folder_entry: ttk.Entry | None = None
+        self.decompile_folder_btn: ttk.Button | None = None
+        self.output_frame: ttk.Frame | None = None
+        self.output_text: scrolledtext.ScrolledText | None = None
 
         self.setup_gui()
 
@@ -542,15 +551,23 @@ class Bash2GitlabGUI:
         input_type = self.vars["decompile_input_type"].get()
 
         if input_type == "file":
-            self.decompile_file_entry.config(state=tk.NORMAL)
-            self.decompile_file_btn.config(state=tk.NORMAL)
-            self.decompile_folder_entry.config(state=tk.DISABLED)
-            self.decompile_folder_btn.config(state=tk.DISABLED)
+            if self.decompile_file_entry:
+                self.decompile_file_entry.config(state=tk.NORMAL)
+            if self.decompile_file_btn:
+                self.decompile_file_btn.config(state=tk.NORMAL)
+            if self.decompile_folder_entry:
+                self.decompile_folder_entry.config(state=tk.DISABLED)
+            if self.decompile_folder_btn:
+                self.decompile_folder_btn.config(state=tk.DISABLED)
         else:
-            self.decompile_file_entry.config(state=tk.DISABLED)
-            self.decompile_file_btn.config(state=tk.DISABLED)
-            self.decompile_folder_entry.config(state=tk.NORMAL)
-            self.decompile_folder_btn.config(state=tk.NORMAL)
+            if self.decompile_file_entry:
+                self.decompile_file_entry.config(state=tk.DISABLED)
+            if self.decompile_file_btn:
+                self.decompile_file_btn.config(state=tk.DISABLED)
+            if self.decompile_folder_entry:
+                self.decompile_folder_entry.config(state=tk.NORMAL)
+            if self.decompile_folder_btn:
+                self.decompile_folder_btn.config(state=tk.NORMAL)
 
     def browse_directory(self, var: tk.StringVar | tk.Variable) -> None:
         """Browse for a directory and set the variable."""
@@ -569,7 +586,8 @@ class Bash2GitlabGUI:
 
     def clear_output(self) -> None:
         """Clear the output text area."""
-        self.output_text.delete(1.0, tk.END)
+        if self.output_text:
+            self.output_text.delete(1.0, tk.END)
 
     def stop_command(self) -> None:
         """Stop the currently running command."""

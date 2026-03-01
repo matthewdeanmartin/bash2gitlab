@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from ruamel.yaml.constructor import TaggedScalar
+
 # Make sure ruamel.yaml is installed: pip install ruamel.yaml
 from ruamel.yaml.scalarstring import LiteralScalarString
 

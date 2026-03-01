@@ -322,18 +322,18 @@ def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filenam
 def _auto_pick_renderer() -> Literal["graphviz", "pyvis", "networkx", "none"]:
     """Auto-detect available graph rendering library in order of preference."""
     try:
-        import graphviz  # type: ignore  # noqa: F401
+        import graphviz  # type: ignore  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
 
         return "graphviz"
     except Exception:
         try:
-            import pyvis  # type: ignore  # noqa: F401
+            import pyvis  # type: ignore  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
 
             return "pyvis"
         except Exception:
             try:
-                import matplotlib  # type: ignore  # noqa: F401
-                import networkx  # type: ignore  # noqa: F401
+                import matplotlib  # type: ignore  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
+                import networkx  # type: ignore  # noqa: F401  # pylint: disable=unused-import,import-outside-toplevel
 
                 return "networkx"
             except Exception:
