@@ -8,7 +8,8 @@
       "Bash(.venv/Scripts/python -m mdformat DOCUMENTATION_SKILLS.md)",
       "Bash(make check_docs)",
       "Bash(make black)",
-      "Bash(uv run black bash2gitlab)"
+      "Bash(uv run black bash2gitlab)",
+      "Bash(bandit -r bash2gitlab)"
     ],
     "deny": [],
     "ask": []

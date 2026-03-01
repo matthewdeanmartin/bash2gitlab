@@ -41,13 +41,13 @@ def generate_mock_ci_variables_script(output_path: str = "mock_ci_variables.sh")
         "CI_JOB_NAME": "test-job",
         "CI_JOB_STAGE": "test",
         "CI_JOB_STATUS": "running",
-        "CI_JOB_TOKEN": "xyz-token",
+        "CI_JOB_TOKEN": "xyz-token",  # nosec B105
         "CI_JOB_URL": "https://gitlab.example.com/group/example-project/-/jobs/91011",
         "CI_JOB_STARTED_AT": "2025-07-27T12:00:10Z",
         "CI_PROJECT_DIR": "/builds/group/example-project",
         "CI_BUILDS_DIR": "/builds",
         "CI_RUNNER_ID": "55",
-        "CI_RUNNER_SHORT_TOKEN": "runner1234567890",
+        "CI_RUNNER_SHORT_TOKEN": "runner1234567890",  # nosec B105
         "CI_RUNNER_VERSION": "17.3.0",
         "CI_SERVER_URL": "https://gitlab.example.com",
         "CI_SERVER_HOST": "gitlab.example.com",
