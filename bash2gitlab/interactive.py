@@ -58,16 +58,22 @@ class InteractiveInterface:
             ("2", "decompile", "Extract inline scripts from GitLab CI YAML files"),
             ("3", "clean", "Clean output folder (remove unmodified generated files)"),
             ("4", "lint", "Validate compiled GitLab CI YAML against GitLab instance"),
-            ("5", "init", "Initialize new bash2gitlab project"),
-            ("6", "copy2local", "Copy folder(s) from repository to local"),
-            ("7", "map-deploy", "Deploy files based on pyproject.toml mapping"),
-            ("8", "commit-map", "Copy changed files back to source locations"),
-            ("9", "detect-drift", "Detect if generated files have been edited"),
-            ("10", "doctor", "Run health checks on project and environment"),
-            ("11", "graph", "Generate dependency graph of project files"),
-            ("12", "show-config", "Display current configuration"),
-            ("13", "install-precommit", "Install Git pre-commit hook"),
-            ("14", "uninstall-precommit", "Remove Git pre-commit hook"),
+            ("5", "validate", "Validate YAML against GitLab JSON schema"),
+            ("6", "detect-uncompiled", "Detect if input files changed since last compilation"),
+            ("7", "init", "Initialize new bash2gitlab project"),
+            ("8", "copy2local", "Copy folder(s) from repository to local"),
+            ("9", "map-deploy", "Deploy files based on pyproject.toml mapping"),
+            ("10", "commit-map", "Copy changed files back to source locations"),
+            ("11", "detect-drift", "Detect if generated files have been edited"),
+            ("12", "doctor", "Run health checks on project and environment"),
+            ("13", "graph", "Generate dependency graph of project files"),
+            ("14", "show-config", "Display current configuration"),
+            ("15", "install-precommit", "Install Git pre-commit hook"),
+            ("16", "uninstall-precommit", "Remove Git pre-commit hook"),
+            ("17", "check-pins", "Analyze and suggest pinning GitLab CI includes"),
+            ("18", "trigger-pipelines", "Trigger pipelines in GitLab projects"),
+            ("19", "run", "Run .gitlab-ci.yml file locally (best effort)"),
+            ("20", "autogit", "Manually trigger autogit process"),
             ("q", "quit", "Exit interactive interface"),
         ]
 
@@ -121,6 +127,9 @@ class InteractiveInterface:
 
         # Watch mode
         params["watch"] = Confirm.ask("Enable watch mode (auto-recompile on changes)?", default=False)
+
+        # Force compilation
+        params["force"] = Confirm.ask("Force compilation even if no input changes detected?", default=False)
 
         # Common options
         params.update(self.get_common_options())
@@ -185,8 +194,7 @@ class InteractiveInterface:
 
         # Token (optional)
         token = Prompt.ask("GitLab token (optional, press Enter to skip)", default="")
-        if token:
-            params["token"] = token
+        params["token"] = token if token else None
 
         # Project ID (optional)
         project_id_str = Prompt.ask("Project ID for project-scoped lint (optional)", default="")
@@ -195,11 +203,13 @@ class InteractiveInterface:
                 params["project_id"] = int(project_id_str)
             except ValueError:
                 self.console.print("[red]Invalid project ID, skipping[/red]")
+                params["project_id"] = None
+        else:
+            params["project_id"] = None
 
         # Git ref (optional)
         ref = Prompt.ask("Git ref (optional)", default="")
-        if ref:
-            params["ref"] = ref
+        params["ref"] = ref if ref else None
 
         # Include merged YAML
         params["include_merged_yaml"] = Confirm.ask("Include merged YAML?", default=False)
@@ -375,6 +385,168 @@ class InteractiveInterface:
 
         return params
 
+    def handle_validate_command(self) -> dict[str, Any]:
+        """Handle validate command configuration."""
+        self.console.print("\n[bold cyan]Validate Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Input directory
+        default_input = str(config.input_dir) if config.input_dir else "."
+        input_dir = Prompt.ask("Input directory", default=default_input)
+        params["input_dir"] = input_dir
+
+        # Output directory
+        default_output = str(config.output_dir) if config.output_dir else "./output"
+        output_dir = Prompt.ask("Output directory", default=default_output)
+        params["output_dir"] = output_dir
+
+        # Parallelism
+        default_parallelism = config.parallelism if config.parallelism else 4
+        parallelism = IntPrompt.ask("Number of parallel validations", default=default_parallelism)
+        params["parallelism"] = parallelism
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_detect_uncompiled_command(self) -> dict[str, Any]:
+        """Handle detect-uncompiled command configuration."""
+        self.console.print("\n[bold cyan]Detect-Uncompiled Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Input directory
+        default_input = str(config.input_dir) if config.input_dir else "."
+        input_dir = Prompt.ask("Input directory", default=default_input)
+        params["input_dir"] = input_dir
+
+        # Check only or list changed
+        params["check_only"] = Confirm.ask("Only check if compilation needed (no output)?", default=False)
+        if not params["check_only"]:
+            params["list_changed"] = Confirm.ask("List changed files?", default=True)
+        else:
+            params["list_changed"] = False
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_check_pins_command(self) -> dict[str, Any]:
+        """Handle check-pins command configuration."""
+        self.console.print("\n[bold cyan]Check-Pins Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # File to analyze
+        file_path = Prompt.ask("GitLab CI file to analyze", default=".gitlab-ci.yml")
+        params["file"] = file_path
+
+        # GitLab URL
+        gitlab_url = Prompt.ask("GitLab URL", default=config.lint_gitlab_url or "https://gitlab.com")
+        params["gitlab_url"] = gitlab_url
+
+        # Token
+        token = Prompt.ask("GitLab token (optional, press Enter to skip)", default="")
+        params["token"] = token if token else None
+
+        # OAuth token (alternative)
+        oauth_token = Prompt.ask("OAuth token (optional, press Enter to skip)", default="")
+        params["oauth_token"] = oauth_token if oauth_token else None
+
+        # Pin tags only or all
+        params["pin_tags_only"] = Confirm.ask("Only suggest pinning to tags (not commits)?", default=True)
+
+        # JSON output
+        params["json"] = Confirm.ask("Output in JSON format?", default=False)
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_trigger_pipelines_command(self) -> dict[str, Any]:
+        """Handle trigger-pipelines command configuration."""
+        self.console.print("\n[bold cyan]Trigger-Pipelines Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # GitLab URL
+        gitlab_url = Prompt.ask("GitLab URL", default=config.lint_gitlab_url or "https://gitlab.com")
+        params["gitlab_url"] = gitlab_url
+
+        # Token
+        token = Prompt.ask("GitLab token (required)")
+        params["token"] = token
+
+        # Projects to trigger
+        self.console.print("\n[yellow]Enter projects in format 'PROJECT_ID:REF' (e.g., '123:main')[/yellow]")
+        projects = []
+        while True:
+            project = Prompt.ask("Project (press Enter to finish)", default="")
+            if not project:
+                break
+            projects.append(project)
+        params["project"] = projects
+
+        # Variables
+        self.console.print("\n[yellow]Enter variables in format 'KEY=VALUE' (optional)[/yellow]")
+        variables = []
+        while True:
+            variable = Prompt.ask("Variable (press Enter to finish)", default="")
+            if not variable:
+                break
+            variables.append(variable)
+        if variables:
+            params["variable"] = variables
+
+        # Wait for completion
+        params["wait"] = Confirm.ask("Wait for pipelines to complete?", default=False)
+
+        if params["wait"]:
+            timeout = Prompt.ask("Timeout in seconds", default="1800")
+            params["timeout"] = int(timeout)
+
+            poll_interval = Prompt.ask("Poll interval in seconds", default="30")
+            params["poll_interval"] = int(poll_interval)
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_run_command(self) -> dict[str, Any]:
+        """Handle run command configuration."""
+        self.console.print("\n[bold cyan]Run Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Input file
+        input_file = Prompt.ask("GitLab CI file to run", default=".gitlab-ci.yml")
+        params["input_file"] = input_file
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
+    def handle_autogit_command(self) -> dict[str, Any]:
+        """Handle autogit command configuration."""
+        self.console.print("\n[bold cyan]Autogit Command Configuration[/bold cyan]")
+
+        params: dict[str, Any] = {}
+
+        # Commit message
+        message = Prompt.ask("Commit message (optional, uses config default)", default="")
+        params["message"] = message if message else None
+
+        # Common options
+        params.update(self.get_common_options())
+
+        return params
+
     def display_command_summary(self, command: str, params: dict[str, Any]) -> bool:
         """Display summary of command configuration before execution."""
         self.console.print(f"\n[bold green]Command Summary: {command}[/bold green]")
@@ -401,6 +573,9 @@ class InteractiveInterface:
         import argparse
 
         from bash2gitlab.__main__ import (
+            autogit_handler,
+            best_effort_run_handler,
+            check_pins_handler,
             clean_handler,
             commit_map_handler,
             compile_handler,
@@ -409,12 +584,15 @@ class InteractiveInterface:
             doctor_handler,
             drift_handler,
             graph_handler,
+            handle_change_detection_commands,
             init_handler,
             install_precommit_handler,
             lint_handler,
             map_deploy_handler,
             show_config_handler,
+            trigger_pipelines_handler,
             uninstall_precommit_handler,
+            validate_handler,
         )
 
         # Create a namespace object with the parameters
@@ -426,6 +604,8 @@ class InteractiveInterface:
             "decompile": decompile_handler,
             "clean": clean_handler,
             "lint": lint_handler,
+            "validate": validate_handler,
+            "detect-uncompiled": handle_change_detection_commands,
             "init": init_handler,
             "copy2local": copy2local_handler,
             "map-deploy": map_deploy_handler,
@@ -436,6 +616,10 @@ class InteractiveInterface:
             "show-config": show_config_handler,
             "install-precommit": install_precommit_handler,
             "uninstall-precommit": uninstall_precommit_handler,
+            "check-pins": check_pins_handler,
+            "trigger-pipelines": trigger_pipelines_handler,
+            "run": best_effort_run_handler,
+            "autogit": autogit_handler,
         }
 
         handler = handlers.get(command)
@@ -469,16 +653,22 @@ class InteractiveInterface:
                     "2": ("decompile", self.handle_decompile_command),
                     "3": ("clean", self.handle_clean_command),
                     "4": ("lint", self.handle_lint_command),
-                    "5": ("init", self.handle_init_command),
-                    "6": ("copy2local", self.handle_copy2local_command),
-                    "7": ("map-deploy", self.handle_map_deploy_command),
-                    "8": ("commit-map", self.handle_commit_map_command),
-                    "9": ("detect-drift", self.handle_detect_drift_command),
-                    "10": ("doctor", self.handle_doctor_command),
-                    "11": ("graph", self.handle_graph_command),
-                    "12": ("show-config", self.handle_show_config_command),
-                    "13": ("install-precommit", lambda: self.handle_precommit_command(True)),
-                    "14": ("uninstall-precommit", lambda: self.handle_precommit_command(False)),
+                    "5": ("validate", self.handle_validate_command),
+                    "6": ("detect-uncompiled", self.handle_detect_uncompiled_command),
+                    "7": ("init", self.handle_init_command),
+                    "8": ("copy2local", self.handle_copy2local_command),
+                    "9": ("map-deploy", self.handle_map_deploy_command),
+                    "10": ("commit-map", self.handle_commit_map_command),
+                    "11": ("detect-drift", self.handle_detect_drift_command),
+                    "12": ("doctor", self.handle_doctor_command),
+                    "13": ("graph", self.handle_graph_command),
+                    "14": ("show-config", self.handle_show_config_command),
+                    "15": ("install-precommit", lambda: self.handle_precommit_command(True)),
+                    "16": ("uninstall-precommit", lambda: self.handle_precommit_command(False)),
+                    "17": ("check-pins", self.handle_check_pins_command),
+                    "18": ("trigger-pipelines", self.handle_trigger_pipelines_command),
+                    "19": ("run", self.handle_run_command),
+                    "20": ("autogit", self.handle_autogit_command),
                 }
 
                 if choice in command_map:

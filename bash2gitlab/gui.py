@@ -4,6 +4,21 @@ GUI interface for bash2gitlab CLI tool.
 
 This module provides a Tkinter-based graphical interface for all bash2gitlab
 commands, making it easier to use without memorizing CLI arguments.
+
+Supported commands:
+- Compile/Decompile: Convert between inline scripts and separate files
+- Clean: Remove generated files
+- Lint: Validate YAML against GitLab
+- Utilities: Init, copy2local, detect-drift
+- Advanced: check-pins, trigger-pipelines, graph, run, detect-uncompiled, validate, autogit
+- Git: Pre-commit hooks, directory mapping
+
+Features:
+- All commands accessible through tabs
+- Form-based input with validation
+- Real-time command output
+- File/directory browser integration
+- Helpful examples and labels for complex inputs
 """
 
 from __future__ import annotations
@@ -170,6 +185,7 @@ class Bash2GitlabGUI:
         self.create_decompile_tab(notebook)
         self.create_utilities_tab(notebook)
         self.create_lint_tab(notebook)
+        self.create_advanced_tab(notebook)
         self.create_git_tab(notebook)
         self.create_output_tab(notebook)
 
@@ -179,11 +195,12 @@ class Bash2GitlabGUI:
         parent.add(frame, text="Compile & Clean")
 
         # Compile section
-        compile_frame = ttk.LabelFrame(frame, text="Compile Project", padding=10)
+        compile_frame = ttk.LabelFrame(frame, text="Compile Project - Inline .sh files into .gitlab-ci.yml", padding=10)
         compile_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # Input directory
         ttk.Label(compile_frame, text="Input Directory:").grid(row=0, column=0, sticky=tk.W, pady=2)
+        ttk.Label(compile_frame, text="(Source YAML & scripts)", font=("TkDefaultFont", 8), foreground="gray").grid(row=0, column=3, sticky=tk.W, padx=5)
         self.vars["compile_input"] = tk.StringVar()
         input_entry = ttk.Entry(compile_frame, textvariable=self.vars["compile_input"], width=50)
         input_entry.grid(row=0, column=1, padx=5, pady=2)
@@ -193,6 +210,7 @@ class Bash2GitlabGUI:
 
         # Output directory
         ttk.Label(compile_frame, text="Output Directory:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ttk.Label(compile_frame, text="(Final .gitlab-ci.yml)", font=("TkDefaultFont", 8), foreground="gray").grid(row=1, column=3, sticky=tk.W, padx=5)
         self.vars["compile_output"] = tk.StringVar()
         output_entry = ttk.Entry(compile_frame, textvariable=self.vars["compile_output"], width=50)
         output_entry.grid(row=1, column=1, padx=5, pady=2)
@@ -215,6 +233,12 @@ class Bash2GitlabGUI:
         self.vars["compile_verbose"] = tk.BooleanVar()
         ttk.Checkbutton(options_frame, text="Verbose", variable=self.vars["compile_verbose"]).pack(side=tk.LEFT, padx=5)
 
+        self.vars["compile_force"] = tk.BooleanVar()
+        ttk.Checkbutton(options_frame, text="Force (ignore change detection)", variable=self.vars["compile_force"]).pack(side=tk.LEFT, padx=5)
+
+        self.vars["compile_autogit"] = tk.BooleanVar()
+        ttk.Checkbutton(options_frame, text="Auto Git (commit changes)", variable=self.vars["compile_autogit"]).pack(side=tk.LEFT, padx=5)
+
         # Parallelism
         ttk.Label(options_frame, text="Parallelism:").pack(side=tk.LEFT, padx=(20, 5))
         self.vars["compile_parallelism"] = tk.StringVar(value="4")
@@ -229,7 +253,7 @@ class Bash2GitlabGUI:
         ttk.Button(button_frame, text="Compile", command=self.run_compile).pack(side=tk.LEFT, padx=5)
 
         # Clean section
-        clean_frame = ttk.LabelFrame(frame, text="Clean Output", padding=10)
+        clean_frame = ttk.LabelFrame(frame, text="Clean Output - Remove only unmodified generated files", padding=10)
         clean_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # Clean output directory
@@ -248,6 +272,9 @@ class Bash2GitlabGUI:
         self.vars["clean_dry_run"] = tk.BooleanVar()
         ttk.Checkbutton(clean_options, text="Dry Run", variable=self.vars["clean_dry_run"]).pack(side=tk.LEFT, padx=5)
 
+        self.vars["clean_autogit"] = tk.BooleanVar()
+        ttk.Checkbutton(clean_options, text="Auto Git", variable=self.vars["clean_autogit"]).pack(side=tk.LEFT, padx=5)
+
         ttk.Button(clean_options, text="Clean", command=self.run_clean).pack(side=tk.LEFT, padx=20)
 
     def create_decompile_tab(self, parent: ttk.Notebook) -> None:
@@ -255,7 +282,7 @@ class Bash2GitlabGUI:
         frame = ttk.Frame(parent)
         parent.add(frame, text="Decompile")
 
-        decompile_frame = ttk.LabelFrame(frame, text="Decompile GitLab CI YAML", padding=10)
+        decompile_frame = ttk.LabelFrame(frame, text="Decompile GitLab CI YAML - Extract inline scripts to .sh files", padding=10)
         decompile_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # Input type selection
@@ -328,6 +355,11 @@ class Bash2GitlabGUI:
             side=tk.LEFT, padx=5
         )
 
+        self.vars["decompile_autogit"] = tk.BooleanVar()
+        ttk.Checkbutton(decompile_options, text="Auto Git", variable=self.vars["decompile_autogit"]).pack(
+            side=tk.LEFT, padx=5
+        )
+
         ttk.Button(decompile_options, text="Decompile", command=self.run_decompile).pack(side=tk.LEFT, padx=20)
 
     def create_utilities_tab(self, parent: ttk.Notebook) -> None:
@@ -336,7 +368,7 @@ class Bash2GitlabGUI:
         parent.add(frame, text="Utilities")
 
         # Init section
-        init_frame = ttk.LabelFrame(frame, text="Initialize Project", padding=10)
+        init_frame = ttk.LabelFrame(frame, text="Initialize Project - Create config and directory structure", padding=10)
         init_frame.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(init_frame, text="Directory:").grid(row=0, column=0, sticky=tk.W, pady=2)
@@ -355,7 +387,7 @@ class Bash2GitlabGUI:
         ttk.Button(init_options, text="Initialize", command=self.run_init).pack(side=tk.LEFT, padx=20)
 
         # Copy2Local section
-        copy_frame = ttk.LabelFrame(frame, text="Copy Repository to Local", padding=10)
+        copy_frame = ttk.LabelFrame(frame, text="Copy Repository to Local - For testing centralized templates", padding=10)
         copy_frame.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(copy_frame, text="Repository URL:").grid(row=0, column=0, sticky=tk.W, pady=2)
@@ -386,7 +418,7 @@ class Bash2GitlabGUI:
         ttk.Button(copy_options, text="Copy to Local", command=self.run_copy2local).pack(side=tk.LEFT, padx=20)
 
         # Detect Drift section
-        drift_frame = ttk.LabelFrame(frame, text="Detect Drift", padding=10)
+        drift_frame = ttk.LabelFrame(frame, text="Detect Drift - Find manual edits to generated files", padding=10)
         drift_frame.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(drift_frame, text="Output Directory:").grid(row=0, column=0, sticky=tk.W, pady=2)
@@ -405,7 +437,7 @@ class Bash2GitlabGUI:
         frame = ttk.Frame(parent)
         parent.add(frame, text="Lint")
 
-        lint_frame = ttk.LabelFrame(frame, text="GitLab CI Lint", padding=10)
+        lint_frame = ttk.LabelFrame(frame, text="GitLab CI Lint - Validate YAML against GitLab API", padding=10)
         lint_frame.pack(fill=tk.X, padx=5, pady=5)
 
         # Output directory
@@ -467,13 +499,141 @@ class Bash2GitlabGUI:
 
         ttk.Button(lint_frame, text="Lint", command=self.run_lint).grid(row=7, column=0, columnspan=3, pady=10)
 
+    def create_advanced_tab(self, parent: ttk.Notebook) -> None:
+        """Create the advanced commands tab."""
+        frame = ttk.Frame(parent)
+        parent.add(frame, text="Advanced")
+
+        # Check-pins section
+        pins_frame = ttk.LabelFrame(frame, text="Check Include Pins - Suggest pinning includes to tags", padding=10)
+        pins_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(pins_frame, text="GitLab CI File:", width=15).grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.vars["pins_file"] = tk.StringVar(value=".gitlab-ci.yml")
+        ttk.Entry(pins_frame, textvariable=self.vars["pins_file"], width=40).grid(row=0, column=1, padx=5, pady=2)
+        ttk.Button(pins_frame, text="Browse", command=lambda: self.browse_file(self.vars["pins_file"])).grid(row=0, column=2, padx=5)
+
+        ttk.Label(pins_frame, text="GitLab URL:", width=15).grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.vars["pins_gitlab_url"] = tk.StringVar(value="https://gitlab.com")
+        ttk.Entry(pins_frame, textvariable=self.vars["pins_gitlab_url"], width=40).grid(row=1, column=1, padx=5, pady=2)
+
+        ttk.Label(pins_frame, text="Token:", width=15).grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.vars["pins_token"] = tk.StringVar()
+        ttk.Entry(pins_frame, textvariable=self.vars["pins_token"], width=40, show="*").grid(row=2, column=1, padx=5, pady=2)
+
+        pins_opts = ttk.Frame(pins_frame)
+        pins_opts.grid(row=3, column=0, columnspan=3, pady=5)
+        self.vars["pins_json"] = tk.BooleanVar()
+        ttk.Checkbutton(pins_opts, text="JSON output", variable=self.vars["pins_json"]).pack(side=tk.LEFT, padx=5)
+        self.vars["pins_pin_all"] = tk.BooleanVar()
+        ttk.Checkbutton(pins_opts, text="Pin all (not just tags)", variable=self.vars["pins_pin_all"]).pack(side=tk.LEFT, padx=5)
+        ttk.Button(pins_opts, text="Check Pins", command=self.run_check_pins).pack(side=tk.LEFT, padx=20)
+
+        # Validate section
+        validate_frame = ttk.LabelFrame(frame, text="Validate YAML Schema - Check against GitLab JSON schema", padding=10)
+        validate_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(validate_frame, text="Input Directory:", width=15).grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.vars["validate_input"] = tk.StringVar()
+        ttk.Entry(validate_frame, textvariable=self.vars["validate_input"], width=40).grid(row=0, column=1, padx=5, pady=2)
+        ttk.Button(validate_frame, text="Browse", command=lambda: self.browse_directory(self.vars["validate_input"])).grid(row=0, column=2, padx=5)
+
+        ttk.Label(validate_frame, text="Output Directory:", width=15).grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.vars["validate_output"] = tk.StringVar()
+        ttk.Entry(validate_frame, textvariable=self.vars["validate_output"], width=40).grid(row=1, column=1, padx=5, pady=2)
+        ttk.Button(validate_frame, text="Browse", command=lambda: self.browse_directory(self.vars["validate_output"])).grid(row=1, column=2, padx=5)
+
+        validate_opts = ttk.Frame(validate_frame)
+        validate_opts.grid(row=2, column=0, columnspan=3, pady=5)
+        ttk.Label(validate_opts, text="Parallelism:").pack(side=tk.LEFT, padx=5)
+        self.vars["validate_parallelism"] = tk.StringVar(value="4")
+        ttk.Spinbox(validate_opts, from_=1, to=16, width=5, textvariable=self.vars["validate_parallelism"]).pack(side=tk.LEFT, padx=5)
+        ttk.Button(validate_opts, text="Validate", command=self.run_validate).pack(side=tk.LEFT, padx=20)
+
+        # Graph section
+        graph_frame = ttk.LabelFrame(frame, text="Generate Dependency Graph - Visualize script relationships", padding=10)
+        graph_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(graph_frame, text="Input Directory:", width=15).grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.vars["graph_input"] = tk.StringVar()
+        ttk.Entry(graph_frame, textvariable=self.vars["graph_input"], width=40).grid(row=0, column=1, padx=5, pady=2)
+        ttk.Button(graph_frame, text="Browse", command=lambda: self.browse_directory(self.vars["graph_input"])).grid(row=0, column=2, padx=5)
+        ttk.Button(graph_frame, text="Generate Graph (DOT)", command=self.run_graph).grid(row=1, column=0, columnspan=3, pady=10)
+
+        # Run section
+        run_frame = ttk.LabelFrame(frame, text="Run Pipeline Locally - Best effort local execution", padding=10)
+        run_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(run_frame, text="GitLab CI File:", width=15).grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.vars["run_input"] = tk.StringVar(value=".gitlab-ci.yml")
+        ttk.Entry(run_frame, textvariable=self.vars["run_input"], width=40).grid(row=0, column=1, padx=5, pady=2)
+        ttk.Button(run_frame, text="Browse", command=lambda: self.browse_file(self.vars["run_input"])).grid(row=0, column=2, padx=5)
+        ttk.Button(run_frame, text="Run Locally", command=self.run_pipeline).grid(row=1, column=0, columnspan=3, pady=10)
+
+        # Detect uncompiled section
+        detect_uncompiled_frame = ttk.LabelFrame(frame, text="Detect Uncompiled Changes - Check if recompilation needed", padding=10)
+        detect_uncompiled_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(detect_uncompiled_frame, text="Input Directory:", width=15).grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.vars["uncompiled_input"] = tk.StringVar()
+        ttk.Entry(detect_uncompiled_frame, textvariable=self.vars["uncompiled_input"], width=40).grid(row=0, column=1, padx=5, pady=2)
+        ttk.Button(detect_uncompiled_frame, text="Browse", command=lambda: self.browse_directory(self.vars["uncompiled_input"])).grid(row=0, column=2, padx=5)
+
+        uncompiled_opts = ttk.Frame(detect_uncompiled_frame)
+        uncompiled_opts.grid(row=1, column=0, columnspan=3, pady=5)
+        self.vars["uncompiled_check_only"] = tk.BooleanVar(value=True)
+        ttk.Checkbutton(uncompiled_opts, text="Check only", variable=self.vars["uncompiled_check_only"]).pack(side=tk.LEFT, padx=5)
+        self.vars["uncompiled_list"] = tk.BooleanVar()
+        ttk.Checkbutton(uncompiled_opts, text="List changed files", variable=self.vars["uncompiled_list"]).pack(side=tk.LEFT, padx=5)
+        ttk.Button(uncompiled_opts, text="Detect Changes", command=self.run_detect_uncompiled).pack(side=tk.LEFT, padx=20)
+
+        # Trigger pipelines section
+        trigger_frame = ttk.LabelFrame(frame, text="Trigger Remote Pipelines - Start pipelines on GitLab", padding=10)
+        trigger_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(trigger_frame, text="GitLab URL:", width=15).grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.vars["trigger_gitlab_url"] = tk.StringVar(value="https://gitlab.com")
+        ttk.Entry(trigger_frame, textvariable=self.vars["trigger_gitlab_url"], width=40).grid(row=0, column=1, padx=5, pady=2)
+
+        ttk.Label(trigger_frame, text="Token:", width=15).grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.vars["trigger_token"] = tk.StringVar()
+        ttk.Entry(trigger_frame, textvariable=self.vars["trigger_token"], width=40, show="*").grid(row=1, column=1, padx=5, pady=2)
+
+        ttk.Label(trigger_frame, text="Projects (ID:REF):", width=15).grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.vars["trigger_projects"] = tk.StringVar()
+        ttk.Entry(trigger_frame, textvariable=self.vars["trigger_projects"], width=40).grid(row=2, column=1, padx=5, pady=2)
+        ttk.Label(trigger_frame, text="e.g., 123:main,456:develop", font=("TkDefaultFont", 8), foreground="gray").grid(row=2, column=2, sticky=tk.W)
+
+        ttk.Label(trigger_frame, text="Variables (KEY=VAL):", width=15).grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.vars["trigger_variables"] = tk.StringVar()
+        ttk.Entry(trigger_frame, textvariable=self.vars["trigger_variables"], width=40).grid(row=3, column=1, padx=5, pady=2)
+        ttk.Label(trigger_frame, text="e.g., VAR1=value1,VAR2=value2", font=("TkDefaultFont", 8), foreground="gray").grid(row=3, column=2, sticky=tk.W)
+
+        trigger_opts = ttk.Frame(trigger_frame)
+        trigger_opts.grid(row=4, column=0, columnspan=3, pady=5)
+        self.vars["trigger_wait"] = tk.BooleanVar()
+        ttk.Checkbutton(trigger_opts, text="Wait for completion", variable=self.vars["trigger_wait"]).pack(side=tk.LEFT, padx=5)
+        ttk.Label(trigger_opts, text="Timeout (s):").pack(side=tk.LEFT, padx=5)
+        self.vars["trigger_timeout"] = tk.StringVar(value="1800")
+        ttk.Entry(trigger_opts, textvariable=self.vars["trigger_timeout"], width=8).pack(side=tk.LEFT, padx=5)
+        ttk.Button(trigger_opts, text="Trigger", command=self.run_trigger_pipelines).pack(side=tk.LEFT, padx=20)
+
+        # Autogit section
+        autogit_frame = ttk.LabelFrame(frame, text="Auto Git Commit - Automatically stage, commit, and push", padding=10)
+        autogit_frame.pack(fill=tk.X, padx=5, pady=5)
+
+        ttk.Label(autogit_frame, text="Commit Message:", width=15).grid(row=0, column=0, sticky=tk.W, pady=2)
+        self.vars["autogit_message"] = tk.StringVar()
+        ttk.Entry(autogit_frame, textvariable=self.vars["autogit_message"], width=40).grid(row=0, column=1, padx=5, pady=2)
+        ttk.Button(autogit_frame, text="Run Autogit", command=self.run_autogit).grid(row=1, column=0, columnspan=3, pady=10)
+
     def create_git_tab(self, parent: ttk.Notebook) -> None:
         """Create the Git hooks tab."""
         frame = ttk.Frame(parent)
         parent.add(frame, text="Git Hooks")
 
         # Pre-commit hooks section
-        precommit_frame = ttk.LabelFrame(frame, text="Pre-commit Hooks", padding=10)
+        precommit_frame = ttk.LabelFrame(frame, text="Pre-commit Hooks - Auto-compile on git commit", padding=10)
         precommit_frame.pack(fill=tk.X, padx=5, pady=5)
 
         ttk.Label(precommit_frame, text="Repository Root:").grid(row=0, column=0, sticky=tk.W, pady=2)
@@ -499,7 +659,7 @@ class Bash2GitlabGUI:
         )
 
         # Map commands section
-        map_frame = ttk.LabelFrame(frame, text="Directory Mapping", padding=10)
+        map_frame = ttk.LabelFrame(frame, text="Directory Mapping - Deploy/sync between directories", padding=10)
         map_frame.pack(fill=tk.X, padx=5, pady=5)
 
         map_options = ttk.Frame(map_frame)
@@ -515,7 +675,7 @@ class Bash2GitlabGUI:
         ttk.Button(map_options, text="Commit Mapping", command=self.run_commit_map).pack(side=tk.LEFT, padx=10)
 
         # Other utilities
-        other_frame = ttk.LabelFrame(frame, text="Other Commands", padding=10)
+        other_frame = ttk.LabelFrame(frame, text="Diagnostics - Health checks and config display", padding=10)
         other_frame.pack(fill=tk.X, padx=5, pady=5)
 
         other_buttons = ttk.Frame(other_frame)
@@ -625,6 +785,8 @@ class Bash2GitlabGUI:
             "dry_run": self.vars["compile_dry_run"].get(),
             "watch": self.vars["compile_watch"].get(),
             "verbose": self.vars["compile_verbose"].get(),
+            "force": self.vars["compile_force"].get(),
+            "autogit": self.vars["compile_autogit"].get(),
         }
 
         # Validate required fields
@@ -646,6 +808,7 @@ class Bash2GitlabGUI:
         options = {
             "out": self.vars["clean_output"].get(),
             "dry_run": self.vars["clean_dry_run"].get(),
+            "autogit": self.vars["clean_autogit"].get(),
         }
 
         if not options["out"]:
@@ -666,6 +829,7 @@ class Bash2GitlabGUI:
             "out": self.vars["decompile_output"].get(),
             "dry_run": self.vars["decompile_dry_run"].get(),
             "verbose": self.vars["decompile_verbose"].get(),
+            "autogit": self.vars["decompile_autogit"].get(),
         }
 
         if input_type == "file":
@@ -829,6 +993,158 @@ class Bash2GitlabGUI:
             return
 
         cmd = ["bash2gitlab", "show-config"]
+        self.command_runner.run_command(cmd)
+
+    def run_check_pins(self) -> None:
+        """Run the check-pins command."""
+        if not self.command_runner:
+            return
+
+        options = {
+            "file": self.vars["pins_file"].get(),
+            "gitlab_url": self.vars["pins_gitlab_url"].get(),
+            "token": self.vars["pins_token"].get(),
+            "json": self.vars["pins_json"].get(),
+        }
+
+        # Add --pin-all if checkbox is checked
+        if self.vars["pins_pin_all"].get():
+            options["pin_all"] = True
+
+        # Validate required fields
+        if not options["file"]:
+            messagebox.showerror("Error", "GitLab CI file is required!")
+            return
+        if not options["gitlab_url"]:
+            messagebox.showerror("Error", "GitLab URL is required!")
+            return
+
+        cmd = self.build_command("check-pins", options)
+        self.command_runner.run_command(cmd)
+
+    def run_validate(self) -> None:
+        """Run the validate command."""
+        if not self.command_runner:
+            return
+
+        options = {
+            "in": self.vars["validate_input"].get(),
+            "out": self.vars["validate_output"].get(),
+            "parallelism": self.vars["validate_parallelism"].get(),
+        }
+
+        # Validate required fields
+        if not options["in"]:
+            messagebox.showerror("Error", "Input directory is required!")
+            return
+        if not options["out"]:
+            messagebox.showerror("Error", "Output directory is required!")
+            return
+
+        cmd = self.build_command("validate", options)
+        self.command_runner.run_command(cmd)
+
+    def run_graph(self) -> None:
+        """Run the graph command."""
+        if not self.command_runner:
+            return
+
+        input_dir = self.vars["graph_input"].get()
+        if not input_dir:
+            messagebox.showerror("Error", "Input directory is required!")
+            return
+
+        cmd = ["bash2gitlab", "graph", "--in", input_dir]
+        self.command_runner.run_command(cmd)
+
+    def run_pipeline(self) -> None:
+        """Run the run command (execute pipeline locally)."""
+        if not self.command_runner:
+            return
+
+        input_file = self.vars["run_input"].get()
+        if not input_file:
+            messagebox.showerror("Error", "GitLab CI file is required!")
+            return
+
+        cmd = ["bash2gitlab", "run", "--in-file", input_file]
+        self.command_runner.run_command(cmd)
+
+    def run_detect_uncompiled(self) -> None:
+        """Run the detect-uncompiled command."""
+        if not self.command_runner:
+            return
+
+        input_dir = self.vars["uncompiled_input"].get()
+        if not input_dir:
+            messagebox.showerror("Error", "Input directory is required!")
+            return
+
+        cmd = ["bash2gitlab", "detect-uncompiled", "--in", input_dir]
+
+        if self.vars["uncompiled_check_only"].get():
+            cmd.append("--check-only")
+        if self.vars["uncompiled_list"].get():
+            cmd.append("--list-changed")
+
+        self.command_runner.run_command(cmd)
+
+    def run_autogit(self) -> None:
+        """Run the autogit command."""
+        if not self.command_runner:
+            return
+
+        cmd = ["bash2gitlab", "autogit"]
+
+        message = self.vars["autogit_message"].get()
+        if message:
+            cmd.extend(["-m", message])
+
+        self.command_runner.run_command(cmd)
+
+    def run_trigger_pipelines(self) -> None:
+        """Run the trigger-pipelines command."""
+        if not self.command_runner:
+            return
+
+        gitlab_url = self.vars["trigger_gitlab_url"].get()
+        token = self.vars["trigger_token"].get()
+        projects_str = self.vars["trigger_projects"].get()
+
+        # Validate required fields
+        if not gitlab_url:
+            messagebox.showerror("Error", "GitLab URL is required!")
+            return
+        if not token:
+            messagebox.showerror("Error", "Token is required!")
+            return
+        if not projects_str:
+            messagebox.showerror("Error", "At least one project (ID:REF) is required!")
+            return
+
+        cmd = ["bash2gitlab", "trigger-pipelines"]
+        cmd.extend(["--gitlab-url", gitlab_url])
+        cmd.extend(["--token", token])
+
+        # Parse and add projects
+        projects = [p.strip() for p in projects_str.split(",") if p.strip()]
+        for project in projects:
+            cmd.extend(["--project", project])
+
+        # Parse and add variables if present
+        variables_str = self.vars["trigger_variables"].get()
+        if variables_str:
+            variables = [v.strip() for v in variables_str.split(",") if v.strip()]
+            for variable in variables:
+                cmd.extend(["--variable", variable])
+
+        # Add wait options if checked
+        if self.vars["trigger_wait"].get():
+            cmd.append("--wait")
+            timeout = self.vars["trigger_timeout"].get()
+            if timeout:
+                cmd.extend(["--timeout", timeout])
+
         self.command_runner.run_command(cmd)
 
 

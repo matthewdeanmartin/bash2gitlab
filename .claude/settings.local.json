@@ -25,7 +25,20 @@
       "Bash(just --list)",
       "Bash(just quick-check)",
       "Bash(make pylint)",
-      "Bash(PYTHONUTF8=1 make pylint)"
+      "Bash(PYTHONUTF8=1 make pylint)",
+      "Bash(python -m pytest test/test_interactive.py::TestCompileHandler::test_handle_compile_command_returns_correct_structure -v)",
+      "Bash(python -m pytest test/test_interactive.py -v --tb=short)",
+      "Bash(python -m pytest test/test_interactive.py -v)",
+      "Bash(python -m pytest test/test_gui.py -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py::TestCommandRunner::test_execute_command_success -v --timeout=5)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v --tb=short)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py::TestCommandRunner -v --timeout=5)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py::TestMainFunction -v --timeout=5)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py::TestLogHandler -v --timeout=5)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v -p no:randomly --timeout=10)",
+      "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v --timeout=10)",
+      "Bash(.venv/Scripts/python -m pytest test/test_tui.py test/test_gui.py -v)"
     ],
     "deny": [],
     "ask": []

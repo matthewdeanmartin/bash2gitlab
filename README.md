@@ -175,6 +175,7 @@ Run with
 |:--------------------|:--------------------------------------------------------------------------|
 | `check-pins`        | Analyze GitLab CI include: statements and suggest pinning to tags        |
 | `trigger-pipelines` | Trigger pipelines in GitLab projects and optionally wait for completion  |
+| `autogit`           | Manually trigger autogit process (stage, commit, and/or push changes)    |
 
 ### Simulate Gitlab Pipeline Locally
 

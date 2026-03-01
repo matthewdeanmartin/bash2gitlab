@@ -2,13 +2,17 @@
 Handles CLI interactions for bash2gitlab
 
 usage: bash2gitlab [-h] [--version]
-                   {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit,check-pins}
+                   {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,
+                    lint,install-precommit,uninstall-precommit,check-pins,trigger-pipelines,
+                    doctor,graph,show-config,run,detect-uncompiled,validate,autogit}
                    ...
 
 A tool for making development of centralized yaml gitlab templates more pleasant.
 
 positional arguments:
-  {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,install-precommit,uninstall-precommit,check-pins}
+  {compile,decompile,detect-drift,copy2local,init,map-deploy,commit-map,clean,lint,
+   install-precommit,uninstall-precommit,check-pins,trigger-pipelines,doctor,graph,
+   show-config,run,detect-uncompiled,validate,autogit}
     compile             Compile an uncompiled directory into a standard GitLab CI structure.
     decompile           Decompile a GitLab CI file, extracting inline scripts into separate .sh files.
     detect-drift        Detect if generated files have been edited and display what the edits are.
@@ -21,6 +25,14 @@ positional arguments:
     install-precommit   Install a Git pre-commit hook that runs `bash2gitlab compile` (honors core.hooksPath/worktrees).
     uninstall-precommit Remove the bash2gitlab pre-commit hook.
     check-pins          Analyze GitLab CI 'include' statements and suggest pinning to tags.
+    trigger-pipelines   Trigger pipelines in one or more GitLab projects and optionally wait for completion.
+    doctor              Run a series of health checks on the project and environment.
+    graph               Generate a DOT language dependency graph of your project's YAML and script files.
+    show-config         Display the current bash2gitlab configuration and its sources.
+    run                 Best efforts to run a .gitlab-ci.yml file locally.
+    detect-uncompiled   Detect if input files have changed since last compilation.
+    validate            Validate yaml pipelines against Gitlab json schema.
+    autogit             Manually trigger the autogit process based on your configuration.
 
 options:
   -h, --help            show this help message and exit
@@ -574,7 +586,7 @@ def main() -> int:
         action="store_true",
         help="Watch source directories and auto-recompile on changes.",
     )
-    parser.add_argument("--force", action="store_true", help="Force compilation even if no input changes detected")
+    compile_parser.add_argument("--force", action="store_true", help="Force compilation even if no input changes detected")
     add_common_arguments(compile_parser)
     add_autogit_argument(compile_parser)
     compile_parser.set_defaults(func=compile_handler)
