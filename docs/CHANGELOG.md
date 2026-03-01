@@ -12,6 +12,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+
+## [0.9.10] - 2025-11-29
+
+### Added
+
+- Python 3.14 support
+- Pragma: inline-artifact
+- `--totalhelp` switch added to list all help
+
+## [0.9.9] - 2025-09-29
+
+### Fixed
+
+- Gitlab library included
+
+### Added
+
+- `autogit` command and switches
+
+## [0.9.8] - 2025-09-04
+
+### Fixed
+
+- Wrong bash return value for `detect-uncompiled`
+- Fixed other ad hoc return values
+
+### Added
+
+- `check-pins` to attempt to upgrade `include:` elements to latest hash or git tag.
+
+## [0.9.7] - 2025-09-01
+
+### Fixed
+
+- Fix performance with lazy loading, rtoml.
+- Fix performance and caching logic for update checker.
+
+## [0.9.6] - 2025-09-01
+
+### Fixed
+
+- json schema loaded from cache, then URL, then resource. Won't start using resource until there is some staleness logic.
+- Prime cache before attempting to validate on multiple threads
+
+## [0.9.5] - 2025-08-28
+
+### Fixed
+
+- Backwards compatibility for 3.8, etc
+
+
+## [0.9.4] - 2025-08-28
+
+### Added
+- New validate command to validate yaml against json schema. Previously you had to compile to validate.
+
+### Changed
+- New dependency on orjson, urllib3 for speed. Tomli for backwards compatibility.
+
+## [0.9.3] - 2025-08-27
+
+### Fixed
+- Detect drift failed on arg parse. Validated with more comprehensive basic_check.sh test.
+
+## [0.9.2] - 2025-08-23
+
+### Fixed
+
+- Bash style error handling in CLI code with sys.exit + numeric error code, python exceptions everywhere else.
+- Better error reporting when running gui/tui/interactive without installing `[all]`
+
+## [0.9.1] - 2025-08-22
+
+### Fixed
+
+- Core mode less likely to fail in import errors. Install help is now vertically more compact.
+- `doctor` command should be fixed now.
+
 ## [0.9.0] - 2025-08-22
 
 ### Changed
@@ -97,11 +175,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `shred` renamed to decompile.
 - Config updates to support storing almost all command options in config file
 - Inline supports Pragma commands to skip certain bash from being in-lined.
-  - `# Pragma: do-not-inline`: Prevents inlining on the current line.
-  - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
-  - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
-  - `# Pragma: end-do-not-inline`: Ends the block.
-  - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
+    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
+    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
+    - `# Pragma: end-do-not-inline`: Ends the block.
+    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
 
 ## [0.8.14] - 2025-08-16
 
@@ -200,7 +278,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Map deploy and map commit now restricted to .sh, .ps1 and .y[a]ml files.
+- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files.
 
 ### Added
 
@@ -354,4 +432,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - verbose and quiet logging
 - CLI interface
 - supports simple in/out project structure
-- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution
+- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution 

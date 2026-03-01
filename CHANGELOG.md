@@ -13,16 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Security in case of vulnerabilities.
 
 
-## [0.9.11] - 2025-11-29
+## [0.9.10] - 2025-11-29
 
 ### Added
 
 - Python 3.14 support
-
-## [0.9.10] - 2025-10-04
-
-### Added
-
+- Pragma: inline-artifact
 - `--totalhelp` switch added to list all help
 
 ## [0.9.9] - 2025-09-29

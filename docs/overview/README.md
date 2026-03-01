@@ -8,11 +8,23 @@ develop your CI logic in `.sh` files and then compiles them into your GitLab CI 
 best of both worlds.
 
 Bash in YAML is Bash without quality gates. Also, includes support for inlining a large number of scripts from other
-languages, from Python to PHP.
+language, from Python to PHP.
+
+[![tests](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml/badge.svg)
+](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/tests.yml)
+[![pre-commit.ci status](https://results.pre-commit.ci/badge/github/matthewdeanmartin/bash2gitlab/main.svg)
+](https://results.pre-commit.ci/latest/github/matthewdeanmartin/bash2gitlab/main)
+[![Downloads](https://img.shields.io/pypi/dm/bash2gitlab)](https://pypistats.org/packages/bash2gitlab)
+[![Python Version](https://img.shields.io/pypi/pyversions/bash2gitlab)
+![Release](https://img.shields.io/pypi/v/bash2gitlab)
+](https://pypi.org/project/bash2gitlab/)
 
 ______________________________________________________________________
 
 ## Before
+
+Surely Gitlab has a solution for this? Not as far as I can
+tell. [Here are some of my best workarounds](https://gitlab.com/matthewdeanmartin/includes_templates).
 
 Your IDE sees a single YAML string, and your scripts are trapped in one file.
 
@@ -39,7 +51,7 @@ echo "Building project"
 make build
 ```
 
-uncompiled.gitlab-ci.yml
+`uncompiled.gitlab-ci.yml`:
 
 ```yaml
 build-job:
@@ -123,39 +135,39 @@ Run with
 
 ### Core Compile/Decompile
 
-| Command | Description |
+| Command     | Description                                                                |
 |:------------|:---------------------------------------------------------------------------|
-| `compile` | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`. |
+| `compile`   | Compiles source YAML and `.sh` files into a final `.gitlab-ci.yml`.        |
 | `decompile` | Extracts inline scripts from a `.gitlab-ci.yml` into separate `.sh` files. |
 
 ### Debugging from remote repo
 
-| Command | Description |
+| Command      | Description                                                                    |
 |:-------------|:-------------------------------------------------------------------------------|
-| `copy2local` | Copies compiled files from a central repo to a local project for testing. |
+| `copy2local` | Copies compiled files from a central repo to a local project for testing.      |
 | `map-deploy` | Copies compiled files from a central repo to a many local project for testing. |
-| `commit-map` | Copies intential changes in local projects back to the central repo. |
+| `commit-map` | Copies intential changes in local projects back to the central repo.           |
 
 ### Setup
 
-| Command | Description |
+| Command               | Description                                              |
 |:----------------------|:---------------------------------------------------------|
-| `init` | Initializes a new `bash2gitlab` project and config file. |
-| `clean` | Carefully delete output in target folder. |
-| `install-precommit` | Add git hook to compile before commit |
-| `uninstall-precommit` | Remove precommit hook |
+| `init`                | Initializes a new `bash2gitlab` project and config file. |
+| `clean`               | Carefully delete output in target folder.                |
+| `install-precommit`   | Add git hook to compile before commit                    |
+| `uninstall-precommit` | Remove precommit hook                                    |
 
 ### Diagnostics
 
-| Command             | Description                                                                         |
-|:--------------------|:------------------------------------------------------------------------------------|
-| `lint`              | Call GitLab APIs to lint your YAML                                                 |
-| `detect-drift`      | Report what unexpected changes were made to the generated files.                    |
-| `show-config`       | Display config after cascade                                                        |
-| `doctor`            | Look for environment problems                                                       |
-| `graph`             | Generate graph of inline relationships                                              |
-| `detect-uncompiled` | Detect if you forgot to compile                                                     |
-| `validate`          | Validate JSON schema of all YAML in input and output                                |
+| Command             | Description                                                      |
+|:--------------------|:-----------------------------------------------------------------|
+| `lint`              | Call GitLab APIs to lint your YAML                              |
+| `detect-drift`      | Report what unexpected changes were made to the generated files. |
+| `show-config`       | Display config after cascade                                     |
+| `doctor`            | Look for environment problems                                    |
+| `graph`             | Generate graph of inline relationships                           |
+| `detect-uncompiled` | Detect if you forgot to compile                                  |
+| `validate`          | Validate JSON schema of all YAML in input and output             |
 
 ### Other
 
@@ -163,8 +175,9 @@ Run with
 |:--------------------|:--------------------------------------------------------------------------|
 | `check-pins`        | Analyze GitLab CI include: statements and suggest pinning to tags        |
 | `trigger-pipelines` | Trigger pipelines in GitLab projects and optionally wait for completion  |
+| `autogit`           | Manually trigger autogit process (stage, commit, and/or push changes)    |
 
-### Simulate GitLab Pipeline Locally
+### Simulate Gitlab Pipeline Locally
 
 | Command | Description                                                                         |
 |:--------|:------------------------------------------------------------------------------------|
@@ -202,9 +215,27 @@ To define variables that should be inlined into the global `variables:` block of
 - **[gitlab-ci-local](https://github.com/firecow/gitlab-ci-local):** This is an excellent tool for running your entire
   GitLab pipeline in local Docker containers. `bash2gitlab` is different—it focuses on the "unit testing" of your Bash
   logic itself, assuming you can and want to execute your scripts on your local machine without the overhead of Docker.
-- **GitHub Actions** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
+- **GitHub Actions
+  ** [GitHub composite actions](https://docs.github.com/en/actions/concepts/workflows-and-actions/reusable-workflows)
   do not have this problem. A shared GitHub action can reference a script in the shared action's repo. A GitHub
   "reusable" workflow is a single yaml file and might suffer from the same problem as Gitlab pipelines.
 - **Git Submodules** Build runners will need permissions to clone and git is more complicated to use.
 - **Base image holds all bash** You can only have one base image, so if you are using it for bash and yaml, you can't
   use other base images.
+- **Trigger remote pipeline** A remote pipeline has access to the shell files in its own repo.
+
+## Project Health & Info
+
+| Metric            | Health                                                                                                                                                                                                            | Metric          | Info                                                                                                                                                                                                            |
+|:------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:----------------|:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Tests             | [![Tests](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml/badge.svg)](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml)                                  | License         | [![License](https://img.shields.io/github/license/matthewdeanmartin/bash2gitlab)](https://raw.githubusercontent.com/matthewdeanmartin/bash2gitlab/refs/heads/main/LICENSE)                                                        |
+| Coverage          | [![Codecov](https://codecov.io/gh/matthewdeanmartin/bash2gitlab/branch/main/graph/badge.svg)](https://codecov.io/gh/matthewdeanmartin/bash2gitlab)                                                                | PyPI            | [![PyPI](https://img.shields.io/pypi/v/bash2gitlab)](https://pypi.org/project/bash2gitlab/)                                                                                                                     |
+| Lint / Pre-commit | [![pre-commit.ci status](https://results.pre-commit.ci/badge/github/matthewdeanmartin/bash2gitlab/main.svg)](https://results.pre-commit.ci/latest/github/matthewdeanmartin/bash2gitlab/main)                      | Python Versions | [![Python Version](https://img.shields.io/pypi/pyversions/bash2gitlab)](https://pypi.org/project/bash2gitlab/)                                                                                                  |
+| Quality Gate      | [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=matthewdeanmartin_bash2gitlab\&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=matthewdeanmartin_bash2gitlab)    | Docs            | [![Docs](https://readthedocs.org/projects/bash2gitlab/badge/?version=latest)](https://bash2gitlab.readthedocs.io/en/latest/)                                                                                    |
+| CI Build          | [![Build](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml/badge.svg)](https://github.com/matthewdeanmartin/bash2gitlab/actions/workflows/build.yml)                                  | Downloads       | [![Downloads](https://static.pepy.tech/personalized-badge/bash2gitlab?period=total\&units=international_system\&left_color=grey\&right_color=blue\&left_text=Downloads)](https://pepy.tech/project/bash2gitlab) |
+| Maintainability   | [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=matthewdeanmartin_bash2gitlab\&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=matthewdeanmartin_bash2gitlab) | Last Commit     | ![Last Commit](https://img.shields.io/github/last-commit/matthewdeanmartin/bash2gitlab)                                                                                                                         |
+
+| Category        | Health                                                                                               
+|-----------------|------------------------------------------------------------------------------------------------------|
+| **Open Issues** | ![GitHub issues](https://img.shields.io/github/issues/matthewdeanmartin/bash2gitlab)                 |
+| **Stars**       | ![GitHub Repo stars](https://img.shields.io/github/stars/matthewdeanmartin/bash2gitlab?style=social) |
