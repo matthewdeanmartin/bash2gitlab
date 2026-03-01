@@ -8,7 +8,16 @@ from bash2gitlab.utils.yaml_factory import get_yaml
 
 
 def normalize_for_compare(text: str) -> str:
-    """Normalize whitespace and line endings for text comparison."""
+    """Normalize whitespace and line endings for text comparison.
+
+    Examples:
+        >>> normalize_for_compare("hello\\r\\nworld\\n")
+        'hello\\nworld'
+        >>> normalize_for_compare("hello   \\nworld  \\n")
+        'hello\\nworld'
+        >>> normalize_for_compare("line1\\nline2\\n")
+        'line1\\nline2'
+    """
     # Normalize line endings
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     # Trim trailing whitespace per line

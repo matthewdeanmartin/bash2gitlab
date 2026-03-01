@@ -8,7 +8,17 @@ from bash2gitlab.utils.terminal_colors import Colors
 
 
 def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to_label: str = "new") -> str:
-    """Return a unified diff between *old* and *new* content with filenames."""
+    """Return a unified diff between *old* and *new* content with filenames.
+
+    Examples:
+        >>> old = "line1\\nline2\\nline3\\n"
+        >>> new = "line1\\nline2 modified\\nline3\\n"
+        >>> result = unified_diff(old, new, Path("test.txt"))
+        >>> "--- test.txt (current)" in result
+        True
+        >>> "+++ test.txt (new)" in result
+        True
+    """
     # keepends=True preserves newline structure for line-accurate diffs in logs.
     return "".join(
         difflib.unified_diff(
@@ -33,6 +43,23 @@ def diff_stats(diff_text: str) -> DiffStats:
     """Compute (changed_lines, insertions, deletions) from unified diff text.
 
     We ignore headers (---, +++, @@). A changed line is any insertion or deletion.
+
+    Examples:
+        >>> diff_text = '''--- a/file.txt
+        ... +++ b/file.txt
+        ... @@ -1,3 +1,3 @@
+        ... line1
+        ... -line2
+        ... +line2 modified
+        ... line3
+        ... '''
+        >>> stats = diff_stats(diff_text)
+        >>> stats.insertions
+        1
+        >>> stats.deletions
+        1
+        >>> stats.changed
+        2
     """
     ins = del_ = 0
     for line in diff_text.splitlines():

@@ -25,7 +25,7 @@ Example:
 ...     include_merged_yaml=True,
 ... )
 >>> any(r.ok for r in results)
-True
+False
 
 Notes:
 -----

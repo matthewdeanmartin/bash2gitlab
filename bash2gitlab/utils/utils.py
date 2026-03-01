@@ -8,6 +8,14 @@ from pathlib import Path
 def remove_leading_blank_lines(text: str) -> str:
     """
     Removes leading blank lines (including lines with only whitespace) from a string.
+
+    Examples:
+        >>> remove_leading_blank_lines("\\n\\nhello\\nworld")
+        'hello\\nworld'
+        >>> remove_leading_blank_lines("   \\n\\nhello")
+        'hello'
+        >>> remove_leading_blank_lines("\\n\\n\\n")
+        ''
     """
     lines = text.splitlines()
     # Find the first non-blank line

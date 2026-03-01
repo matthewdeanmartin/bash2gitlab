@@ -18,6 +18,12 @@ def split_cmd(cmd_line: str) -> list[str] | None:
     """
     Split *cmd_line* into tokens while preserving backslashes (e.g. '.\\foo.sh').
     Uses POSIX-like rules for quoting/whitespace but disables backslash escaping.
+
+    Examples:
+        >>> split_cmd("echo hello world")
+        ['echo', 'hello', 'world']
+        >>> split_cmd('./script.sh arg1 "arg 2"')
+        ['./script.sh', 'arg1', 'arg 2']
     """
     try:
         lex = shlex.shlex(cmd_line, posix=True)
@@ -67,15 +73,42 @@ def extract_script_path(cmd_line: str) -> str | None:
 
 # ───────────────────────── helper predicates ────────────────────────────────
 def is_executor(tok: str) -> bool:
-    """True if token is bash/sh/pwsh *without leading dash*."""
+    """True if token is bash/sh/pwsh *without leading dash*.
+
+    Examples:
+        >>> is_executor("bash")
+        True
+        >>> is_executor("sh")
+        True
+        >>> is_executor("pwsh")
+        True
+        >>> is_executor("-bash")
+        False
+        >>> is_executor("python")
+        False
+    """
     return tok in _EXECUTORS
 
 
 def is_script(tok: str) -> bool:
-    """
+    r"""
     True if token ends with a known script suffix and is not an option flag.
 
     Handles both POSIX-style (./foo.sh) and Windows-style (.\\foo.sh, C:\\path\\bar.ps1).
+
+    Examples:
+        >>> is_script("./script.sh")
+        True
+        >>> is_script("script.ps1")
+        True
+        >>> is_script("script.bash")
+        True
+        >>> is_script("-script.sh")
+        False
+        >>> is_script("script.txt")
+        False
+        >>> is_script(".\\script.ps1")
+        True
     """
     if tok.startswith("-"):
         return False
@@ -84,5 +117,14 @@ def is_script(tok: str) -> bool:
 
 
 def to_posix(tok: str) -> str:
-    """Return a normalized POSIX-style path for consistent downstream handling."""
+    """Return a normalized POSIX-style path for consistent downstream handling.
+
+    Examples:
+        >>> to_posix("path/to/file")
+        'path/to/file'
+        >>> to_posix("path\\\\to\\\\file")
+        'path/to/file'
+        >>> to_posix("script.sh")
+        'script.sh'
+    """
     return Path(tok.replace("\\", "/")).as_posix()

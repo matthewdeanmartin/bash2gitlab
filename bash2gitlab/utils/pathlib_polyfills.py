@@ -10,6 +10,14 @@ def is_relative_to(child: Path, parent: Path) -> bool:
 
     Uses the native Path.is_relative_to() on Python 3.9+ and falls back
     to a polyfill for older versions.
+
+    Examples:
+        >>> is_relative_to(Path("a/b"), Path("a"))
+        True
+        >>> is_relative_to(Path("a/b"), Path("c"))
+        False
+        >>> is_relative_to(Path("a"), Path("a/b"))
+        False
     """
     try:
         # First, try to use the native implementation (available in Python 3.9+)
@@ -30,7 +38,14 @@ def is_relative_to(child: Path, parent: Path) -> bool:
 
 # 3.9+ -> 3.8
 def with_stem(p: PurePath, new_stem: str) -> PurePath:
-    """Replace path stem while preserving all suffixes (3.9+ polyfill)."""
+    """Replace path stem while preserving all suffixes (3.9+ polyfill).
+
+    Examples:
+        >>> with_stem(Path("archive.tar.gz"), "backup").name
+        'backup.tar.gz'
+        >>> with_stem(Path("my_script.sh"), "new_script").name
+        'new_script.sh'
+    """
     # Keep all suffixes (e.g., .tar.gz)
     return p.with_name(new_stem + "".join(p.suffixes))
 
@@ -49,7 +64,14 @@ def hardlink_to(dst: Path, target: Path) -> None:
 
 # 3.12+ -> 3.8  (PurePath.relative_to(..., walk_up=True))
 def relative_to_walk_up(path: PurePath, other: PurePath) -> PurePath:
-    """Compute relative path with walk_up support (3.12+ polyfill)."""
+    """Compute relative path with walk_up support (3.12+ polyfill).
+
+    Examples:
+        >>> str(relative_to_walk_up(Path("a/b/c"), Path("a/b")))
+        'c'
+        >>> str(relative_to_walk_up(Path("a/b"), Path("a/b/c")))
+        '..'
+    """
     return Path(os.path.relpath(os.fspath(path), start=os.fspath(other)))
 
 
