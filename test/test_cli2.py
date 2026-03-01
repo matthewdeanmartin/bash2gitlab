@@ -62,7 +62,7 @@ def _patch_compile_deps(monkeypatch, *, called: dict[str, Any]):
     def fake_start_watch(**kwargs):
         called["start_watch"] = kwargs
 
-    monkeypatch.setattr(m, "run_compile_all", fake_run_compile_all())
+    monkeypatch.setattr(m, "run_compile_all", fake_run_compile_all)
     monkeypatch.setattr(m, "start_watch", fake_start_watch)
 
 
@@ -151,9 +151,11 @@ def test_compile_watch_calls_start_watch(monkeypatch, run_cli, tmp_path):
         ]
     )
 
-    assert code in (0, None)
+    assert code == 0
     assert "start_watch" in called
-    # assert "run_compile_all" not in called
+    watch_args = called["start_watch"]
+    assert watch_args["input_dir"] == in_dir
+    assert watch_args["output_path"] == out_dir
 
 
 def test_detect_drift_variants(monkeypatch, run_cli, tmp_path):
@@ -167,7 +169,7 @@ def test_detect_drift_variants(monkeypatch, run_cli, tmp_path):
 
     # without templates-out
     code1 = run_cli(["bash2yaml", "detect-drift", "--out", str(out_dir)])
-    assert code1 in (0, None)
+    assert code1 == 0
     out = called["run_detect_drift"]
     assert out == out_dir
 
@@ -191,8 +193,11 @@ def test_copy2local_ssh_and_https(monkeypatch, run_cli, tmp_path):
             "pipelines/",
         ]
     )
-    assert code1 in (0, None)
+    assert code1 == 0
     assert "clone_repository_ssh" in called
+    ssh_args = called["clone_repository_ssh"]
+    assert ssh_args[0] == "ssh://git@host/repo.git"
+    assert ssh_args[1] == "main"
 
     # https/archive
     called.clear()
@@ -210,8 +215,11 @@ def test_copy2local_ssh_and_https(monkeypatch, run_cli, tmp_path):
             "pipelines/",
         ]
     )
-    assert code2 in (0, None)
+    assert code2 == 0
     assert "fetch_repository_archive" in called
+    https_args = called["fetch_repository_archive"]
+    assert https_args[0] == "https://host/repo.git"
+    assert https_args[1] == "dev"
 
 
 def test_init_uses_default_directory(monkeypatch, run_cli):
@@ -225,5 +233,5 @@ def test_init_uses_default_directory(monkeypatch, run_cli):
     monkeypatch.setattr(m, "init_handler", fake_init_handler)
 
     code = run_cli(["bash2yaml", "init"])  # no directory arg
-    assert code in (0, None)
+    assert code == 0
     assert called["init"] == "."

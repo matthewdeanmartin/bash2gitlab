@@ -385,27 +385,52 @@ class TestFormatUpdateMessage:
 
 
 class TestFetchPypiJson:
-    """Test PyPI JSON fetching with minimal mocking."""
+    """Test PyPI JSON fetching with mocked network."""
 
-    def test_fetch_real_package_info(self):
-        """Test fetching info for a real package (requests is reliable)."""
+    def test_fetch_package_info_success(self, monkeypatch):
+        """Test successful package info fetch with mocked network."""
         logger = get_logger(None)
 
-        # Use a well-known, stable package for testing
-        try:
-            result = fetch_pypi_json("https://pypi.org/pypi/requests/json", 10.0, logger)
-            assert isinstance(result, dict)
-            assert "info" in result
-            assert "releases" in result
-            assert result["info"]["name"] == "requests"
-        except Exception as e:
-            pytest.skip(f"Network test failed (expected in offline environments): {e}")
+        mock_response = {
+            "info": {"name": "requests", "version": "2.28.0"},
+            "releases": {"2.28.0": []},
+        }
 
-    def test_fetch_nonexistent_package(self):
+        def mock_urlopen(request, timeout):
+            import io
+            import json
+
+            class MockResponse:
+                def read(self):
+                    return json.dumps(mock_response).encode("utf-8")
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    pass
+
+            return MockResponse()
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
+        result = fetch_pypi_json("https://pypi.org/pypi/requests/json", 10.0, logger)
+        assert isinstance(result, dict)
+        assert "info" in result
+        assert "releases" in result
+        assert result["info"]["name"] == "requests"
+
+    def test_fetch_nonexistent_package(self, monkeypatch):
         """Should raise PackageNotFoundError for non-existent packages."""
+        from urllib.error import HTTPError
+
         logger = get_logger(None)
 
-        # Use a package name that should never exist
+        def mock_urlopen(request, timeout):
+            raise HTTPError(request.full_url, 404, "Not Found", {}, None)
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
+
         with pytest.raises(PackageNotFoundError):
             fetch_pypi_json("https://pypi.org/pypi/this-package-should-never-exist-12345/json", 5.0, logger)
 
@@ -562,47 +587,66 @@ class TestCheckForUpdates:
 
 
 class TestRealWorldScenarios:
-    """Test realistic scenarios with actual PyPI packages (when network is available)."""
+    """Test realistic scenarios with mocked PyPI responses."""
 
-    @pytest.mark.slow
-    def test_nonexistent_package_real_pypi(self):
-        """Test behavior with a definitely non-existent package."""
+    def test_nonexistent_package(self, monkeypatch):
+        """Test behavior with a non-existent package - should return None gracefully."""
+        from urllib.error import HTTPError
+
         logger = get_logger(None)
 
-        try:
-            result = check_for_updates("this-package-absolutely-should-not-exist-12345", "1.0.0", logger)
-            assert result is None  # Should handle gracefully
+        def mock_urlopen(request, timeout):
+            raise HTTPError(request.full_url, 404, "Not Found", {}, None)
 
-        except PackageNotFoundError:
-            # This is also acceptable behavior
-            pass
-        except NetworkError as e:
-            pytest.skip(f"Network test failed: {e}")
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
 
-    @pytest.mark.slow
-    def test_background_check_real_package(self):
-        """Test background checking with a real package."""
+        # Behavior: check_for_updates catches PackageNotFoundError and returns None
+        result = check_for_updates("this-package-absolutely-should-not-exist-12345", "1.0.0", logger)
+        assert result is None
+
+    def test_background_check_with_mocked_network(self, monkeypatch):
+        """Test background checking with mocked network (deterministic)."""
         import bash2gitlab.utils.update_checker as update_checker
+        import threading
 
         logger = get_logger(None)
+
+        mock_response = {
+            "info": {"name": "requests", "version": "2.28.0"},
+            "releases": {"2.28.0": [], "1.0.0": []},
+        }
+
+        def mock_urlopen(request, timeout):
+            import json
+
+            class MockResponse:
+                def read(self):
+                    return json.dumps(mock_response).encode("utf-8")
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *args):
+                    pass
+
+            return MockResponse()
+
+        monkeypatch.setattr("urllib.request.urlopen", mock_urlopen)
 
         # Reset global state
         update_checker._background_check_result = None
+        update_checker._background_check_thread = None
 
-        try:
-            start_background_update_check("requests", "1.0.0", logger)
+        start_background_update_check("requests", "1.0.0", logger)
 
-            # Give the background thread a moment to complete
-            time.sleep(2)
+        # Wait for thread to complete deterministically
+        if update_checker._background_check_thread:
+            update_checker._background_check_thread.join(timeout=5.0)
 
-            # Should have set a result (requests 1.0.0 is definitely outdated)
-            # Note: This might be None if the thread hasn't finished yet
-            result = update_checker._background_check_result
-            if result is not None:
-                assert "requests" in result
-
-        except Exception as e:
-            pytest.skip(f"Background network test failed: {e}")
+        # Behavior: background check should complete and set result
+        result = update_checker._background_check_result
+        assert result is not None
+        assert "requests" in result
 
 
 class TestEdgeCases:

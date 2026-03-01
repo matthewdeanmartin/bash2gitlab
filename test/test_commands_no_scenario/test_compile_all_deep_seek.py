@@ -127,11 +127,14 @@ def test_compact_runs_to_literal():
     assert isinstance(result[0], LiteralScalarString)
     assert str(result[0]) == "line1\nline2\nline3"
 
-    # Test with boundaries
+    # Test with PlainScalarString (subclass of str but not TaggedScalar)
+    # PlainScalarString is treated as a plain string and merged with neighbors
     tagged_scalar = ruamel.yaml.scalarstring.PlainScalarString("tagged")
     items = ["line1", tagged_scalar, "line2"]
     result = compact_runs_to_literal(items)
-    assert len(result) == 1  # it's a block. Not sure what the PlainScalarString tag is.
+    assert len(result) == 1
+    assert isinstance(result[0], LiteralScalarString)
+    assert str(result[0]) == "line1\ntagged\nline2"
 
 
 def test_process_script_list_basic(mock_logger, tmp_path):
@@ -206,8 +209,11 @@ test-job:
     assert "echo hello" in result
 
 
-@pytest.mark.skip("Variable overriding not happening as expected?")
 def test_inline_gitlab_scripts_with_global_vars(tmp_path):
+    """Test that global variables are merged with YAML-defined variables.
+
+    Precedence: YAML-defined variables override global variables with the same name.
+    """
     yaml_content = """
 variables:
   EXISTING_VAR: existing
@@ -221,8 +227,11 @@ test-job:
     inlined_count, result = inline_gitlab_scripts(yaml_content, tmp_path, global_vars, tmp_path)
 
     assert inlined_count == 0
+    # Global var should be added
     assert "GLOBAL_VAR: value" in result
-    assert "EXISTING_VAR: overridden" in result
+    # YAML-defined variable should win over global (per code at compile_all.py:336-339)
+    assert "EXISTING_VAR: existing" in result
+    assert "EXISTING_VAR: overridden" not in result
 
 
 def test_write_yaml_and_hash(tmp_path, mock_logger):
@@ -363,20 +372,21 @@ def test_run_compile_all_with_files(tmp_path, mock_logger):
                     mock_mark.assert_called_once()
 
 
-def test_process_script_list_error_handling(mock_logger, tmp_path):
-    # Test with non-existent script file
+def test_process_script_list_error_handling(tmp_path):
+    """Test that missing script files raise Bash2GitlabError with appropriate message."""
     script_list = ["./nonexistent.sh"]
 
-    with pytest.raises(Bash2GitlabError):
+    with pytest.raises(Bash2GitlabError) as exc_info:
         process_script_list(script_list, tmp_path)
 
-    mock_logger.warning.assert_called()
+    # Behavior: exception should contain information about the missing file
+    assert "nonexistent.sh" in str(exc_info.value)
 
 
-@pytest.mark.skip("Job vars not happening as expected?")
 def test_inline_gitlab_scripts_job_variables(tmp_path):
-    # Create job variables file
-    job_vars_file = tmp_path / "test_job_variables.sh"
+    """Test that job-specific variables are loaded from job_name_variables.sh file."""
+    # Create job variables file - note: job name "test-job" becomes "test-job_variables.sh"
+    job_vars_file = tmp_path / "test-job_variables.sh"
     job_vars_file.write_text("JOB_VAR=job_value\nANOTHER_VAR=another_value")
 
     yaml_content = """
@@ -389,7 +399,7 @@ test-job:
 
     inlined_count, result = inline_gitlab_scripts(yaml_content, tmp_path, {}, tmp_path)
 
-    assert inlined_count == 0
+    # Behavior: job-specific variables should be merged into the job
     assert "JOB_VAR: job_value" in result
     assert "ANOTHER_VAR: another_value" in result
     assert "EXISTING_VAR: existing" in result

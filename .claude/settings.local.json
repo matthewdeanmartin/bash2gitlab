@@ -39,7 +39,20 @@
       "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v -p no:randomly --timeout=10)",
       "Bash(.venv/Scripts/python -m pytest test/test_gui.py -v --timeout=10)",
       "Bash(.venv/Scripts/python -m pytest test/test_tui.py test/test_gui.py -v)",
-      "Bash(.venv/Scripts/python -m pytest test/test_tui.py -v)"
+      "Bash(.venv/Scripts/python -m pytest test/test_tui.py -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_cli2.py -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_watch_files.py -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_cli2.py::test_compile_watch_calls_start_watch -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_compile_all_deep_seek.py::test_inline_gitlab_scripts_with_global_vars -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_compile_all_deep_seek.py::test_inline_gitlab_scripts_job_variables -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_compile_all_deep_seek.py::test_compact_runs_to_literal -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_compile_all_deep_seek.py::test_process_script_list_error_handling -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_lint_all.py::test_post_json_invalid_json_raises -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_lint_all.py::test_post_json_invalid_json_raises test/test_commands_no_scenario/test_lint_all.py::test_summarize_results_logging_and_counts -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_utils/test_update_checker_claude.py::TestFetchPypiJson -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_utils/test_update_checker_claude.py::TestRealWorldScenarios -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_utils/test_update_checker_claude.py::TestRealWorldScenarios::test_nonexistent_package -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_cli2.py test/test_watch_files.py test/test_commands_no_scenario/test_lint_all.py -v)"
     ],
     "deny": [],
     "ask": []

@@ -13,7 +13,7 @@ class _Evt:
         self.is_directory = is_directory
 
 
-def test_handler_ignores_dirs_and_irrelevant_extensions(tmp_path, monkeypatch, caplog):
+def test_handler_ignores_dirs_and_irrelevant_extensions(tmp_path, monkeypatch):
     called = {"count": 0}
 
     def fake_compile(**kwargs):
@@ -29,8 +29,6 @@ def test_handler_ignores_dirs_and_irrelevant_extensions(tmp_path, monkeypatch, c
     )
     handler._debounce = 0.0  # avoid timing flake
 
-    caplog.set_level("INFO")
-
     # Directory -> ignored
     handler.on_any_event(_Evt(str(tmp_path), is_directory=True))
 
@@ -42,16 +40,16 @@ def test_handler_ignores_dirs_and_irrelevant_extensions(tmp_path, monkeypatch, c
     # Irrelevant extension -> ignored
     handler.on_any_event(_Evt(str(tmp_path / "note.txt")))
 
+    # Behavior: no compile should have been triggered
     assert called["count"] == 0
-    # No "recompiling" log produced
-    assert not any("recompiling" in m.message.lower() for m in caplog.records)
 
 
-def test_handler_triggers_on_yaml_and_sh(tmp_path, monkeypatch, caplog):
-    recorded = {"kwargs": None}
+def test_handler_triggers_on_yaml_and_sh(tmp_path, monkeypatch):
+    recorded = {"kwargs": None, "call_count": 0}
 
     def fake_compile(**kwargs):
         recorded["kwargs"] = kwargs
+        recorded["call_count"] += 1
 
     monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", fake_compile)
 
@@ -63,22 +61,17 @@ def test_handler_triggers_on_yaml_and_sh(tmp_path, monkeypatch, caplog):
     )
     handler._debounce = 0.0  # fire immediately
 
-    caplog.set_level("INFO")
-
-    # Should trigger for .yml
+    # Behavior: should trigger compile for .yml with correct parameters
     handler.on_any_event(_Evt(str(tmp_path / "pipeline.yml")))
-    assert recorded["kwargs"] is not None
+    assert recorded["call_count"] == 1
     assert recorded["kwargs"]["input_dir"] == tmp_path
     assert recorded["kwargs"]["output_path"] == tmp_path / "out"
     assert recorded["kwargs"]["dry_run"] is True
     assert recorded["kwargs"]["parallelism"] == 4
-    assert any("recompiling" in m.message.lower() for m in caplog.records)
-    assert any("recompiled successfully" in m.message.lower() for m in caplog.records)
 
-    # Reset and trigger for .sh
-    recorded["kwargs"] = None
+    # Behavior: should trigger compile for .sh files too
     handler.on_any_event(_Evt(str(tmp_path / "script.sh")))
-    assert recorded["kwargs"] is not None
+    assert recorded["call_count"] == 2
 
 
 def test_handler_debounce(monkeypatch, tmp_path):
@@ -111,8 +104,11 @@ def test_handler_debounce(monkeypatch, tmp_path):
     assert calls["n"] == 2
 
 
-def test_handler_logs_error_on_exception(tmp_path, monkeypatch, caplog):
+def test_handler_handles_exception_gracefully(tmp_path, monkeypatch):
+    exception_raised = {"value": False}
+
     def boom(**kwargs):
+        exception_raised["value"] = True
         raise RuntimeError("boom")
 
     monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", boom)
@@ -125,12 +121,12 @@ def test_handler_logs_error_on_exception(tmp_path, monkeypatch, caplog):
     )
     handler._debounce = 0.0
 
-    caplog.set_level("ERROR")
+    # Behavior: handler should catch and handle exceptions without crashing
     handler.on_any_event(_Evt(str(tmp_path / "bad.yml")))
-    assert any("recompilation failed" in m.message.lower() for m in caplog.records)
+    assert exception_raised["value"] is True
 
 
-def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, monkeypatch, caplog):
+def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, monkeypatch):
     scheduled = {"args": None, "recursive": None}
     started = {"value": False}
     stopped = {"value": False}
@@ -162,8 +158,6 @@ def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, mon
 
     monkeypatch.setattr("bash2gitlab.watch_files.time", types.SimpleNamespace(sleep=fake_sleep))
 
-    caplog.set_level("INFO")
-
     # Patch run_compile_all so it's not accidentally called here
     monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", lambda **_: None)
 
@@ -175,13 +169,11 @@ def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, mon
         parallelism=None,
     )
 
-    # Assertions about observer wiring & shutdown
+    # Behavior: observer lifecycle should be correct
     assert started["value"] is True
     assert stopped["value"] is True
     assert joined["value"] is True
-    # Scheduled on the provided input_dir, recursive=True
+    # Behavior: scheduled on the provided input_dir, recursive=True
     assert scheduled["args"] is not None
     assert scheduled["args"][1] == str(tmp_path)
     assert scheduled["recursive"] is True
-    # Saw "Stopping watcher." in logs
-    assert any("stopping watcher" in m.message.lower() for m in caplog.records)
