@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat test/test_commands/scenario_artifact_inline/.out/.gitlab-ci.yml)",
+      "Bash(.venv/Scripts/python -m pytest test/test_commands/test_scenario1.py test/test_commands/test_scenario2.py -v)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

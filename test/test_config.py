@@ -32,14 +32,12 @@ def reset_singleton_and_env():
 
 
 def test_load_from_bash2gitlab_toml(tmp_path: Path):
-    """Verify that config is loaded correctly from a bash2gitlab.toml file."""
+    """Verify that config is loaded correctly from a .bash2gitlab.toml file."""
     config_file = tmp_path / "bash2gitlab.toml"
-    config_file.write_text(
-        """
+    config_file.write_text("""
         input_dir = "/path/from/toml"
         output_dir = "output/toml"
-        """
-    )
+        """)
 
     # Reset the config to load from the specified path
     config_module.reset_for_testing(config_path_override=config_file)
@@ -53,8 +51,7 @@ def test_load_from_bash2gitlab_toml(tmp_path: Path):
 def test_load_from_pyproject_toml(tmp_path: Path):
     """Verify that config is loaded correctly from a [tool.bash2gitlab] section."""
     config_file = tmp_path / "pyproject.toml"
-    config_file.write_text(
-        """
+    config_file.write_text("""
         [tool.other_tool]
         setting = "ignore"
 
@@ -62,8 +59,7 @@ def test_load_from_pyproject_toml(tmp_path: Path):
         input_dir = "my_ci.yml"
         scripts_out = "decompileded_scripts/"
         dry_run = false
-        """
-    )
+        """)
 
     config_module.reset_for_testing(config_path_override=config_file)
     config = config_module.config
@@ -74,13 +70,11 @@ def test_load_from_pyproject_toml(tmp_path: Path):
 def test_env_var_overrides_file_config(tmp_path: Path):
     """Ensure environment variables take precedence over file settings."""
     config_file = tmp_path / "bash2gitlab.toml"
-    config_file.write_text(
-        """
+    config_file.write_text("""
         input_dir = "/path/from/toml"
         output_dir = "output/toml"
         verbose = false
-        """
-    )
+        """)
 
     # Set environment variables that should override the file
     with patch.dict(

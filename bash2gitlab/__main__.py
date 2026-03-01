@@ -521,8 +521,7 @@ def handle_change_detection_commands(args) -> None:
             for file_path in changed:
                 print(f"  {file_path}")
             raise CompilationNeeded()
-        else:
-            print("No files have changed since last compilation")
+        print("No files have changed since last compilation")
         return
 
 

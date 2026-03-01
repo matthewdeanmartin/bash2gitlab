@@ -161,20 +161,20 @@ Run with
 
 | Command             | Description                                                      |
 |:--------------------|:-----------------------------------------------------------------|
-| `lint`              | Call gitlab APIs to lint your yaml                               |
+| `lint`              | Call GitLab APIs to lint your YAML                              |
 | `detect-drift`      | Report what unexpected changes were made to the generated files. |
 | `show-config`       | Display config after cascade                                     |
 | `doctor`            | Look for environment problems                                    |
 | `graph`             | Generate graph of inline relationships                           |
 | `detect-uncompiled` | Detect if you forgot to compile                                  |
-| `validate`          | Validate json schema of all yaml in input and output             |
+| `validate`          | Validate JSON schema of all YAML in input and output             |
 
 ### Other
 
-| Command           | Description                                                             |
-|:------------------|:------------------------------------------------------------------------|
-| check-pins        | Analyze GitLab CI include: statements and suggest pinning to tags       |
-| trigger-pipelines | Trigger pipelines in GitLab projects and optionally wait for completion |
+| Command             | Description                                                               |
+|:--------------------|:--------------------------------------------------------------------------|
+| `check-pins`        | Analyze GitLab CI include: statements and suggest pinning to tags        |
+| `trigger-pipelines` | Trigger pipelines in GitLab projects and optionally wait for completion  |
 
 ### Simulate Gitlab Pipeline Locally
 

@@ -10,8 +10,7 @@ def check_for_python_3_13_0() -> bool:
     """
     version_info = sys.version_info
     if (version_info.major, version_info.minor, version_info.micro) == (3, 13, 0):
-        msg = textwrap.dedent(
-            f"""
+        msg = textwrap.dedent(f"""
         ⚠️ You are running Python {platform.python_version()}.
 
         This is an initial release of Python 3.13 and has known bugs.
@@ -24,8 +23,7 @@ def check_for_python_3_13_0() -> bool:
           • Linux (Fedora/RHEL): sudo dnf upgrade python3.13
           • Universal (pyenv):   pyenv install 3.13.1 && pyenv global 3.13.1
 
-        """
-        ).strip()
+        """).strip()
         print(msg)
         return True
     return False

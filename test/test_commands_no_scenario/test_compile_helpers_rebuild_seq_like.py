@@ -23,12 +23,10 @@ def test_returns_commentedseq_when_flag_true():
 def test_copies_comment_metadata_when_present():
     # Build an original CommentedSeq with actual comment association metadata (.ca)
     yaml = YAML()
-    original = yaml.load(
-        """
+    original = yaml.load("""
         - a   # first item comment
         - b
-        """
-    )
+        """)
     assert isinstance(original, CommentedSeq)
     assert hasattr(original, "ca") and original.ca is not None
 

@@ -57,6 +57,6 @@ def path_walk(root: Path, top_down=True, on_error=None, follow_symlinks=False):
 
 
 # 3.12+ -> 3.8  (case_sensitive kwarg for glob/rglob/match)
-def glob_cs(p: Path, pattern: str, case_sensitive=None):
+def glob_cs(p: Path, pattern: str, case_sensitive=None):  # pylint: disable=unused-argument
     # Py3.8: just ignore the flag (you can post-filter if you truly need case control)
     return p.glob(pattern)

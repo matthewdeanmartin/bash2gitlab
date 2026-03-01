@@ -554,7 +554,7 @@ def start_background_update_check(
     # Only catch exceptions at this entry point
     try:
         actual_logger = get_logger(logger)
-        cache_dir, cache_file = cache_paths(package_name)
+        _cache_dir, cache_file = cache_paths(package_name)
 
         fresh = is_fresh(cache_file, cache_ttl_seconds, actual_logger)
         cached = load_cache(cache_file, actual_logger) if cache_file.exists() else None

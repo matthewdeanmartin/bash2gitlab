@@ -256,7 +256,7 @@ class ConfigurationLoader:
             GitLabCIError: If the file fails to load.
         """
         try:
-            with open(file_path) as f:
+            with open(file_path, encoding="utf-8") as f:
                 return self.yaml.load(f) or {}
         except Exception as e:
             raise GitlabRunnerError(f"Failed to load YAML file {file_path}: {e}") from e
@@ -430,7 +430,7 @@ class PipelineProcessor:
         """
         if isinstance(value, str):
             return [value]
-        elif isinstance(value, list):
+        if isinstance(value, list):
             return value
         return []
 

@@ -37,7 +37,7 @@ class Config:
     """
 
     ENV_VAR_PREFIX = "BASH2GITLAB_"
-    CONFIG_FILES = ["bash2gitlab.toml", "pyproject.toml"]
+    CONFIG_FILES = [".bash2gitlab.toml", "bash2gitlab.toml", "pyproject.toml"]
 
     def __init__(self, config_path_override: Path | None = None):
         """
@@ -232,6 +232,22 @@ class Config:
     @property
     def compile_watch(self) -> bool | None:
         return self.get_bool("watch", section="compile")
+
+    @property
+    def max_artifact_size_mb(self) -> float | None:
+        return self.get_float("max_artifact_size_mb", section="compile")
+
+    @property
+    def artifact_warn_size_kb(self) -> float | None:
+        return self.get_float("artifact_warn_size_kb", section="compile")
+
+    @property
+    def default_artifact_format(self) -> str | None:
+        return self.get_str("default_artifact_format", section="compile")
+
+    @property
+    def artifact_checksum_validation(self) -> bool | None:
+        return self.get_bool("artifact_checksum_validation", section="compile")
 
     # --- `decompile` Command Properties ---
     @property

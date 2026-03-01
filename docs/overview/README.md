@@ -7,8 +7,8 @@ Tired of writing Bash inside YAML strings with no syntax highlighting, linting, 
 develop your CI logic in `.sh` files and then compiles them into your GitLab CI configuration, giving you the
 best of both worlds.
 
-Bash in yaml is Bash without quality gates. Also, includes support for inlining a large number of scripts from other
-language, from python to PHP.
+Bash in YAML is Bash without quality gates. Also, includes support for inlining a large number of scripts from other
+languages, from Python to PHP.
 
 ______________________________________________________________________
 
@@ -147,15 +147,28 @@ Run with
 
 ### Diagnostics
 
-| Command | Description                                                                         |
-|:---------------|:------------------------------------------------------------------------------------|
-| `lint` | Call gitlab APIs to lint you yaml                                                   |
-| `detect-drift` | Report what unexpected changes were made to the generated files.                    |
-| `show-config` | Display config after cascade                                                        |
-| `doctor` | Look for environment problems                                                       |
-| `graph` | Generate graph inline relationships                                                 |
+| Command             | Description                                                                         |
+|:--------------------|:------------------------------------------------------------------------------------|
+| `lint`              | Call GitLab APIs to lint your YAML                                                 |
+| `detect-drift`      | Report what unexpected changes were made to the generated files.                    |
+| `show-config`       | Display config after cascade                                                        |
+| `doctor`            | Look for environment problems                                                       |
+| `graph`             | Generate graph of inline relationships                                              |
 | `detect-uncompiled` | Detect if you forgot to compile                                                     |
-| `run` | Best efforts to run bash in a .gitlab-ci.yml file in similar order as a real runner |
+| `validate`          | Validate JSON schema of all YAML in input and output                                |
+
+### Other
+
+| Command             | Description                                                               |
+|:--------------------|:--------------------------------------------------------------------------|
+| `check-pins`        | Analyze GitLab CI include: statements and suggest pinning to tags        |
+| `trigger-pipelines` | Trigger pipelines in GitLab projects and optionally wait for completion  |
+
+### Simulate GitLab Pipeline Locally
+
+| Command | Description                                                                         |
+|:--------|:------------------------------------------------------------------------------------|
+| `run`   | Best efforts to run bash in a .gitlab-ci.yml file in similar order as a real runner |
 
 For detailed options on any command, run `bash2gitlab <command> --help`.
 

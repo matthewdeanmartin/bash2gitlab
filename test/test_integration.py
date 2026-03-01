@@ -38,8 +38,7 @@ class TestProcessUncompiledDirectory:
         (input_dir / "template_script.sh").write_text("echo 'From a template'")
 
         # 3. Root GitLab CI file
-        (input_dir / ".gitlab-ci.yml").write_text(
-            """
+        (input_dir / ".gitlab-ci.yml").write_text("""
 include:
   - project: 'my-group/my-project'
     ref: main
@@ -68,18 +67,15 @@ test_job:
   script:
     - echo "Testing..."
     - bash ./short_task.sh
-"""
-        )
+""")
 
         # 4. Template CI file
-        (input_dir / "backend.yml").write_text(
-            """
+        (input_dir / "backend.yml").write_text("""
 template_job:
   image: alpine
   script:
     - bash ./template_script.sh
-"""
-        )
+""")
         return input_dir, output_path
 
     def test_full_processing(self, setup_project_structure):

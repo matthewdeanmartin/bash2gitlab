@@ -15,6 +15,7 @@ from ruamel.yaml.error import YAMLError
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 from bash2gitlab.commands.clean_all import report_targets
+from bash2gitlab.commands.compile_artifacts import maybe_inline_artifact
 from bash2gitlab.commands.compile_bash_reader import read_bash_script
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
 from bash2gitlab.commands.input_change_detector import mark_compilation_complete, needs_compilation
@@ -224,24 +225,30 @@ def process_script_list(
             processed_items.append(end_marker)
 
         else:
-            # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
-            interp_inline, script_path_str_other = pm.hook.inline_command(line=item, scripts_root=scripts_root) or (
-                None,
-                None,
-            )
-            if interp_inline:
-                scripts_found.append(script_path_str_other)
-                processed_items.extend(interp_inline)
+            # Check for artifact inlining pragma
+            artifact_inline, artifact_path = maybe_inline_artifact(item, scripts_root)
+            if artifact_inline and artifact_path:
+                scripts_found.append(str(artifact_path))
+                processed_items.extend(artifact_inline)
             else:
-                interp_inline, script_path_str_other = maybe_inline_interpreter_command(item, scripts_root)
-                if interp_inline and isinstance(interp_inline, list) and script_path_str_other:
-                    scripts_found.append(str(script_path_str_other))
+                # NEW: interpreter-based script inlining (python/node/ruby/php/fish)
+                interp_inline, script_path_str_other = pm.hook.inline_command(line=item, scripts_root=scripts_root) or (
+                    None,
+                    None,
+                )
+                if interp_inline:
+                    scripts_found.append(script_path_str_other)
                     processed_items.extend(interp_inline)
-                elif interp_inline and isinstance(interp_inline, str) and script_path_str_other:
-                    scripts_found.append(str(script_path_str_other))
-                    processed_items.append(interp_inline)
                 else:
-                    processed_items.append(item)
+                    interp_inline, script_path_str_other = maybe_inline_interpreter_command(item, scripts_root)
+                    if interp_inline and isinstance(interp_inline, list) and script_path_str_other:
+                        scripts_found.append(str(script_path_str_other))
+                        processed_items.extend(interp_inline)
+                    elif interp_inline and isinstance(interp_inline, str) and script_path_str_other:
+                        scripts_found.append(str(script_path_str_other))
+                        processed_items.append(interp_inline)
+                    else:
+                        processed_items.append(item)
 
     # Decide output representation
     only_plain_strings = all(isinstance(_, str) for _ in processed_items)

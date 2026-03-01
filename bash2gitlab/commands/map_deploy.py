@@ -124,11 +124,9 @@ def run_map_deploy(
     if len(deployment_map):
         logger.info(f"Preparing to deploy {len(deployment_map)} items")
     else:
-        logger.warning(
-            """No items in map config section. Map deploy requires pyproject.toml to have something like
+        logger.warning("""No items in map config section. Map deploy requires pyproject.toml to have something like
         [tool.bash2gitlab.map.map]
-        "out/python" =["my_microservice/gitlab-scripts", "my_other/gitlab-scripts"]"""
-        )
+        "out/python" =["my_microservice/gitlab-scripts", "my_other/gitlab-scripts"]""")
 
     # bash2gitlab.toml
     for source_base, target_bases in deployment_map.items():

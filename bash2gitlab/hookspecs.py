@@ -11,6 +11,9 @@ from typing import Any
 
 import pluggy
 
+# pylint: disable=unused-argument
+
+
 hookspec = pluggy.HookspecMarker("bash2gitlab")
 
 

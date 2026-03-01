@@ -59,12 +59,12 @@ ruff-fix:
 pylint: black ruff-fix init-build-history
     @echo "Linting with pylint"
     {{venv}} pylint bash2gitlab --fail-under 9.9 --rcfile=.pylintrc
-    touch {{STAMP_DIR}}/pylint
+
 
 bandit: init-build-history
     @echo "Security checks"
     {{venv}} bandit bash2gitlab -r --quiet
-    touch {{STAMP_DIR}}/bandit
+
 
 mypy:
     {{venv}} mypy bash2gitlab --ignore-missing-imports --check-untyped-defs

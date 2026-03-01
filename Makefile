@@ -1,7 +1,5 @@
 .EXPORT_ALL_VARIABLES:
-# Get changed files
 
-FILES := $(wildcard **/*.py)
 
 # if you wrap everything in uv run, it runs slower.
 ifeq ($(origin VIRTUAL_ENV),undefined)
@@ -35,17 +33,10 @@ test: clean uv.lock install_plugins
 	$(VENV) bash ./scripts/basic_checks.sh
 #	$(VENV) bash basic_test_with_logging.sh
 
-
-.build_history:
-	@mkdir -p .build_history
-
-.build_history/isort: .build_history $(FILES)
+.PHONY: isort
+isort:
 	@echo "Formatting imports"
 	$(VENV) isort .
-	@touch .build_history/isort
-
-.PHONY: isort
-isort: .build_history/isort
 
 .PHONY: jiggle_version
 
@@ -59,41 +50,35 @@ else
 	# jiggle_version bump --increment auto
 endif
 
-.build_history/black: .build_history .build_history/isort jiggle_version $(FILES)
+.PHONY: black
+black: isort jiggle_version
 	@echo "Formatting code"
 	$(VENV) metametameta pep621
 	$(VENV) black bash2gitlab # --exclude .venv
 	$(VENV) black test # --exclude .venv
 	$(VENV) git2md bash2gitlab --ignore __init__.py __pycache__ --output SOURCE.md
 
-.PHONY: black
-black: .build_history/black
-
-.build_history/pre-commit: .build_history .build_history/isort .build_history/black
+.PHONY: pre-commit
+pre-commit: isort black
 	@echo "Pre-commit checks"
 	$(VENV) pre-commit run --all-files
-	@touch .build_history/pre-commit
 
-.PHONY: pre-commit
-pre-commit: .build_history/pre-commit
-
-.build_history/bandit: .build_history $(FILES)
-	@echo "Security checks"
-	$(VENV)  bandit bash2gitlab -r --quiet
-	@touch .build_history/bandit
 
 .PHONY: bandit
-bandit: .build_history/bandit
+bandit: bandit
+	@echo "Security checks"
+	$(VENV)  bandit bash2gitlab -r --quiet
+
+
 
 .PHONY: pylint
-.build_history/pylint: .build_history .build_history/isort .build_history/black $(FILES)
+pylint:  isort black
 	@echo "Linting with pylint"
-	$(VENV) ruff --fix
+	$(VENV) ruff check --fix
 	$(VENV) pylint bash2gitlab --fail-under 9.8
-	@touch .build_history/pylint
 
 # for when using -j (jobs, run in parallel)
-.NOTPARALLEL: .build_history/isort .build_history/black
+.NOTPARALLEL: /isort /black
 
 check: mypy test pylint bandit pre-commit update-schema
 

@@ -199,7 +199,7 @@ You can set options via **CLI flags**, **environment variables**, or **TOML conf
 
 1. **CLI flags** (highest)
 2. **Environment variables**
-3. **TOML config** (e.g., `bash2gitlab.toml`) (lowest)
+3. **TOML config** (e.g., `.bash2gitlab.toml`) (lowest)
 
 **Environment variables**
 

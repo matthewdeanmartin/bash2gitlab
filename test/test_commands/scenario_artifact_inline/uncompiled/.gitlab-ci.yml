@@ -1,0 +1,7 @@
+test-artifact-inline:
+  stage: test
+  before_script:
+    - "# Pragma: inline-artifact test-configs --output=./configs"
+  script:
+    - echo "Using inlined configs"
+    - ls -la ./configs

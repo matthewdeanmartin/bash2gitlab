@@ -6,6 +6,8 @@ import re
 import shlex
 from pathlib import Path
 
+from bash2gitlab.errors.exceptions import Bash2GitlabError
+
 _EXECUTORS = {"bash", "sh", "pwsh"}
 _DOT_SOURCE = {"source", "."}
 _VALID_SUFFIXES = {".sh", ".ps1", ".bash"}
@@ -38,7 +40,7 @@ def extract_script_path(cmd_line: str) -> str | None:
         • there are **no leading ENV=val assignments**
     """
     if not isinstance(cmd_line, str):
-        raise Exception("Expected string for cmd_line")
+        raise Bash2GitlabError("Expected string for cmd_line")
 
     tokens = split_cmd(cmd_line)
     if not tokens:

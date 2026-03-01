@@ -60,7 +60,7 @@ bash2gitlab compile --in src --out compiled --watch
 bash2gitlab compile --in src --out compiled --dry-run
 ```
 
-### Configuration (`bash2gitlab.toml`)
+### Configuration (`.bash2gitlab.toml`)
 
 These settings can be specified at the top level or within a `[compile]` section.
 
@@ -162,7 +162,7 @@ bash2gitlab decompile --in-folder existing_ci --out new_project_src
 bash2gitlab decompile --in-file .gitlab-ci.yml --out decompiled_output --dry-run
 ```
 
-### Configuration (`bash2gitlab.toml`)
+### Configuration (`.bash2gitlab.toml`)
 
 Settings can be specified in a `[decompile]` section.
 
@@ -234,7 +234,7 @@ bash2gitlab clean --out compiled
 bash2gitlab clean --out compiled --dry-run
 ```
 
-### Configuration (`bash2gitlab.toml`)
+### Configuration (`.bash2gitlab.toml`)
 
 The `clean` command uses the global `output_dir` setting if `--out` is not provided. There is no specific `[clean]`
 section.
@@ -297,7 +297,7 @@ If a `.env` file with the BASH2GITLAB_LINT_TOKEN variables is set, that will be 
 pyproject.toml
 is not supported because of the likelihood that it would be checked into source control by accident.
 
-### Configuration (`bash2gitlab.toml` or `pyproject.toml`)
+### Configuration (`.bash2gitlab.toml` or `pyproject.toml`)
 
 ```toml
 # Global output directory can be used as a default
@@ -346,7 +346,7 @@ not from direct edits to the generated output.
 bash2gitlab detect-drift --out compiled
 ```
 
-### Configuration (`bash2gitlab.toml`)
+### Configuration (`.bash2gitlab.toml`)
 
 The `detect-drift` command uses the global `output_dir` setting if `--out` is not provided. There is no specific
 `[detect-drift]` section.
@@ -385,7 +385,7 @@ to deploy your code to the other locations on your workstation.
 
 ### `init`
 
-- **Description**: Starts an interactive wizard to help you create a `bash2gitlab.toml` configuration file and set up
+- **Description**: Starts an interactive wizard to help you create a `.bash2gitlab.toml` configuration file and set up
   the basic directory structure for a new project.
 - **Workflow**: This is the very first command you should run when starting a new `bash2gitlab` project.
 - **Usage**: `bash2gitlab init [directory]`
@@ -415,6 +415,33 @@ to deploy your code to the other locations on your workstation.
 ### `show-config`
 
 - **Description**: Displays the current configuration that `bash2gitlab` is using. It shows the final resolved values
-  for all settings and indicates their source (e.g., environment variable, `bash2gitlab.toml`, or default).
+  for all settings and indicates their source (e.g., environment variable, `.bash2gitlab.toml`, or default).
 - **Workflow**: A debugging utility for troubleshooting configuration issues.
 - **Usage**: `bash2gitlab show-config`
+
+### `check-pins`
+
+- **Description**: Analyzes GitLab CI `include:` statements in your YAML files and suggests pinning them to specific tags or commit SHAs for stability and reproducibility. Checks if refs point to branches, tags, or commits and recommends using semantic version tags.
+- **Workflow**: A maintenance tool to audit and improve your CI configuration's stability.
+- **Usage**: `bash2gitlab check-pins --file .gitlab-ci.yml --gitlab-url https://gitlab.com --token <token>`
+- **Parameters**:
+  - `--file`: Path to the `.gitlab-ci.yml` file to analyze (default: `.gitlab-ci.yml`)
+  - `--gitlab-url`: Base GitLab URL (e.g., `https://gitlab.com`)
+  - `--token`: GitLab private token for API authentication
+  - `--oauth-token`: OAuth bearer token (alternative to `--token`)
+  - `--pin-all`: Suggest pinning to latest commit SHA if no tags available (default: only suggest tags)
+  - `--json`: Output results in JSON format instead of a table
+
+### `trigger-pipelines`
+
+- **Description**: Triggers pipelines in one or more GitLab projects and optionally waits for them to complete. Useful for orchestrating CI/CD workflows across multiple projects.
+- **Workflow**: An orchestration tool for coordinating multi-project pipelines.
+- **Usage**: `bash2gitlab trigger-pipelines --project 123:main --project 456:develop --gitlab-url https://gitlab.com --token <token> --wait`
+- **Parameters**:
+  - `--project`: Specify project and ref in `PROJECT_ID:REF` format (can be used multiple times)
+  - `--variable`: Pass `KEY=VALUE` variables to all triggered pipelines (can be used multiple times)
+  - `--gitlab-url`: Base GitLab URL (e.g., `https://gitlab.com`)
+  - `--token`: GitLab private token for API authentication
+  - `--wait`: Wait for all triggered pipelines to complete
+  - `--timeout`: Polling timeout in seconds when `--wait` is used (default: 1800)
+  - `--poll-interval`: Seconds between polls when `--wait` is used (default: 30, min: 30)

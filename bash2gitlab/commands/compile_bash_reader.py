@@ -224,7 +224,7 @@ def inline_bash_source(
                 # elif in_do_not_inline_block:
                 #     reason_to_skip = "currently in 'do-not-inline' block"
                 #     should_inline = False
-                elif pragma_command == "do-not-inline":
+                if pragma_command == "do-not-inline":
                     reason_to_skip = "line contains 'do-not-inline' pragma"
                     should_inline = False
                     # Line is kept, just not inlined. Warning for non-sourcing lines.
