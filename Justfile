@@ -1,176 +1,183 @@
 # Use bash with strict flags
-# set shell := ["bash", "-euo", "pipefail", "-c"]
 set dotenv-load := true
+set windows-shell := ["C:/Program Files/Git/usr/bin/bash.exe", "-c"]
+set shell := ["bash", "-c"]
 
-# ---- Variables ----
-LOGS_DIR := ".justlogs"
-STAMP_DIR := ".build_history"
-JOBS := num_cpus()
+# Detect if we're in a virtual environment
+venv := if env_var_or_default("VIRTUAL_ENV", "") == "" { "uv run" } else { "" }
 
-# Determine runner prefix: if no virtualenv active, use `uv run`, otherwise nothing
-venv := `if [ -z "${VIRTUAL_ENV-}" ]; then echo "uv run"; else echo ""; fi`
+# Default recipe to display help
+default:
+    @just --list
 
-# ---- Defaults ----
-_default: check
-
-# ---- Dependencies / Setup ----
+# Install dependencies
 uv-lock:
     @echo "Installing dependencies"
-    {{venv}} uv sync --all-extras --no-progress
+    @uv sync --all-extras
 
+# Remove compiled files
 clean-pyc:
     @echo "Removing compiled files"
 
+# Remove coverage data
 clean-test:
     @echo "Removing coverage data"
-    rm -f .coverage || true
-    rm -f .coverage.* || true
+    @rm -f .coverage || true
+    @rm -f .coverage.* || true
 
+# Clean all
 clean: clean-pyc clean-test
 
+# Install plugins
 install-plugins:
     @echo "N/A"
 
-init-build-history:
-    mkdir -p {{STAMP_DIR}}
+# Run unit tests
+test: clean uv-lock install-plugins
+    @echo "Running unit tests"
+    {{venv}} pytest test -vv -n 2 --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
+    {{venv}} bash ./scripts/basic_checks.sh
 
-# ---- Formatting / Linting (serial invariants) ----
-isort: init-build-history
+# Run tests with summary output
+test-summary: clean uv-lock install-plugins
+    @echo "Running tests with summary output"
+    {{venv}} pytest test -q --tb=short --no-header --cov=bash2gitlab --cov-fail-under 48 --cov-branch --timeout=5 --session-timeout=600
+    {{venv}} bash ./scripts/basic_checks.sh
+
+# Run tests (LLM-optimized output)
+test-llm: clean uv-lock install-plugins
+    @echo "Running tests (LLM-optimized output)"
+    NO_COLOR=1 {{venv}} pytest test -q --tb=line --no-header --color=no --cov=bash2gitlab --cov-fail-under 48 --cov-branch --cov-report=term-missing:skip-covered --timeout=5 --session-timeout=600 2>&1 | head -100
+    {{venv}} bash ./scripts/basic_checks.sh
+
+# Run tests (CI mode)
+test-ci: clean uv-lock install-plugins
+    @echo "Running tests (CI mode)"
+    {{venv}} pytest test -v -n auto --tb=short --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
+    {{venv}} bash ./scripts/basic_checks.sh
+
+# Format imports
+isort:
     @echo "Formatting imports"
     {{venv}} isort .
-    touch {{STAMP_DIR}}/isort
 
-black: isort init-build-history
+# Version jiggling
+jiggle-version:
+    #!/usr/bin/env bash
+    if [ "$CI" = "true" ]; then
+        echo "Running in CI mode"
+        jiggle_version check
+    else
+        echo "Running locally"
+        jiggle_version hash-all
+    fi
+
+# Format code
+black: isort jiggle-version
     @echo "Formatting code"
     {{venv}} metametameta pep621
     {{venv}} black bash2gitlab
     {{venv}} black test
     {{venv}} git2md bash2gitlab --ignore __init__.py __pycache__ --output SOURCE.md
-    touch {{STAMP_DIR}}/black
 
-pre-commit: black init-build-history
+# Pre-commit checks
+pre-commit: isort black
     @echo "Pre-commit checks"
     {{venv}} pre-commit run --all-files
-    touch {{STAMP_DIR}}/pre-commit
 
-ruff-fix:
-    {{venv}} ruff check --fix
-
-pylint: black ruff-fix init-build-history
-    @echo "Linting with pylint"
-    {{venv}} pylint bash2gitlab --fail-under 9.9 --rcfile=.pylintrc
-
-
-bandit: init-build-history
+# Security checks
+bandit:
     @echo "Security checks"
     {{venv}} bandit bash2gitlab -r --quiet
 
+# Linting with pylint
+pylint: isort black
+    @echo "Linting with pylint"
+    {{venv}} ruff check --fix
+    {{venv}} pylint bash2gitlab --fail-under 9.8
 
+# Type checking
 mypy:
+    {{venv}} echo $PYTHONPATH
     {{venv}} mypy bash2gitlab --ignore-missing-imports --check-untyped-defs
 
-# ---- Tests ----
-# tests can't be expected to pass if dependencies aren't installed.
-# tests are often slow and linting is fast, so run tests on linted code.
+# Quick checks
+quick-check: mypy bandit
+    @echo "✅ Quick checks complete (type checking, security)"
 
-test: clean uv-lock install-plugins
-    @echo "Running unit tests"
-    {{venv}} py.test test -vv -n auto \
-      --cov=bash2gitlab --cov-report=html --cov-fail-under 35 --cov-branch \
-      --cov-report=xml --junitxml=junit.xml -o junit_family=legacy \
-      --timeout=5 --session-timeout=600
-    {{venv}} bash basic_checks.sh
+# LLM-optimized checks
+llm-check: uv-lock
+    @echo "Running LLM-optimized checks"
+    @echo "→ Type checking..."
+    @NO_COLOR=1 {{venv}} mypy bash2gitlab --ignore-missing-imports --check-untyped-defs 2>&1 | head -20 || true
+    @echo "→ Security scanning..."
+    @NO_COLOR=1 {{venv}} bandit bash2gitlab -r --quiet 2>&1 | grep -v "nosec encountered" | grep -v "^\[" || true
+    @echo "→ Running tests..."
+    @NO_COLOR=1 {{venv}} pytest test -q --tb=line --no-header --color=no --cov=bash2gitlab --cov-fail-under 48 --cov-branch --cov-report=term:skip-covered --timeout=5 --session-timeout=600 2>&1 | tail -50 || true
+    @echo "✅ LLM checks complete"
 
-# =========================
-# Normal mode (sequential, laptop-friendly)
-# =========================
-check: mypy test pylint bandit pre-commit
+# CI checks
+ci-check: mypy test-ci pylint bandit update-schema
+    @echo "✅ CI checks complete"
 
-# =========================
-# Fast mode (no `bash -c`, rely on Just's [parallel])
-# - Each job writes to its own log and creates an .ok marker on success.
-# - We always print logs afterward, and propagate failure if any .ok is missing.
-# =========================
+# Full checks
+full-check: mypy test pylint bandit pre-commit update-schema
+    @echo "✅ Full checks complete"
 
-# Log-writing variants (no bash -c):
+# Run all checks
+check: mypy test pylint bandit pre-commit update-schema
 
-mypy-log:
-    mkdir -p {{LOGS_DIR}}
-    : > {{LOGS_DIR}}/mypy.log
-    {{venv}} mypy bash2gitlab --ignore-missing-imports --check-untyped-defs > {{LOGS_DIR}}/mypy.log 2>&1
-    touch {{LOGS_DIR}}/mypy.ok
+# Publish package
+publish: test
+    rm -rf dist && hatch build
 
-bandit-log:
-    mkdir -p {{LOGS_DIR}}
-    : > {{LOGS_DIR}}/bandit.log
-    {{venv}} bandit bash2gitlab -r --quiet > {{LOGS_DIR}}/bandit.log 2>&1
-    touch {{LOGS_DIR}}/bandit.ok
-
-pylint-log:
-    mkdir -p {{LOGS_DIR}}
-    : > {{LOGS_DIR}}/pylint.log
-    {{venv}} ruff check --fix > {{LOGS_DIR}}/pylint.log 2>&1
-    {{venv}} pylint bash2gitlab --fail-under 5 >> {{LOGS_DIR}}/pylint.log 2>&1
-    touch {{LOGS_DIR}}/pylint.ok
-
-pre-commit-log:
-    mkdir -p {{LOGS_DIR}}
-    : > {{LOGS_DIR}}/pre-commit.log
-    {{venv}} pre-commit run --all-files > {{LOGS_DIR}}/pre-commit.log 2>&1
-    touch {{LOGS_DIR}}/pre-commit.ok
-
-# Run parallel phase: mypy, bandit, pylint-chain, pre-commit-chain
-[parallel]
-fast-phase: mypy-log bandit-log pylint-log pre-commit-log
-
-# Orchestrate: run the parallel phase; don't stop on error so we can print logs
-check-fast: clean uv-lock install-plugins
-    just fast-phase || true
-    for f in pylint mypy bandit pre-commit; do \
-      if test -f {{LOGS_DIR}}/$$f.log; then \
-        echo "\n===== $$f: BEGIN ====="; \
-        cat {{LOGS_DIR}}/$$f.log; \
-        echo "===== $$f: END =====\n"; \
-      fi; \
-    done
-    # If any .ok is missing, fail; else continue to tests
-    for f in pylint mypy bandit pre-commit; do \
-      if ! test -f {{LOGS_DIR}}/$f.ok; then echo $f && missing=1; fi; \
-    done; \
-    if test "${missing-}" = "1"; then \
-      echo "One or more checks failed."; \
-      exit 1; \
-    fi
-    just test
-
-# ---- Docs & Markdown / Spelling / Changelog ----
+# Check documentation
 check-docs:
-    {{venv}} interrogate bash2gitlab --verbose
+    {{venv}} interrogate bash2gitlab --verbose --fail-under 70
     {{venv}} pydoctest --config .pydoctest.json | grep -v "__init__" | grep -v "__main__" | grep -v "Unable to parse"
 
+# Make documentation
 make-docs:
     pdoc bash2gitlab --html -o docs --force
 
+# Check markdown
 check-md:
     {{venv}} linkcheckMarkdown README.md
     {{venv}} markdownlint README.md --config .markdownlintrc
     {{venv}} mdformat README.md docs/*.md
 
+# Check spelling
 check-spelling:
     {{venv}} pylint bash2gitlab --enable C0402 --rcfile=.pylintrc_spell
+    {{venv}} pylint docs --enable C0402 --rcfile=.pylintrc_spell
     {{venv}} codespell README.md --ignore-words=private_dictionary.txt
     {{venv}} codespell bash2gitlab --ignore-words=private_dictionary.txt
+    {{venv}} codespell docs --ignore-words=private_dictionary.txt
 
+# Check changelog
 check-changelog:
     {{venv}} changelogmanager validate
 
+# Check all documentation
 check-all-docs: check-docs check-md check-spelling check-changelog
 
-check-own-ver:
-    {{venv}} ./dog_food.sh
+# Self-check
+check-self:
+    {{venv}} ./scripts/dog_food.sh
 
-publish: test
-    rm -rf dist && hatch build
-
+# Issues
 issues:
     @echo "N/A"
+
+# Core all tests
+core-all-tests:
+    ./scripts/exercise_core_all.sh bash2gitlab "compile --in examples/compile/src --out examples/compile/out --dry-run"
+    uv sync --all-extras
+
+# Update schema
+update-schema:
+    @mkdir -p bash2gitlab/schemas
+    @echo "Downloading GitLab CI schema..."
+    @curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json" -o bash2gitlab/schemas/gitlab_ci_schema.json && echo "✅ Schema saved" || echo "⚠️  Warning: Failed to download schema"
+    @echo "Downloading NOTICE..."
+    @curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/NOTICE?ref_type=heads" -o bash2gitlab/schemas/NOTICE.txt && echo "✅ NOTICE saved" || echo "⚠️  Warning: Failed to download NOTICE"

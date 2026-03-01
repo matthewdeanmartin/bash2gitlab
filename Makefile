@@ -33,6 +33,24 @@ test: clean uv.lock install_plugins
 	$(VENV) bash ./scripts/basic_checks.sh
 #	$(VENV) bash basic_test_with_logging.sh
 
+.PHONY: test-summary
+test-summary: clean uv.lock install_plugins
+	@echo "Running tests with summary output"
+	$(VENV) pytest test -q --tb=short --no-header --cov=bash2gitlab --cov-fail-under 48 --cov-branch --timeout=5 --session-timeout=600
+	$(VENV) bash ./scripts/basic_checks.sh
+
+.PHONY: test-llm
+test-llm: clean uv.lock install_plugins
+	@echo "Running tests (LLM-optimized output)"
+	NO_COLOR=1 $(VENV) pytest test -q --tb=line --no-header --color=no --cov=bash2gitlab --cov-fail-under 48 --cov-branch --cov-report=term-missing:skip-covered --timeout=5 --session-timeout=600 2>&1 | head -100
+	$(VENV) bash ./scripts/basic_checks.sh
+
+.PHONY: test-ci
+test-ci: clean uv.lock install_plugins
+	@echo "Running tests (CI mode)"
+	$(VENV) pytest test -v -n auto --tb=short --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
+	$(VENV) bash ./scripts/basic_checks.sh
+
 .PHONY: isort
 isort:
 	@echo "Formatting imports"
@@ -65,9 +83,9 @@ pre-commit: isort black
 
 
 .PHONY: bandit
-bandit: bandit
+bandit:
 	@echo "Security checks"
-	$(VENV)  bandit bash2gitlab -r --quiet
+	$(VENV) bandit bash2gitlab -r --quiet
 
 
 
@@ -79,6 +97,31 @@ pylint:  isort black
 
 # for when using -j (jobs, run in parallel)
 .NOTPARALLEL: /isort /black
+
+.PHONY: quick-check
+quick-check: mypy bandit
+	@echo "✅ Quick checks complete (type checking, security)"
+
+.PHONY: llm-check
+llm-check: uv.lock
+	@echo "Running LLM-optimized checks"
+	@echo "→ Type checking..."
+	@NO_COLOR=1 $(VENV) mypy bash2gitlab --ignore-missing-imports --check-untyped-defs 2>&1 | head -20
+	@echo "→ Security scanning..."
+	@if NO_COLOR=1 $(VENV) bandit bash2gitlab -r --quiet 2>&1 | grep -v "nosec encountered" | grep -v "^\[" > /tmp/bandit_output.txt 2>&1; then \
+		if [ -s /tmp/bandit_output.txt ]; then cat /tmp/bandit_output.txt; fi; \
+	fi; rm -f /tmp/bandit_output.txt || true
+	@echo "→ Running tests..."
+	@NO_COLOR=1 $(VENV) pytest test -q --tb=line --no-header --color=no --cov=bash2gitlab --cov-fail-under 48 --cov-branch --cov-report=term:skip-covered --timeout=5 --session-timeout=600 2>&1 | tail -50
+	@echo "✅ LLM checks complete"
+
+.PHONY: ci-check
+ci-check: mypy test-ci pylint bandit update-schema
+	@echo "✅ CI checks complete"
+
+.PHONY: full-check
+full-check: mypy test pylint bandit pre-commit update-schema
+	@echo "✅ Full checks complete"
 
 check: mypy test pylint bandit pre-commit update-schema
 

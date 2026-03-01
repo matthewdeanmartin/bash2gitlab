@@ -9,7 +9,21 @@
       "Bash(make check_docs)",
       "Bash(make black)",
       "Bash(uv run black bash2gitlab)",
-      "Bash(bandit -r bash2gitlab)"
+      "Bash(bandit -r bash2gitlab)",
+      "Bash(make check)",
+      "Bash(make quick-check)",
+      "Bash(make test-summary)",
+      "Bash(make llm-check)",
+      "Bash(just llm-check)",
+      "Bash(echo \"VIRTUAL_ENV: $VIRTUAL_ENV\")",
+      "Bash(command -v uv)",
+      "Bash(source .venv/Scripts/activate)",
+      "WebSearch",
+      "WebFetch(domain:just.systems)",
+      "Bash(bash --version)",
+      "Bash(cygpath -w /usr/bin/bash.exe)",
+      "Bash(just --list)",
+      "Bash(just quick-check)"
     ],
     "deny": [],
     "ask": []

@@ -71,7 +71,6 @@ from bash2gitlab.commands.pipeline_trigger import (
     trigger_pipelines,
 )
 from bash2gitlab.commands.show_config import run_show_config
-
 # Import the new pin checker functions
 from bash2gitlab.commands.upgrade_pinned_templates import analyses_to_json, analyses_to_table, suggest_include_pins
 from bash2gitlab.config import config
