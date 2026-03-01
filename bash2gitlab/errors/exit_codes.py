@@ -19,6 +19,8 @@ from bash2gitlab.errors.exceptions import (
 
 
 class ExitCode(IntEnum):
+    """Exit codes for CLI error handling."""
+
     OK = 0
     USAGE = 2  # argparse-like
     NOT_FOUND = 3

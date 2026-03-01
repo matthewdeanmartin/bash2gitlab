@@ -152,7 +152,8 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
         dry_run: If True, log what would be deleted but do not delete.
 
     Returns:
-        tuple of (deleted_pairs, skipped_changed, skipped_invalid_hash)
+        CleanReport: A dataclass with fields ``deleted_pairs``, ``skipped_changed``, and
+        ``skipped_invalid_hash``.
     """
     deleted = 0
     skipped_changed = 0

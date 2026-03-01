@@ -53,6 +53,7 @@ class _RecompileHandler(FileSystemEventHandler):
         self._last_run = 0.0
 
     def on_any_event(self, event: FileSystemEvent) -> None:
+        """Trigger recompile on relevant file changes with debouncing."""
         # Skip directories, temp files, and non-relevant extensions
         if event.is_directory:
             return

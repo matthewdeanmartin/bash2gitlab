@@ -8,6 +8,7 @@ from bash2gitlab.utils.yaml_factory import get_yaml
 
 
 def normalize_for_compare(text: str) -> str:
+    """Normalize whitespace and line endings for text comparison."""
     # Normalize line endings
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     # Trim trailing whitespace per line
@@ -21,6 +22,7 @@ def normalize_for_compare(text: str) -> str:
 
 
 def yaml_is_same(current_content: str, new_content: str) -> bool:
+    """Compare YAML content, checking text, normalized text, and parsed equivalence."""
     if current_content.strip("\n") == new_content.strip("\n"):
         # Simple match.
         return True

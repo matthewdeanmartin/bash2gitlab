@@ -112,6 +112,7 @@ class GitLabClient:
         )
 
     def _get(self, path: str, ok=(200,)) -> SimpleResponse:
+        """Execute GET request with retries and connection pooling."""
         url = f"{self.base_url}{path}"
         try:
             with self.http.request(
@@ -133,16 +134,19 @@ class GitLabClient:
 
     @staticmethod
     def _proj_id(project_path: str) -> str:
+        """URL-encode project path for GitLab API."""
         # project path like "group/subgroup/name" must be URL-encoded
         return quote_plus(project_path)
 
     # ---- project info ----
 
     def get_project(self, project_path: str) -> dict[str, Any] | None:
+        """Fetch project metadata from GitLab API."""
         r = self._get(f"/api/v4/projects/{self._proj_id(project_path)}", ok=(200, 404))
         return None if r.status_code == 404 else r.json()
 
     def get_default_branch(self, project_path: str) -> str | None:
+        """Get default branch name for a project."""
         proj = self.get_project(project_path)
         if not proj:
             return None
@@ -151,6 +155,7 @@ class GitLabClient:
     # ---- tags, branches, commits ----
 
     def list_tags(self, project_path: str, per_page: int = 100) -> list[dict[str, Any]]:
+        """Fetch all tags for a project, paginating as needed."""
         tags: list[dict[str, Any]] = []
         page = 1
         while True:
@@ -170,6 +175,7 @@ class GitLabClient:
         return tags
 
     def get_branch(self, project_path: str, branch: str) -> dict[str, Any] | None:
+        """Fetch branch metadata from GitLab API."""
         r = self._get(
             f"/api/v4/projects/{self._proj_id(project_path)}/repository/branches/{quote_plus(branch)}",
             ok=(200, 404),
@@ -177,6 +183,7 @@ class GitLabClient:
         return None if r.status_code == 404 else r.json()
 
     def get_tag(self, project_path: str, tag: str) -> dict[str, Any] | None:
+        """Fetch tag metadata from GitLab API."""
         r = self._get(
             f"/api/v4/projects/{self._proj_id(project_path)}/repository/tags/{quote_plus(tag)}",
             ok=(200, 404),
@@ -184,6 +191,7 @@ class GitLabClient:
         return None if r.status_code == 404 else r.json()
 
     def get_commit(self, project_path: str, sha: str) -> dict[str, Any] | None:
+        """Fetch commit metadata from GitLab API."""
         r = self._get(
             f"/api/v4/projects/{self._proj_id(project_path)}/repository/commits/{quote_plus(sha)}",
             ok=(200, 404),
@@ -199,6 +207,7 @@ _HEX40 = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
 
 
 def _load_yaml(path: str) -> dict[str, Any]:
+    """Load and parse YAML file, ensuring root is a dict."""
     yaml = YAML(typ="rt")  # round-trip preserves formatting if you later want to write
     with open(path, encoding="utf-8") as f:
         data = yaml.load(f) or {}
@@ -324,6 +333,7 @@ def _sort_tags_semver_first(tags: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _classify_ref(gl: GitLabClient, project: str, ref: str | None) -> RefType:
+    """Classify a ref as none, tag, branch, commit, or unknown."""
     if not ref:
         return "none"
     if _HEX40.match(ref):

@@ -212,6 +212,7 @@ class ConfigurationLoader:
     """
 
     def __init__(self, base_path: Path | None = None):
+        """Initialize loader with base path for resolving configuration files."""
         if not base_path:
             self.base_path = Path.cwd()
         else:
@@ -445,6 +446,7 @@ class VariableManager:
     """
 
     def __init__(self, base_variables: dict[str, str] | None = None):
+        """Initialize manager with base variables and GitLab CI simulation vars."""
         self.base_variables = base_variables or {}
         self.gitlab_ci_vars = self._get_gitlab_ci_variables()
 
@@ -499,6 +501,7 @@ class VariableManager:
         # Simple substitution - replace $VAR and ${VAR} patterns
 
         def replace_var(match):
+            """Replace matched variable pattern with value from variables dict."""
             var_name = match.group(1) or match.group(2)
             return variables.get(var_name, match.group(0))
 
@@ -517,6 +520,7 @@ class JobExecutor:
     """
 
     def __init__(self, variable_manager: VariableManager):
+        """Initialize executor with variable manager for job environment preparation."""
         self.variable_manager = variable_manager
 
     def execute_job(self, job: JobConfig) -> None:
@@ -599,6 +603,7 @@ class StageOrchestrator:
     """
 
     def __init__(self, job_executor: JobExecutor):
+        """Initialize orchestrator with job executor for stage-based execution."""
         self.job_executor = job_executor
 
     def execute_pipeline(self, pipeline: PipelineConfig) -> None:
@@ -658,6 +663,7 @@ class LocalGitLabRunner:
     """
 
     def __init__(self, base_path: Path | None = None):
+        """Initialize runner with base path and configuration components."""
         if not base_path:
             self.base_path = Path.cwd()
         else:
@@ -671,9 +677,6 @@ class LocalGitLabRunner:
 
         Args:
             config_path: Path to the pipeline configuration file.
-
-        Returns:
-            The exit code of the pipeline execution.
 
         Raises:
             GitLabCIError: If there is an error in the pipeline configuration.
@@ -701,6 +704,7 @@ def best_efforts_run(config_path: Path) -> None:
 if __name__ == "__main__":
 
     def run() -> None:
+        """Parse command line arguments and execute pipeline."""
         print(sys.argv)
         config = str(sys.argv[-1:][0])
         print(f"Running {config} ...")

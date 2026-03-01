@@ -19,12 +19,16 @@ logger = logging.getLogger(__name__)
 
 
 class Defaults:
+    """Default plugin implementations for bash2gitlab hooks."""
+
     @hookimpl(tryfirst=True)  # firstresult=True
     def extract_script_path(self, line: str) -> str | None:
+        """Extract script path from a command line."""
         return _extract(line)
 
     @hookimpl(tryfirst=True)  # firstresult=True
     def inline_command(self, line: str, scripts_root: Path) -> tuple[list[str], Path] | tuple[None, None]:
+        """Inline non-bash scripts (Python, PHP, etc.) into YAML."""
         return maybe_inline_interpreter_command(line, scripts_root)
 
     @hookimpl

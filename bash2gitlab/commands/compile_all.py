@@ -41,6 +41,7 @@ def infer_cli(
     dry_run: bool = False,
     parallelism: int | None = None,
 ) -> str:
+    """Reconstruct the CLI command that would produce the current compilation."""
     command = f"bash2gitlab compile --in {short_path(input_dir)} --out {short_path(output_path)}"
     if dry_run:
         command += " --dry-run"
@@ -50,6 +51,7 @@ def infer_cli(
 
 
 def get_banner(inferred_cli_command: str) -> str:
+    """Generate file header banner with compilation info or custom header."""
     if config.custom_header:
         return config.custom_header + "\n"
 
@@ -125,6 +127,7 @@ def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any
     buf: list[str] = []
 
     def flush():
+        """Flush accumulated string buffer to output, merging into LiteralScalarString if eligible."""
         nonlocal buf, out
         if not buf:
             return
@@ -287,6 +290,7 @@ def process_job(job_data: dict, scripts_root: Path) -> int:
 
 
 def has_must_inline_pragma(job_data: dict | str) -> bool:
+    """Check if job data contains pragma:must-inline comment directive."""
     if isinstance(job_data, list):
         for item_id, _item in enumerate(job_data):
             if hasattr(job_data, "ca"):

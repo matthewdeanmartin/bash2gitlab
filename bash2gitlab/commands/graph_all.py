@@ -233,6 +233,7 @@ def build_graph(input_dir: Path) -> GraphModel:
 
 
 def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
+    """Render DOT graph using graphviz to SVG format."""
     from graphviz import Source  # noqa
 
     src = Source(dot_output)
@@ -246,6 +247,7 @@ def _render_with_graphviz(dot_output: str, filename_base: str) -> Path:
 
 
 def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
+    """Render dependency graph as interactive HTML using pyvis/vis.js."""
     # Pure-Python interactive HTML (vis.js)
     from pyvis.network import Network  # type: ignore
 
@@ -279,6 +281,7 @@ def _render_with_pyvis(graph: dict[Path, set[Path]], root_path: Path, filename_b
 
 
 def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filename_base: str) -> Path:
+    """Render dependency graph as SVG using networkx and matplotlib."""
     import networkx as nx  # type: ignore
     from matplotlib import pyplot as plt  # type: ignore
 
@@ -292,6 +295,7 @@ def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filenam
     script_nodes |= {n for n in graph if n not in yaml_nodes}
 
     def rel(p: Path) -> str:
+        """Convert absolute path to string relative to root_path."""
         return str(p.relative_to(root_path))
 
     # Build graph
@@ -316,6 +320,7 @@ def _render_with_networkx(graph: dict[Path, set[Path]], root_path: Path, filenam
 
 
 def _auto_pick_renderer() -> Literal["graphviz", "pyvis", "networkx", "none"]:
+    """Auto-detect available graph rendering library in order of preference."""
     try:
         import graphviz  # type: ignore  # noqa: F401
 

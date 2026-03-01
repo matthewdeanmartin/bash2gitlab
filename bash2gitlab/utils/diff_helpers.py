@@ -22,6 +22,8 @@ def unified_diff(old: str, new: str, path: Path, from_label: str = "current", to
 
 @dataclass(frozen=True)
 class DiffStats:
+    """Statistics about changes in a diff."""
+
     changed: int
     insertions: int
     deletions: int

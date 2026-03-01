@@ -7,6 +7,7 @@ from ruamel.yaml import YAML
 
 @functools.lru_cache(maxsize=1)
 def get_yaml() -> YAML:
+    """Get cached YAML parser configured for GitLab CI with !reference tag support."""
     # https://stackoverflow.com/a/70496481/33264
     y = YAML(typ="rt")  # rt to support !reference tag
     y.width = 4096

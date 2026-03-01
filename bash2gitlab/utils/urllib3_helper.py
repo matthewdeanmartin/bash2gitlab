@@ -15,6 +15,7 @@ _POOL_TUPLE = None
 
 # @lru_cache(maxsize=1)
 def get_http_pool():
+    """Get or create cached urllib3 connection pool with SSL and retry config."""
     global _POOL_TUPLE
     if _POOL_TUPLE:
         return _POOL_TUPLE
@@ -29,7 +30,7 @@ def get_http_pool():
         backoff_factor=0.3,  # exponential backoff: 0.3, 0.6, 1.2, ...
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET", "HEAD"}),
-        raise_on_status=False,  # we’ll check r.status ourselves
+        raise_on_status=False,  # we'll check r.status ourselves
     )
 
     _HTTP = urllib3.PoolManager(

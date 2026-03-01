@@ -30,27 +30,32 @@ def is_relative_to(child: Path, parent: Path) -> bool:
 
 # 3.9+ -> 3.8
 def with_stem(p: PurePath, new_stem: str) -> PurePath:
+    """Replace path stem while preserving all suffixes (3.9+ polyfill)."""
     # Keep all suffixes (e.g., .tar.gz)
     return p.with_name(new_stem + "".join(p.suffixes))
 
 
 # 3.9+ -> 3.8
 def readlink(p: Path) -> Path:
+    """Read symlink target (3.9+ polyfill)."""
     return Path(os.readlink(p))
 
 
 # 3.10+ -> 3.8  (mirrors symlink_to API)
 def hardlink_to(dst: Path, target: Path) -> None:
+    """Create hard link to target (3.10+ polyfill)."""
     os.link(os.fspath(target), os.fspath(dst))
 
 
 # 3.12+ -> 3.8  (PurePath.relative_to(..., walk_up=True))
 def relative_to_walk_up(path: PurePath, other: PurePath) -> PurePath:
+    """Compute relative path with walk_up support (3.12+ polyfill)."""
     return Path(os.path.relpath(os.fspath(path), start=os.fspath(other)))
 
 
 # 3.12+ -> 3.8  (Path.walk)
 def path_walk(root: Path, top_down=True, on_error=None, follow_symlinks=False):
+    """Recursively walk directory tree yielding Path objects (3.12+ polyfill)."""
     for dirpath, dirnames, filenames in os.walk(root, topdown=top_down, onerror=on_error, followlinks=follow_symlinks):
         base = Path(dirpath)
         yield base, [base / d for d in dirnames], [base / f for f in filenames]
@@ -58,5 +63,6 @@ def path_walk(root: Path, top_down=True, on_error=None, follow_symlinks=False):
 
 # 3.12+ -> 3.8  (case_sensitive kwarg for glob/rglob/match)
 def glob_cs(p: Path, pattern: str, case_sensitive=None):  # pylint: disable=unused-argument
+    """Glob with case_sensitive parameter (3.12+ polyfill, ignores flag on 3.8)."""
     # Py3.8: just ignore the flag (you can post-filter if you truly need case control)
     return p.glob(pattern)

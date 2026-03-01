@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(cat test/test_commands/scenario_artifact_inline/.out/.gitlab-ci.yml)",
-      "Bash(.venv/Scripts/python -m pytest test/test_commands/test_scenario1.py test/test_commands/test_scenario2.py -v)"
+      "Bash(.venv/Scripts/python -m pytest test/test_commands/test_scenario1.py test/test_commands/test_scenario2.py -v)",
+      "Bash(make check_md)",
+      "Bash(make check_spelling)",
+      "Bash(.venv/Scripts/python -m mdformat DOCUMENTATION_SKILLS.md)",
+      "Bash(make check_docs)",
+      "Bash(make black)",
+      "Bash(uv run black bash2gitlab)"
     ],
     "deny": [],
     "ask": []

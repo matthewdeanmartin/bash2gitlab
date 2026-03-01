@@ -50,6 +50,7 @@ class CommandForm(Static):
     """Base class for command forms with common functionality."""
 
     def __init__(self, command_name: str, **kwargs: Any) -> None:
+        """Initialize form with command name."""
         super().__init__(**kwargs)
         self.command_name = command_name
 
@@ -86,6 +87,7 @@ class CompileForm(CommandForm):
     """Form for the compile command."""
 
     def compose(self) -> ComposeResult:
+        """Build compile form UI with input/output paths and options."""
         with Vertical():
             yield Label("📦 Compile Configuration", classes="form-title")
 
@@ -150,6 +152,7 @@ class DecompileForm(CommandForm):
     """Form for the decompile command."""
 
     def compose(self) -> ComposeResult:
+        """Build decompile form UI with mode selector and path inputs."""
         with Vertical():
             yield Label("✂️ Decompile Configuration", classes="form-title")
 
@@ -205,6 +208,7 @@ class LintForm(CommandForm):
     """Form for the lint command."""
 
     def compose(self) -> ComposeResult:
+        """Build lint form UI with GitLab connection settings and validation options."""
         with Vertical():
             yield Label("🔍 Lint Configuration", classes="form-title")
 
@@ -292,6 +296,7 @@ class CleanForm(CommandForm):
     """Form for the clean command."""
 
     def compose(self) -> ComposeResult:
+        """Build clean form UI with output directory selector."""
         with Vertical():
             yield Label("🧹 Clean Configuration", classes="form-title")
 
@@ -329,6 +334,7 @@ class InitForm(CommandForm):
     """Form for the init command."""
 
     def compose(self) -> ComposeResult:
+        """Build init form UI with directory selector."""
         with Vertical():
             yield Label("🆕 Initialize Project", classes="form-title")
 
@@ -361,6 +367,7 @@ class Copy2LocalForm(CommandForm):
     """Form for the copy2local command."""
 
     def compose(self) -> ComposeResult:
+        """Build copy2local form UI with repository URL and path inputs."""
         with Vertical():
             yield Label("📥 Copy to Local", classes="form-title")
 
@@ -414,6 +421,7 @@ class MapDeployForm(CommandForm):
     """Form for the map-deploy command."""
 
     def compose(self) -> ComposeResult:
+        """Build map-deploy form UI with pyproject path and force option."""
         with Vertical():
             yield Label("🗺️ Map Deploy", classes="form-title")
 
@@ -450,6 +458,7 @@ class CommitMapForm(CommandForm):
     """Form for the commit-map command."""
 
     def compose(self) -> ComposeResult:
+        """Build commit-map form UI with pyproject path and force option."""
         with Vertical():
             yield Label("↩️ Commit Map", classes="form-title")
 
@@ -486,6 +495,7 @@ class PrecommitForm(CommandForm):
     """Form for precommit install/uninstall commands."""
 
     def compose(self) -> ComposeResult:
+        """Build precommit form UI with install/uninstall buttons."""
         with Vertical():
             yield Label("🪝 Precommit Hooks", classes="form-title")
 
@@ -549,6 +559,7 @@ class UtilityForm(CommandForm):
     """Form for utility commands like doctor, graph, show-config, detect-drift."""
 
     def compose(self) -> ComposeResult:
+        """Build utilities form UI with buttons for doctor, config, graph, and drift detection."""
         with Vertical():
             yield Label("🔧 Utilities", classes="form-title")
 
@@ -659,6 +670,7 @@ class ExecuteCommand(Message):
     """Message to request command execution."""
 
     def __init__(self, args: list[str]) -> None:
+        """Initialize with command arguments."""
         super().__init__()
         self.args = args
 
@@ -672,11 +684,13 @@ class CommandScreen(Screen):
     ]
 
     def __init__(self, command_args: list[str], **kwargs: Any) -> None:
+        """Initialize with command arguments to execute."""
         super().__init__(**kwargs)
         self.command_args = command_args
         self.process: subprocess.Popen | None = None
 
     def compose(self) -> ComposeResult:
+        """Build command execution screen with output log and control buttons."""
         yield Header()
         with Vertical():
             yield Label(f"Executing: {' '.join(self.command_args)}", classes="command-title")
@@ -821,6 +835,7 @@ class Bash2GitlabTUI(App):
     ]
 
     def compose(self) -> ComposeResult:
+        """Build main TUI with tabbed interface for all bash2gitlab commands."""
         yield Header()
 
         with TabbedContent(initial="compile"):
@@ -947,9 +962,12 @@ Press Escape to close this help.
         """
 
         class HelpScreen(Screen):
+            """Screen displaying comprehensive help documentation."""
+
             BINDINGS = [("escape", "close", "Close")]
 
             def compose(self) -> ComposeResult:
+                """Build help screen with scrollable documentation."""
                 yield Header()
                 with VerticalScroll():
                     yield Static(help_text, id="help-text")

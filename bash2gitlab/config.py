@@ -145,10 +145,12 @@ class Config:
             raise ConfigInvalid() from e
 
     def get_str(self, key: str, section: str | None = None) -> str | None:
+        """Get string value from config, checking section then global."""
         value, _ = self._get_value(key, section)
         return str(value) if value is not None else None
 
     def get_bool(self, key: str, section: str | None = None) -> bool | None:
+        """Get boolean value from config, coercing strings to bool."""
         value, _ = self._get_value(key, section)
         if value is None:
             return None
@@ -157,14 +159,17 @@ class Config:
         return self._coerce_type(value, bool, key)
 
     def get_int(self, key: str, section: str | None = None) -> int | None:
+        """Get integer value from config, coercing if needed."""
         value, _ = self._get_value(key, section)
         return self._coerce_type(value, int, key)
 
     def get_float(self, key: str, section: str | None = None) -> float | None:
+        """Get float value from config, coercing if needed."""
         value, _ = self._get_value(key, section)
         return self._coerce_type(value, float, key)
 
     def get_dict(self, key: str, section: str | None = None) -> dict[str, str]:
+        """Get dict from config, ensuring all keys and values are strings."""
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
             copy_dict: dict[str, str] = {}
@@ -174,6 +179,7 @@ class Config:
         return {}
 
     def get_dict_of_list(self, key: str, section: str | None = None) -> dict[str, list[str] | Collection[str]]:
+        """Get dict mapping strings to lists from config."""
         value, _ = self._get_value(key, section)
         if isinstance(value, dict):
             copy_dict: dict[str, list[str] | Collection[str]] = {}
@@ -185,136 +191,168 @@ class Config:
     # --- General Properties ---
     @property
     def input_dir(self) -> str | None:
+        """Global default input directory."""
         return self.get_str("input_dir")
 
     @property
     def output_dir(self) -> str | None:
+        """Global default output directory."""
         return self.get_str("output_dir")
 
     @property
     def parallelism(self) -> int | None:
+        """Global default parallelism for multi-file operations."""
         return self.get_int("parallelism")
 
     @property
     def dry_run(self) -> bool | None:
+        """Global dry-run mode flag."""
         return self.get_bool("dry_run")
 
     @property
     def verbose(self) -> bool | None:
+        """Global verbose logging flag."""
         return self.get_bool("verbose")
 
     @property
     def quiet(self) -> bool | None:
+        """Global quiet mode flag."""
         return self.get_bool("quiet")
 
     @property
     def custom_header(self) -> str | None:
+        """Custom header to inject at top of compiled files."""
         return self.get_str("custom_header")
 
     # --- Custom Shebangs ---
     @property
     def custom_shebangs(self) -> dict[str, str] | None:
+        """Map of file extensions to custom shebang lines."""
         return self.get_dict("shebangs")
 
     # --- `compile` Command Properties ---
     @property
     def compile_input_dir(self) -> str | None:
+        """Input directory for compile command, falls back to global."""
         return self.get_str("input_dir", section="compile") or self.input_dir
 
     @property
     def compile_output_dir(self) -> str | None:
+        """Output directory for compile command, falls back to global."""
         return self.get_str("output_dir", section="compile") or self.output_dir
 
     @property
     def compile_parallelism(self) -> int | None:
+        """Parallelism for compile command, falls back to global."""
         return self.get_int("parallelism", section="compile") or self.parallelism
 
     @property
     def compile_watch(self) -> bool | None:
+        """Enable file watching mode for compile command."""
         return self.get_bool("watch", section="compile")
 
     @property
     def max_artifact_size_mb(self) -> float | None:
+        """Maximum artifact size in MB before compile fails."""
         return self.get_float("max_artifact_size_mb", section="compile")
 
     @property
     def artifact_warn_size_kb(self) -> float | None:
+        """Artifact size in KB that triggers a warning."""
         return self.get_float("artifact_warn_size_kb", section="compile")
 
     @property
     def default_artifact_format(self) -> str | None:
+        """Default compression format for artifacts (zip, tar.gz, etc.)."""
         return self.get_str("default_artifact_format", section="compile")
 
     @property
     def artifact_checksum_validation(self) -> bool | None:
+        """Enable checksum validation for inlined artifacts."""
         return self.get_bool("artifact_checksum_validation", section="compile")
 
     # --- `decompile` Command Properties ---
     @property
     def decompile_input_file(self) -> str | None:
+        """Input file path for decompile command."""
         return self.get_str("input_file", section="decompile")
 
     @property
     def decompile_input_folder(self) -> str | None:
+        """Input folder path for decompile command."""
         return self.get_str("input_folder", section="decompile")
 
     @property
     def decompile_output_dir(self) -> str | None:
+        """Output directory for decompile command, falls back to global."""
         return self.get_str("output_dir", section="decompile") or self.output_dir
 
     # --- `lint` Command Properties ---
     @property
     def lint_output_dir(self) -> str | None:
+        """Output directory for lint command, falls back to global."""
         return self.get_str("output_dir", section="lint") or self.output_dir
 
     @property
     def lint_gitlab_url(self) -> str | None:
+        """GitLab API URL for lint validation."""
         return self.get_str("gitlab_url", section="lint")
 
     @property
     def lint_project_id(self) -> int | None:
+        """GitLab project ID for lint validation."""
         return self.get_int("project_id", section="lint")
 
     @property
     def lint_ref(self) -> str | None:
+        """Git ref (branch/tag) for lint validation."""
         return self.get_str("ref", section="lint")
 
     @property
     def lint_include_merged_yaml(self) -> bool | None:
+        """Include merged YAML in lint output."""
         return self.get_bool("include_merged_yaml", section="lint")
 
     @property
     def lint_parallelism(self) -> int | None:
+        """Parallelism for lint command, falls back to global."""
         return self.get_int("parallelism", section="lint") or self.parallelism
 
     @property
     def lint_timeout(self) -> float | None:
+        """Timeout in seconds for lint API calls."""
         return self.get_float("timeout", section="lint")
 
     # --- `copy2local` Command Properties ---
     @property
     def copy2local_repo_url(self) -> str | None:
+        """Repository URL to copy from."""
         return self.get_str("repo_url", section="copy2local")
 
     @property
     def copy2local_branch(self) -> str | None:
+        """Branch to copy from in copy2local."""
         return self.get_str("branch", section="copy2local")
 
     @property
     def copy2local_source_dir(self) -> str | None:
+        """Source directory within repo for copy2local."""
         return self.get_str("source_dir", section="copy2local")
 
     @property
     def copy2local_copy_dir(self) -> str | None:
+        """Local destination directory for copy2local."""
         return self.get_str("copy_dir", section="copy2local")
 
     # --- `map-deploy` / `commit-map` Properties ---
     @property
     def map_folders(self) -> dict[str, list[str] | Collection[str]]:
+        """Map of source directories to target directories for deployment."""
         return self.get_dict_of_list("map", section="map")  # type: ignore[return=value]
 
     @property
     def map_force(self) -> bool | None:
+        """Force overwrite in map-deploy/commit-map operations."""
         return self.get_bool("force", section="map")
 
     # --- `autogit` Command Properties ---

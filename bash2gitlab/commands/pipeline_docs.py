@@ -31,6 +31,8 @@ yaml_loader = YAML(typ="rt")  # round-trip to keep comments
 
 @dataclass
 class RuleSummary:
+    """Summarizes rule conditions from a GitLab CI job."""
+
     when: str | None = None
     if_count: int = 0
     exists_count: int = 0
@@ -38,6 +40,7 @@ class RuleSummary:
 
     @staticmethod
     def from_rules(rules: Any) -> RuleSummary:
+        """Parse rules list and count condition types."""
         rs = RuleSummary()
         if not isinstance(rules, (list, CommentedSeq)):
             return rs
@@ -58,6 +61,8 @@ class RuleSummary:
 
 @dataclass
 class ComponentInput:
+    """Represents a GitLab CI component input parameter."""
+
     name: str
     description: str | None = None
     type: str | None = None
@@ -67,6 +72,8 @@ class ComponentInput:
 
 @dataclass
 class VariableInfo:
+    """Represents a GitLab CI variable with optional description."""
+
     name: str
     value: str
     description: str | None = None
@@ -74,6 +81,8 @@ class VariableInfo:
 
 @dataclass
 class JobDoc:
+    """Documentation metadata extracted from a GitLab CI job definition."""
+
     name: str
     stage: str | None = None
     extends: list[str] = field(default_factory=list)
@@ -93,6 +102,8 @@ class JobDoc:
 
 @dataclass
 class FileDoc:
+    """Documentation metadata extracted from a GitLab CI YAML file."""
+
     path: Path
     jobs: list[JobDoc] = field(default_factory=list)
     component_inputs: list[ComponentInput] = field(default_factory=list)
@@ -101,6 +112,7 @@ class FileDoc:
 
 
 def load_yaml(path: Path) -> CommentedMap | None:  # type: ignore[return-value]
+    """Load YAML file preserving comments, returns None on error."""
     try:
         with path.open("r", encoding="utf-8") as f:
             data = yaml_loader.load(f)
@@ -167,6 +179,7 @@ def get_file_leading_comment(doc: CommentedMap) -> str | None:
 
 
 def as_list(val: Any) -> list[str]:
+    """Normalize value to list of strings."""
     if val is None:
         return []
     if isinstance(val, (list, CommentedSeq)):
@@ -266,6 +279,7 @@ def collect_component_inputs(doc: CommentedMap) -> list[ComponentInput]:
 
 
 def summarize_job(name: str, body: CommentedMap) -> JobDoc:
+    """Extract documentation metadata from a GitLab CI job definition."""
     stage = body.get("stage")
     extends = as_list(body.get("extends"))
     image_val = body.get("image")
