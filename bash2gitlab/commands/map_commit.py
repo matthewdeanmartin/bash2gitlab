@@ -13,6 +13,7 @@ from collections.abc import Collection
 from pathlib import Path
 
 from bash2gitlab.commands.compile_not_bash import _INTERPRETER_EXTS
+from bash2gitlab.commands.hash_path_helpers import find_hash_file, get_output_hash_path
 
 __all__ = ["run_commit_map"]
 
@@ -67,10 +68,12 @@ def _sync_single_target_to_source(
 
         relative_path = target_file_path.relative_to(target_base_path)
         source_file_path = source_base_path / relative_path
-        hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
+
+        # Use new centralized hash location with fallback to old location
+        hash_file_path = find_hash_file(target_file_path, target_base_path)
 
         target_hash = _calculate_file_hash(target_file_path)
-        stored_hash = hash_file_path.read_text().strip() if hash_file_path.exists() else None
+        stored_hash = hash_file_path.read_text().strip() if hash_file_path else None
 
         # Case 1: File is unchanged since last deployment/sync.
         if stored_hash and target_hash == stored_hash:
@@ -94,8 +97,10 @@ def _sync_single_target_to_source(
             source_file_path.parent.mkdir(parents=True, exist_ok=True)
             # Copy file and its metadata
             shutil.copy2(target_file_path, source_file_path)
-            # Update the hash file in the target directory to reflect the new state
-            hash_file_path.write_text(target_hash or "")
+            # Update the hash file in the target directory to reflect the new state (use centralized location)
+            new_hash_path = get_output_hash_path(target_file_path, target_base_path)
+            new_hash_path.parent.mkdir(parents=True, exist_ok=True)
+            new_hash_path.write_text(target_hash or "")
 
 
 def run_commit_map(

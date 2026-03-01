@@ -278,7 +278,7 @@ def test_write_compiled_file_new_file(tmp_path, mock_logger):
         mock_instance = mock_validator.return_value
         mock_instance.validate_ci_config.return_value = (True, [])
 
-        result = write_compiled_file(output_file, content, dry_run=False)
+        result = write_compiled_file(output_file, content, tmp_path, dry_run=False)
         assert result is True
         assert output_file.exists()
 
@@ -287,23 +287,24 @@ def test_write_compiled_file_dry_run(tmp_path, mock_logger):
     output_file = tmp_path / "test.yml"
     content = "test: content\n"
 
-    result = write_compiled_file(output_file, content, dry_run=True)
+    result = write_compiled_file(output_file, content, tmp_path, dry_run=True)
     assert result is True
     assert not output_file.exists()
 
 
 def test_write_compiled_file_existing_no_changes(tmp_path, mock_logger):
     output_file = tmp_path / "test.yml"
-    hash_file = tmp_path / "test.yml.hash"
+    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "test.yml.hash"
     content = "test: content\n"
 
     # Create existing files
     output_file.write_text(content)
+    hash_file.parent.mkdir(parents=True, exist_ok=True)
     encoded = base64.b64encode(content.encode()).decode()
     hash_file.write_text(encoded)
 
     with patch("bash2gitlab.commands.compile_all.yaml_is_same", return_value=True):
-        result = write_compiled_file(output_file, content, dry_run=False)
+        result = write_compiled_file(output_file, content, tmp_path, dry_run=False)
         assert result is False
 
 
@@ -326,7 +327,7 @@ test-job:
             mock_write.return_value = True
 
             inlined, written = compile_single_file(
-                source_path, output_file, scripts_path, {}, input_dir, False, "test command"
+                source_path, output_file, scripts_path, {}, input_dir, False, "test command", tmp_path
             )
 
             assert inlined == 1

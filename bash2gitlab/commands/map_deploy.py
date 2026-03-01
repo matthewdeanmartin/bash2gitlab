@@ -11,6 +11,7 @@ from collections.abc import Collection
 from pathlib import Path
 
 from bash2gitlab.commands.compile_not_bash import _INTERPRETER_EXTS
+from bash2gitlab.commands.hash_path_helpers import find_hash_file, get_output_hash_path
 
 __all__ = ["run_map_deploy"]
 
@@ -70,14 +71,15 @@ def deploy_to_single_target(
 
         relative_path = source_file_path.relative_to(source_base_path)
         target_file_path = target_base_path / relative_path
-        hash_file_path = target_file_path.with_suffix(target_file_path.suffix + ".hash")
 
         source_hash = calculate_file_hash(source_file_path)
 
         # Check for modifications at the destination if the file exists
         if target_file_path.exists():
             target_hash = calculate_file_hash(target_file_path)
-            stored_hash = hash_file_path.read_text().strip() if hash_file_path.exists() else None
+            # Use new centralized hash location with fallback to old location
+            hash_file_path = find_hash_file(target_file_path, target_base_path)
+            stored_hash = hash_file_path.read_text().strip() if hash_file_path else None
 
             # Case 1: Target file was modified locally since last deployment.
             if stored_hash and target_hash != stored_hash:
@@ -99,7 +101,10 @@ def deploy_to_single_target(
         if not dry_run:
             target_file_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source_file_path, target_file_path)
-            hash_file_path.write_text(source_hash or "")
+            # Write hash to centralized location
+            new_hash_path = get_output_hash_path(target_file_path, target_base_path)
+            new_hash_path.parent.mkdir(parents=True, exist_ok=True)
+            new_hash_path.write_text(source_hash or "")
 
 
 def run_map_deploy(

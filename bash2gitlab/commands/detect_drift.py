@@ -23,6 +23,7 @@ from pathlib import Path
 
 __all__ = ["run_detect_drift"]
 
+from bash2gitlab.commands.hash_path_helpers import get_source_file_from_hash, iter_hash_files_in_directory
 from bash2gitlab.utils.diff_helpers import generate_pretty_diff
 from bash2gitlab.utils.terminal_colors import Colors
 from bash2gitlab.utils.utils import short_path
@@ -56,29 +57,11 @@ def decode_hash_content(hash_file: Path) -> str | None:
         return None
 
 
-def get_source_file_from_hash(hash_file: Path) -> Path:
-    """
-    Derives the original source file path from a hash file path.
-    Example: /path/to/file.yml.hash -> /path/to/file.yml
-
-    Args:
-        hash_file: The path to the .hash file.
-
-    Returns:
-        The corresponding Path object for the original file.
-    """
-    s = str(hash_file)
-    if hasattr(s, "removesuffix"):  # Python 3.9+
-        return Path(s.removesuffix(".hash"))
-    # Python < 3.9
-    if s.endswith(".hash"):
-        return Path(s[: -len(".hash")])
-    return Path(s)
-
-
 def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
     """
     Finds all .hash files recursively in the given list of directories.
+
+    Supports both old (sibling) and new (centralized) hash file locations.
 
     Args:
         search_paths: A list of directories to search in.
@@ -91,7 +74,8 @@ def find_hash_files(search_paths: list[Path]) -> Generator[Path, None, None]:
             logger.warning(f"Search path is not a directory, skipping: {search_path}")
             continue
         logger.info(f"Searching for .hash files in: {short_path(search_path)}")
-        yield from search_path.rglob("*.hash")
+        hash_files = iter_hash_files_in_directory(search_path)
+        yield from hash_files
 
 
 def run_detect_drift(
@@ -124,7 +108,7 @@ def run_detect_drift(
     print(f"Found {len(hash_files)} hash file(s). Checking for drift...")
 
     for hash_file in hash_files:
-        source_file = get_source_file_from_hash(hash_file)
+        source_file = get_source_file_from_hash(hash_file, output_path)
 
         if not source_file.exists():
             logger.error(f"Drift check failed: Source file '{source_file}' is missing for hash file '{hash_file}'.")

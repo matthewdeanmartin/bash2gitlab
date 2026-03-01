@@ -185,14 +185,14 @@ def test_write_compiled_file_creates_and_hashes_then_no_rewrite_on_same_content(
     # No rewrite on identical content: force yaml_is_same to return True
     monkeypatch.setattr(mod, "yaml_is_same", lambda a, b: True)
 
-    wrote = mod.write_compiled_file(target, content, dry_run=False)
+    wrote = mod.write_compiled_file(target, content, tmp_path, dry_run=False)
     assert wrote is True
     assert target.exists()
-    hash_file = tmp_path / ".gitlab-ci.yml.hash"
+    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / ".gitlab-ci.yml.hash"
     assert hash_file.exists()
     assert hash_file.read_text(encoding="utf-8").strip() != ""
 
-    wrote_again = mod.write_compiled_file(target, content, dry_run=False)
+    wrote_again = mod.write_compiled_file(target, content, tmp_path, dry_run=False)
     assert wrote_again is False  # unchanged; skipped
 
 

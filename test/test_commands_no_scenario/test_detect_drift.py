@@ -36,11 +36,17 @@ def create_hash_file(path: Path, content_to_hash: str):
 # --- Unit Tests for Helper Functions ---
 
 
-def test_get_source_file_from_hash():
+def test_get_source_file_from_hash(tmp_path: Path):
     """Tests that the source file path is correctly derived from the hash file path."""
-    hash_path = Path("/tmp/test/some.file.yml.hash")
-    expected_source_path = Path("/tmp/test/some.file.yml")
-    assert get_source_file_from_hash(hash_path) == expected_source_path
+    # Test old-style sibling hash file
+    hash_path = tmp_path / "some.file.yml.hash"
+    expected_source_path = tmp_path / "some.file.yml"
+    assert get_source_file_from_hash(hash_path, tmp_path) == expected_source_path
+
+    # Test new-style centralized hash file
+    new_hash_path = tmp_path / ".bash2gitlab" / "output_hashes" / "nested" / "some.file.yml.hash"
+    expected_new_source = tmp_path / "nested" / "some.file.yml"
+    assert get_source_file_from_hash(new_hash_path, tmp_path) == expected_new_source
 
 
 def test_decode_hash_content(tmp_path: Path):

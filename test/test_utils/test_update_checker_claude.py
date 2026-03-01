@@ -397,7 +397,6 @@ class TestFetchPypiJson:
         }
 
         def mock_urlopen(request, timeout):
-            import io
             import json
 
             class MockResponse:
@@ -607,7 +606,6 @@ class TestRealWorldScenarios:
     def test_background_check_with_mocked_network(self, monkeypatch):
         """Test background checking with mocked network (deterministic)."""
         import bash2gitlab.utils.update_checker as update_checker
-        import threading
 
         logger = get_logger(None)
 

@@ -32,6 +32,7 @@ def _write_yaml_and_hash(dest: Path, content: str, hash_file: Path) -> None:
     """Minimal stand-in for your write_yaml_and_hash()."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(content, encoding="utf-8")
+    hash_file.parent.mkdir(parents=True, exist_ok=True)
     hash_file.write_text(base64.b64encode(content.encode("utf-8")).decode("ascii"), encoding="utf-8")
 
 
@@ -89,7 +90,7 @@ def patch_yaml_helpers(monkeypatch):
 
 def test_dry_run_new_file_returns_true(tmp_path: Path, caplog):
     out = tmp_path / "out.yml"
-    result = write_compiled_file(out, "a: 1\n", dry_run=True)
+    result = write_compiled_file(out, "a: 1\n", tmp_path, dry_run=True)
     assert result is True
     # No file should be created in dry-run
     assert not out.exists()
@@ -100,7 +101,7 @@ def test_dry_run_existing_no_change_returns_false(tmp_path: Path):
     out = tmp_path / "out.yml"
     out.write_text("a: 1\n", encoding="utf-8")
     # Same content (structurally), so no change
-    result = write_compiled_file(out, "a: 1\n", dry_run=True)
+    result = write_compiled_file(out, "a: 1\n", tmp_path, dry_run=True)
     assert result is False
 
 
@@ -108,16 +109,16 @@ def test_dry_run_existing_change_returns_true(tmp_path: Path):
     out = tmp_path / "out.yml"
     out.write_text("a: 1\n", encoding="utf-8")
     # Different content (structurally), so would rewrite
-    result = write_compiled_file(out, "a: 2\n", dry_run=True)
+    result = write_compiled_file(out, "a: 2\n", tmp_path, dry_run=True)
     assert result is True
 
 
 def test_first_write_creates_file_and_hash(tmp_path: Path):
     out = tmp_path / "compiled.yml"
-    hash_file = tmp_path / "compiled.yml.hash"
+    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "compiled.yml.hash"
     assert not out.exists() and not hash_file.exists()
 
-    result = write_compiled_file(out, "a: 1\n", dry_run=False)
+    result = write_compiled_file(out, "a: 1\n", tmp_path, dry_run=False)
     assert result is True
     assert out.exists() and hash_file.exists()
 
@@ -128,15 +129,16 @@ def test_first_write_creates_file_and_hash(tmp_path: Path):
 
 def test_rewrite_when_hash_valid_and_new_differs(tmp_path: Path):
     out = tmp_path / "compiled.yml"
-    hash_file = tmp_path / "compiled.yml.hash"
+    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "compiled.yml.hash"
 
     # Seed with last-known content (file + matching .hash)
     last_known = "a: 1\n"
     out.write_text(last_known, encoding="utf-8")
+    hash_file.parent.mkdir(parents=True, exist_ok=True)
     hash_file.write_text(base64.b64encode(last_known.encode("utf-8")).decode("ascii"), encoding="utf-8")
 
     # Provide a different new content; should rewrite
-    result = write_compiled_file(out, "a: 2\n", dry_run=False)
+    result = write_compiled_file(out, "a: 2\n", tmp_path, dry_run=False)
     assert result is True
 
     # File and hash updated
@@ -147,16 +149,17 @@ def test_rewrite_when_hash_valid_and_new_differs(tmp_path: Path):
 
 def test_skip_when_no_changes_structurally(tmp_path: Path):
     out = tmp_path / "compiled.yml"
-    hash_file = tmp_path / "compiled.yml.hash"
+    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "compiled.yml.hash"
 
     # Seed file + matching hash for "a: 1\n"
     content = "a: 1\n"
     out.write_text(content, encoding="utf-8")
+    hash_file.parent.mkdir(parents=True, exist_ok=True)
     hash_file.write_text(base64.b64encode(content.encode("utf-8")).decode("ascii"), encoding="utf-8")
 
     # New content is semantically the same YAML (different formatting)
     new_content = "a: 1\n"  # could also try "a: 1\r\n" or add trailing spaces
-    result = write_compiled_file(out, new_content, dry_run=False)
+    result = write_compiled_file(out, new_content, tmp_path, dry_run=False)
 
     assert result is False
     # Nothing changed on disk

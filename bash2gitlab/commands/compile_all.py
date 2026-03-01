@@ -18,6 +18,7 @@ from bash2gitlab.commands.clean_all import report_targets
 from bash2gitlab.commands.compile_artifacts import maybe_inline_artifact
 from bash2gitlab.commands.compile_bash_reader import read_bash_script
 from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command
+from bash2gitlab.commands.hash_path_helpers import find_hash_file, get_output_hash_path, migrate_hash_file
 from bash2gitlab.commands.input_change_detector import mark_compilation_complete, needs_compilation
 from bash2gitlab.config import config
 from bash2gitlab.errors.exceptions import Bash2GitlabError, CompileError, ValidationFailed
@@ -434,7 +435,10 @@ def write_yaml_and_hash(
     new_content: str,
     hash_file: Path,
 ):
-    """Writes the YAML content and a base64 encoded version to a .hash file."""
+    """Writes the YAML content and a base64 encoded version to a .hash file.
+
+    Uses centralized hash directory structure.
+    """
     logger.info(f"Writing new file: {short_path(output_file)}")
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -446,16 +450,19 @@ def write_yaml_and_hash(
         raise ValidationFailed(problems)
     output_file.write_text(new_content, encoding="utf-8")
 
-    # Store a base64 encoded copy of the exact content we just wrote.
+    # Store a base64 encoded copy in centralized location
+    hash_file.parent.mkdir(parents=True, exist_ok=True)
     encoded_content = base64.b64encode(new_content.encode("utf-8")).decode("utf-8")
     hash_file.write_text(encoded_content, encoding="utf-8")
     logger.debug(f"Updated hash file: {short_path(hash_file)}")
 
 
-def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = False) -> bool:
+def write_compiled_file(output_file: Path, new_content: str, output_base: Path, dry_run: bool = False) -> bool:
     """
     Writes a compiled file safely. If the destination file was manually edited in a meaningful way
     (i.e., the YAML data structure changed), it aborts with a descriptive error and a diff.
+
+    Uses centralized hash directory and supports automatic migration from old hash files.
 
     Returns True if a file was written (or would be in dry run), False otherwise.
     """
@@ -479,21 +486,26 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
         logger.info(f"[DRY RUN] No changes for {short_path(output_file)}.")
         return False
 
-    hash_file = output_file.with_suffix(output_file.suffix + ".hash")
+    # Auto-migrate old hash file if it exists
+    migrate_hash_file(output_file, output_base)
+
+    # Use new centralized hash location
+    hash_file = get_output_hash_path(output_file, output_base)
 
     if not output_file.exists():
         logger.info(f"Output file {short_path(output_file)} does not exist. Creating.")
         write_yaml_and_hash(output_file, new_content, hash_file)
         return True
 
-    # --- File and hash file exist, perform validation ---
-    if not hash_file.exists():
+    # --- File exists, find its hash file (old or new location) ---
+    existing_hash = find_hash_file(output_file, output_base)
+    if not existing_hash:
         error_message = f"ERROR: Destination file '{short_path(output_file)}' exists but its .hash file is missing. Aborting to prevent data loss. If you want to regenerate this file, please remove it and run the script again."
         logger.error(error_message)
         raise CompileError()
 
-    # Decode the last known content from the hash file
-    last_known_base64 = hash_file.read_text(encoding="utf-8").strip()
+    # Decode the last known content from the existing hash file
+    last_known_base64 = existing_hash.read_text(encoding="utf-8").strip()
     try:
         last_known_content = base64.b64decode(last_known_base64).decode("utf-8")
     except (ValueError, TypeError) as e:
@@ -540,7 +552,7 @@ def write_compiled_file(output_file: Path, new_content: str, dry_run: bool = Fal
             else ""
         )
 
-        error_message = f"\n--- MANUAL EDIT DETECTED ---\nCANNOT OVERWRITE: The destination file below has been modified:\n  {output_file}\n\n{corruption_warning}The script detected that its data no longer matches the last generated version.\nTo prevent data loss, the process has been stopped.\n\n--- DETECTED CHANGES ---\n{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n--- HOW TO RESOLVE ---\n1. Revert the manual changes in '{output_file}' and run this script again.\nOR\n2. If the manual changes are desired, incorporate them into the source files\n   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n   ('{output_file}') and its '.hash' file ('{hash_file}') to allow the script\n   to regenerate it from the new base.\n"
+        error_message = f"\n--- MANUAL EDIT DETECTED ---\nCANNOT OVERWRITE: The destination file below has been modified:\n  {output_file}\n\n{corruption_warning}The script detected that its data no longer matches the last generated version.\nTo prevent data loss, the process has been stopped.\n\n--- DETECTED CHANGES ---\n{diff_text if diff_text else 'No visual differences found, but YAML data structure has changed.'}\n--- HOW TO RESOLVE ---\n1. Revert the manual changes in '{output_file}' and run this script again.\nOR\n2. If the manual changes are desired, incorporate them into the source files\n   (e.g., the .sh or uncompiled .yml files), then delete the generated file\n   ('{output_file}') and its '.hash' file ('{existing_hash}') to allow the script\n   to regenerate it from the new base.\n"
         print(error_message)
         raise CompileError()
 
@@ -576,6 +588,7 @@ def compile_single_file(
     input_dir: Path,
     dry_run: bool,
     inferred_cli_command: str,
+    output_base: Path,
 ) -> tuple[int, int]:
     """Compile a single YAML file and write the result.
 
@@ -585,7 +598,7 @@ def compile_single_file(
     raw_text = source_path.read_text(encoding="utf-8")
     inlined_for_file, compiled_text = inline_gitlab_scripts(raw_text, scripts_path, variables, input_dir)
     final_content = (get_banner(inferred_cli_command) + compiled_text) if inlined_for_file > 0 else raw_text
-    written = write_compiled_file(output_file, final_content, dry_run)
+    written = write_compiled_file(output_file, final_content, output_base, dry_run)
     return inlined_for_file, int(written)
 
 
@@ -663,7 +676,7 @@ def run_compile_all(
         validator.get_schema()
 
         args_list = [
-            (src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command)
+            (src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command, output_path)
             for src, out, variables in files_to_process
         ]
         with multiprocessing.Pool(processes=max_workers) as pool:
@@ -673,7 +686,7 @@ def run_compile_all(
     else:
         for src, out, variables in files_to_process:
             inlined_for_file, wrote = compile_single_file(
-                src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command
+                src, out, input_dir, variables, input_dir, dry_run, inferred_cli_command, output_path
             )
             total_inlined_count += inlined_for_file
             written_files_count += wrote

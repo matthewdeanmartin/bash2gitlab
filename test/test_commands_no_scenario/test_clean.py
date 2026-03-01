@@ -28,17 +28,17 @@ def write_text(p: Path, text: str) -> Path:
 def make_pair(root: Path, rel: str, content: str) -> tuple[Path, Path]:
     """
     Create a base file and a matching .hash file under root.
-    The hash file stores base64(content).
+    The hash file stores base64(content) in the centralized location.
     """
     base = write_text(root / rel, content)
     encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-    h = write_text(partner_hash_file(base), encoded)
+    h = write_text(partner_hash_file(base, root), encoded)
     return base, h
 
 
 def make_invalid_hash(root: Path, rel: str, content: str, hash_payload: str) -> tuple[Path, Path]:
     base = write_text(root / rel, content)
-    h = write_text(partner_hash_file(base), hash_payload)
+    h = write_text(partner_hash_file(base, root), hash_payload)
     return base, h
 
 
@@ -49,13 +49,15 @@ def test_partner_hash_and_base_inverse(tmp_path: Path):
     base = tmp_path / "foo" / "bar.yml"
     base.parent.mkdir(parents=True)
     base.touch()
-    h = partner_hash_file(base)
-    assert h.name == "bar.yml.hash"
+    h = partner_hash_file(base, tmp_path)
+    # New centralized location
+    assert h == tmp_path / ".bash2gitlab" / "output_hashes" / "foo" / "bar.yml.hash"
     # round-trip base_from_hash
-    assert base_from_hash(h) == base
+    assert base_from_hash(h, tmp_path) == base
 
-    # no .hash suffix returns input path unchanged
-    assert base_from_hash(base) == base
+    # Old-style sibling hash should also work with base_from_hash
+    old_hash = base.with_suffix(base.suffix + ".hash")
+    assert base_from_hash(old_hash, tmp_path) == base
 
 
 def test_iter_target_pairs_yields_only_existing_pairs_once(tmp_path: Path):

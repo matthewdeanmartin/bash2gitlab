@@ -66,30 +66,31 @@ def complex_dir(tmp_path: Path) -> Path:
 @pytest.mark.parametrize(
     "base_name, expected_hash_name",
     [
-        ("foo.txt", "foo.txt.hash"),
-        ("bar.tar.gz", "bar.tar.gz.hash"),
-        ("baz", "baz.hash"),
-        ("dir/file.ext", "dir/file.ext.hash"),
+        ("foo.txt", ".bash2gitlab/output_hashes/foo.txt.hash"),
+        ("bar.tar.gz", ".bash2gitlab/output_hashes/bar.tar.gz.hash"),
+        ("baz", ".bash2gitlab/output_hashes/baz.hash"),
+        ("dir/file.ext", ".bash2gitlab/output_hashes/dir/file.ext.hash"),
     ],
 )
-def test_partner_hash_file(base_name, expected_hash_name):
+def test_partner_hash_file(tmp_path: Path, base_name, expected_hash_name):
     """Tests that the correct hash file path is generated."""
-    assert partner_hash_file(Path(base_name)) == Path(expected_hash_name)
+    assert partner_hash_file(Path(base_name), tmp_path) == tmp_path / expected_hash_name
 
 
 @pytest.mark.parametrize(
     "hash_name, expected_base_name",
     [
-        ("foo.txt.hash", "foo.txt"),
-        ("bar.tar.gz.hash", "bar.tar.gz"),
-        ("baz.hash", "baz"),
-        ("dir/file.ext.hash", "dir/file.ext"),
-        ("not_a_hash.txt", "not_a_hash.txt"),  # Should not change
+        (".bash2gitlab/output_hashes/foo.txt.hash", "foo.txt"),
+        (".bash2gitlab/output_hashes/bar.tar.gz.hash", "bar.tar.gz"),
+        (".bash2gitlab/output_hashes/baz.hash", "baz"),
+        (".bash2gitlab/output_hashes/dir/file.ext.hash", "dir/file.ext"),
+        ("foo.txt.hash", "foo.txt"),  # Old-style sibling hash
+        ("bar.tar.gz.hash", "bar.tar.gz"),  # Old-style sibling hash
     ],
 )
-def test_base_from_hash(hash_name, expected_base_name):
+def test_base_from_hash(tmp_path: Path, hash_name, expected_base_name):
     """Tests that the correct base file path is derived from a hash file path."""
-    assert base_from_hash(Path(hash_name)) == Path(expected_base_name)
+    assert base_from_hash(tmp_path / hash_name, tmp_path) == tmp_path / expected_base_name
 
 
 # --- Tests for Inspection Utilities ------------------------------------------
@@ -103,7 +104,9 @@ def test_iter_target_pairs_empty(tmp_path: Path):
 def test_list_stray_files_no_strays(tmp_path: Path):
     """Tests that a directory with only valid pairs has no strays."""
     (tmp_path / "a.txt").touch()
-    (tmp_path / "a.txt.hash").touch()
+    hash_path = tmp_path / ".bash2gitlab" / "output_hashes" / "a.txt.hash"
+    hash_path.parent.mkdir(parents=True, exist_ok=True)
+    hash_path.touch()
     assert list_stray_files(tmp_path) == []
 
 

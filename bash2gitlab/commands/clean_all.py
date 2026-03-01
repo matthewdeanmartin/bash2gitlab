@@ -6,6 +6,12 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from bash2gitlab.commands.hash_path_helpers import (
+    find_hash_file,
+    get_output_hash_path,
+    get_source_file_from_hash,
+    iter_hash_files_in_directory,
+)
 from bash2gitlab.utils.utils import short_path
 
 logger = logging.getLogger(__name__)
@@ -13,25 +19,22 @@ logger = logging.getLogger(__name__)
 # --- Helpers -----------------------------------------------------------------
 
 
-def partner_hash_file(base_file: Path) -> Path:
-    """Return the expected .hash file for a target file.
+def partner_hash_file(base_file: Path, output_base: Path) -> Path:
+    """Return the expected .hash file for a target file in centralized location.
 
-    Example: foo/bar.yml -> foo/bar.yml.hash
+    Example: foo/bar.yml -> foo/.bash2gitlab/output_hashes/bar.yml.hash
     """
-    return base_file.with_suffix(base_file.suffix + ".hash")
+    return get_output_hash_path(base_file, output_base)
 
 
-def base_from_hash(hash_file: Path) -> Path:
+def base_from_hash(hash_file: Path, output_base: Path) -> Path:
     """Return the expected base file for a .hash file.
 
-    Works even on older Python without Path.removesuffix().
+    Handles both old (sibling) and new (centralized) hash file locations.
+    Example: foo/.bash2gitlab/output_hashes/bar.yml.hash -> foo/bar.yml
     Example: foo/bar.yml.hash -> foo/bar.yml
     """
-    s = str(hash_file)
-    suffix = ".hash"
-    if s.endswith(suffix):
-        return Path(s[: -len(suffix)])
-    return hash_file  # unexpected, but avoid throwing
+    return get_source_file_from_hash(hash_file, output_base)
 
 
 # --- Inspection utilities -----------------------------------------------------
@@ -41,27 +44,25 @@ def iter_target_pairs(root: Path) -> Iterator[tuple[Path, Path]]:
     """Yield (base_file, hash_file) pairs under *root* recursively.
 
     Only yields pairs where *both* files exist.
+    Uses centralized hash directory and supports migration from old location.
     """
-    for p in root.rglob("*"):
-        if p.is_dir():
-            continue
-        if p.name.endswith(".hash"):
-            base = base_from_hash(p)
-            if base.exists() and base.is_file():
-                yield (base, p)
-        else:
-            hashf = partner_hash_file(p)
-            if hashf.exists() and hashf.is_file():
-                # Pair will also be seen when rglob hits the .hash file; skip duplicates
-                continue
+    # Find all hash files (new and old locations)
+    hash_files = iter_hash_files_in_directory(root)
+
+    for hash_file in hash_files:
+        base = base_from_hash(hash_file, root)
+        if base.exists() and base.is_file():
+            yield (base, hash_file)
 
 
 def list_stray_files(root: Path) -> list[Path]:
     """Return files under *root* that do **not** have a hash pair.
 
     A "stray" is either:
-    - a non-.hash file with no corresponding ``<file>.hash``; or
-    - a ``.hash`` file whose base file is missing.
+    - a non-.hash file with no corresponding hash file; or
+    - a hash file whose base file is missing.
+
+    Checks both old (sibling) and new (centralized) hash locations.
     """
     strays: list[Path] = []
 
@@ -69,27 +70,37 @@ def list_stray_files(root: Path) -> list[Path]:
     paired_bases: set[Path] = set()
     paired_hashes: set[Path] = set()
 
-    for p in root.rglob("*"):
-        if p.is_dir():
-            continue
-        if p.suffix == "":
-            # still fine; pairing is based on full name + .hash
-            pass
-
-        if p.name.endswith(".hash"):
-            base = base_from_hash(p)
-            if base.exists():
-                paired_bases.add(base)
-                paired_hashes.add(p)
-            else:
-                strays.append(p)
+    # First, process all hash files
+    hash_files = iter_hash_files_in_directory(root)
+    for hash_file in hash_files:
+        base = base_from_hash(hash_file, root)
+        if base.exists():
+            paired_bases.add(base)
+            paired_hashes.add(hash_file)
         else:
-            hashf = partner_hash_file(p)
-            if hashf.exists():
-                paired_bases.add(p)
-                paired_hashes.add(hashf)
-            else:
-                strays.append(p)
+            strays.append(hash_file)
+
+    # Then, check all output files
+    hash_dir = root / ".bash2gitlab"
+    for path in root.rglob("*"):
+        if path.is_dir():
+            continue
+
+        # Skip files in the .bash2gitlab directory
+        if hash_dir in path.parents or path.parent == hash_dir:
+            continue
+
+        # Skip if it's a hash file (already processed above)
+        if path.name.endswith(".hash"):
+            if path not in paired_hashes:
+                continue  # Already added to strays above
+
+        # Check if this output file has a hash
+        if path not in paired_bases:
+            # Check if there's a hash file for it
+            found_file = find_hash_file(path, root)
+            if found_file is None:
+                strays.append(path)
 
     logger.info("Found %d stray file(s) under %s", len(strays), root)
     for s in strays:
@@ -147,6 +158,8 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
     Only deletes when a valid pair exists **and** the base file content matches
     the recorded hash. "Stray" files are always left alone.
 
+    Supports both old (sibling) and new (centralized) hash file locations.
+
     Args:
         root: Directory containing compiled outputs and ``*.hash`` files.
         dry_run: If True, log what would be deleted but do not delete.
@@ -159,16 +172,15 @@ def clean_targets(root: Path, *, dry_run: bool = False) -> CleanReport:
     skipped_changed = 0
     skipped_invalid = 0
 
-    # Build a unique set of pairs to consider
+    # Build a unique set of pairs to consider (using new hash helper)
     seen_pairs: set[tuple[Path, Path]] = set()
-    for p in root.rglob("*.hash"):
-        if p.is_dir():
-            continue
-        base_file = base_from_hash(p)
+    hash_files = iter_hash_files_in_directory(root)
+    for hash_file in hash_files:
+        base_file = base_from_hash(hash_file, root)
         if not base_file.exists() or not base_file.is_file():
             # Stray .hash; leave it
             continue
-        seen_pairs.add((base_file, p))
+        seen_pairs.add((base_file, hash_file))
 
     if not seen_pairs:
         logger.info("No target pairs found under %s", short_path(root))
