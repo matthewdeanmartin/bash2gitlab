@@ -7,8 +7,8 @@ and verifying that each handler method properly collects and structures paramete
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
 from argparse import Namespace
+from unittest.mock import patch
 
 import pytest
 
@@ -80,9 +80,7 @@ class TestCompileHandler:
         assert params["verbose"] is False
         assert params["quiet"] is False
 
-    def test_handle_compile_with_watch_enabled(
-        self, interface, mock_prompt, mock_confirm, mock_int_prompt
-    ):
+    def test_handle_compile_with_watch_enabled(self, interface, mock_prompt, mock_confirm, mock_int_prompt):
         """Test compile handler when watch mode is enabled."""
         # Arrange
         mock_prompt.ask.side_effect = ["./src", "./build"]
@@ -107,9 +105,7 @@ class TestCompileHandler:
 class TestValidateHandler:
     """Test the validate command handler."""
 
-    def test_handle_validate_command_basic(
-        self, interface, mock_prompt, mock_confirm, mock_int_prompt
-    ):
+    def test_handle_validate_command_basic(self, interface, mock_prompt, mock_confirm, mock_int_prompt):
         """Test validate handler with basic inputs."""
         # Arrange
         mock_prompt.ask.side_effect = ["./source", "./output"]
@@ -128,9 +124,7 @@ class TestValidateHandler:
 class TestCheckPinsHandler:
     """Test the check-pins command handler."""
 
-    def test_handle_check_pins_with_token(
-        self, interface, mock_prompt, mock_confirm
-    ):
+    def test_handle_check_pins_with_token(self, interface, mock_prompt, mock_confirm):
         """Test check-pins handler with authentication token."""
         # Arrange
         mock_prompt.ask.side_effect = [
@@ -162,9 +156,7 @@ class TestCheckPinsHandler:
 class TestTriggerPipelinesHandler:
     """Test the trigger-pipelines command handler."""
 
-    def test_handle_trigger_pipelines_single_project(
-        self, interface, mock_prompt, mock_confirm
-    ):
+    def test_handle_trigger_pipelines_single_project(self, interface, mock_prompt, mock_confirm):
         """Test trigger-pipelines with one project and no variables."""
         # Arrange
         mock_prompt.ask.side_effect = [
@@ -191,9 +183,7 @@ class TestTriggerPipelinesHandler:
         assert "variable" not in params
         assert params["wait"] is False
 
-    def test_handle_trigger_pipelines_with_wait_and_variables(
-        self, interface, mock_prompt, mock_confirm
-    ):
+    def test_handle_trigger_pipelines_with_wait_and_variables(self, interface, mock_prompt, mock_confirm):
         """Test trigger-pipelines with wait enabled and variables."""
         # Arrange
         mock_prompt.ask.side_effect = [
@@ -257,9 +247,7 @@ class TestAutogitHandler:
         # Assert
         assert params["message"] == "feat: add new feature"
 
-    def test_handle_autogit_without_message(
-        self, interface, mock_prompt, mock_confirm
-    ):
+    def test_handle_autogit_without_message(self, interface, mock_prompt, mock_confirm):
         """Test autogit handler without custom message."""
         # Arrange
         mock_prompt.ask.side_effect = [""]  # empty message
@@ -275,9 +263,7 @@ class TestAutogitHandler:
 class TestDetectUncompiledHandler:
     """Test the detect-uncompiled command handler."""
 
-    def test_handle_detect_uncompiled_check_only(
-        self, interface, mock_prompt, mock_confirm
-    ):
+    def test_handle_detect_uncompiled_check_only(self, interface, mock_prompt, mock_confirm):
         """Test detect-uncompiled with check-only mode."""
         # Arrange
         mock_prompt.ask.side_effect = ["./project"]
@@ -296,9 +282,7 @@ class TestDetectUncompiledHandler:
         assert params["check_only"] is True
         assert params["list_changed"] is False
 
-    def test_handle_detect_uncompiled_list_changed(
-        self, interface, mock_prompt, mock_confirm
-    ):
+    def test_handle_detect_uncompiled_list_changed(self, interface, mock_prompt, mock_confirm):
         """Test detect-uncompiled with list-changed mode."""
         # Arrange
         mock_prompt.ask.side_effect = ["./src"]
@@ -361,9 +345,7 @@ class TestExecuteCommand:
 class TestDisplayCommandSummary:
     """Test the display_command_summary method."""
 
-    def test_display_command_summary_user_confirms(
-        self, interface, mock_confirm, mock_console
-    ):
+    def test_display_command_summary_user_confirms(self, interface, mock_confirm, mock_console):
         """Test summary display when user confirms execution."""
         # Arrange
         mock_confirm.ask.return_value = True
@@ -376,9 +358,7 @@ class TestDisplayCommandSummary:
         assert result is True
         mock_confirm.ask.assert_called_once()
 
-    def test_display_command_summary_user_cancels(
-        self, interface, mock_confirm, mock_console
-    ):
+    def test_display_command_summary_user_cancels(self, interface, mock_confirm, mock_console):
         """Test summary display when user cancels execution."""
         # Arrange
         mock_confirm.ask.return_value = False
@@ -422,9 +402,7 @@ class TestMainMenu:
 class TestIntegrationFlow:
     """Integration tests showing complete user flows."""
 
-    def test_complete_compile_flow(
-        self, interface, mock_prompt, mock_confirm, mock_int_prompt, mock_console
-    ):
+    def test_complete_compile_flow(self, interface, mock_prompt, mock_confirm, mock_int_prompt, mock_console):
         """Test complete flow: menu -> compile -> execute."""
         with patch("bash2gitlab.__main__.compile_handler") as mock_handler:
             mock_handler.return_value = 0

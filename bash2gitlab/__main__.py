@@ -586,7 +586,9 @@ def main() -> int:
         action="store_true",
         help="Watch source directories and auto-recompile on changes.",
     )
-    compile_parser.add_argument("--force", action="store_true", help="Force compilation even if no input changes detected")
+    compile_parser.add_argument(
+        "--force", action="store_true", help="Force compilation even if no input changes detected"
+    )
     add_common_arguments(compile_parser)
     add_autogit_argument(compile_parser)
     compile_parser.set_defaults(func=compile_handler)

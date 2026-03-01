@@ -8,8 +8,7 @@ threading, and subprocess calls to run headless without requiring a display.
 from __future__ import annotations
 
 import logging
-import subprocess
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -174,18 +173,14 @@ class TestCommandRunner:
         output_frame = MagicMock()
         return CommandRunner(mock_text_widget, mock_notebook, output_frame)
 
-    def test_commandrunner_initialization(
-        self, mock_text_widget, mock_notebook, command_runner
-    ):
+    def test_commandrunner_initialization(self, mock_text_widget, mock_notebook, command_runner):
         """Test CommandRunner initialization."""
         assert command_runner.output_widget is mock_text_widget
         assert command_runner.notebook is mock_notebook
         assert command_runner.current_process is None
         assert command_runner.is_running is False
 
-    def test_run_command_starts_thread(
-        self, command_runner, mock_text_widget, mock_messagebox
-    ):
+    def test_run_command_starts_thread(self, command_runner, mock_text_widget, mock_messagebox):
         """Test that run_command starts a thread."""
         with patch("bash2gitlab.gui.threading.Thread") as mock_thread:
             mock_thread_instance = MagicMock()
@@ -199,9 +194,7 @@ class TestCommandRunner:
             mock_thread_instance.start.assert_called_once()
             assert command_runner.is_running is True
 
-    def test_run_command_prevents_concurrent_execution(
-        self, command_runner, mock_messagebox
-    ):
+    def test_run_command_prevents_concurrent_execution(self, command_runner, mock_messagebox):
         """Test that run_command prevents running multiple commands."""
         command_runner.is_running = True
 
@@ -263,9 +256,7 @@ class TestCommandRunner:
             # Callback should receive exit code 1
             callback.assert_called_once_with(1)
 
-    def test_execute_command_exception_handling(
-        self, command_runner, mock_text_widget
-    ):
+    def test_execute_command_exception_handling(self, command_runner, mock_text_widget):
         """Test command execution handles exceptions."""
         with patch(
             "bash2gitlab.gui.subprocess.Popen",
@@ -340,9 +331,7 @@ class TestBash2GitlabGUI:
         return root
 
     @pytest.fixture
-    def gui_instance(
-        self, mock_root, mock_tk, mock_ttk, mock_scrolledtext, mock_filedialog, mock_messagebox
-    ):
+    def gui_instance(self, mock_root, mock_tk, mock_ttk, mock_scrolledtext, mock_filedialog, mock_messagebox):
         """Create GUI instance with all mocks."""
         from bash2gitlab.gui import Bash2GitlabGUI
 
@@ -359,7 +348,7 @@ class TestBash2GitlabGUI:
         from bash2gitlab.gui import Bash2GitlabGUI
 
         with patch.object(Bash2GitlabGUI, "setup_gui"):
-            gui = Bash2GitlabGUI(mock_root)
+            _gui = Bash2GitlabGUI(mock_root)  # is this necessary?
 
             mock_root.title.assert_called_once_with("bash2gitlab GUI")
             mock_root.geometry.assert_called_once_with("1000x700")

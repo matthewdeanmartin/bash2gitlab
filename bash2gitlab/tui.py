@@ -116,6 +116,7 @@ class CompileForm(CommandForm):
 
             with Horizontal():
                 yield Checkbox("Watch for changes", id="watch")
+                yield Checkbox("Force", id="force")
                 yield Checkbox("Dry run", id="dry-run")
                 yield Checkbox("Verbose", id="verbose")
                 yield Checkbox("Quiet", id="quiet")
@@ -131,6 +132,7 @@ class CompileForm(CommandForm):
         output_dir = self.query_one("#output-dir", Input).value.strip()
         parallelism = self.query_one("#parallelism", Input).value.strip()
         watch = self.query_one("#watch", Checkbox).value
+        force = self.query_one("#force", Checkbox).value
 
         if input_dir:
             args.extend(["--in", input_dir])
@@ -140,6 +142,8 @@ class CompileForm(CommandForm):
             args.extend(["--parallelism", parallelism])
         if watch:
             args.append("--watch")
+        if force:
+            args.append("--force")
 
         args.extend(self.get_common_args())
 
