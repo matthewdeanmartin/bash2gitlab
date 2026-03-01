@@ -1047,7 +1047,13 @@ class CommandScreen(Screen):
         log = self.query_one("#output", RichLog)
 
         try:
-            log.write(f"[bold green]Starting command:[/bold green] {' '.join(self.command_args)}")
+            # Use sys.executable to ensure we use the correct Python interpreter
+            # Replace "bash2gitlab" with module invocation
+            command_args = self.command_args[:]
+            if command_args and command_args[0] == "bash2gitlab":
+                command_args = [sys.executable, "-m", "bash2gitlab"] + command_args[1:]
+
+            log.write(f"[bold green]Starting command:[/bold green] {' '.join(command_args)}")
 
             env = {}
             for key, value in os.environ.items():
@@ -1055,7 +1061,7 @@ class CommandScreen(Screen):
             env["NO_COLOR"] = "1"
             # pylint: disable=consider-using-with
             self.process = subprocess.Popen(  # nosec
-                self.command_args,
+                command_args,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,

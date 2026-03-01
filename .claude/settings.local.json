@@ -3,7 +3,9 @@
     "allow": [
       "Bash(.venv/Scripts/python -m pytest test/test_commands/test_scenario1.py test/test_commands/test_scenario2.py test/test_commands/test_scenario3.py test/test_commands/test_scenario4.py test/test_commands/test_scenario5.py test/test_commands/test_scenario6.py test/test_commands/test_scenario7.py test/test_commands/test_scenario8.py test/test_commands/test_scenario9.py test/test_commands_no_scenario/test_clean.py test/test_commands_no_scenario/test_detect_drift.py -v)",
       "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_detect_drift.py::test_get_source_file_from_hash -v)",
-      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_compile_diff_and_write.py::test_first_write_creates_file_and_hash -v)"
+      "Bash(.venv/Scripts/python -m pytest test/test_commands_no_scenario/test_compile_diff_and_write.py::test_first_write_creates_file_and_hash -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_utils/test_update_checker_claude.py::TestRealWorldScenarios::test_background_check_with_mocked_network -v)",
+      "Bash(.venv/Scripts/python -m pytest test/test_utils/test_update_checker_claude.py -v)"
     ],
     "deny": [],
     "ask": []

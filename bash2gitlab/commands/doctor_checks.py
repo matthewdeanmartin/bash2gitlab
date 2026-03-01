@@ -97,8 +97,6 @@ def check_lint_config_validity(cfg: Config) -> list[str]:
 
     Returns a list of human-readable problems (empty list = OK).
     """
-    # BUG: This is not how to reference properties on config.
-
     gitlab_url = cfg.lint_gitlab_url
     project_id = cfg.lint_project_id
     token = os.environ.get("GITLAB_PRIVATE_TOKEN")  # Tokens are often in env

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess  # nosec
 import sys
 import threading
@@ -72,7 +73,11 @@ def run_colored(script: str, env=None, cwd=None) -> int:
 
     # Determine the bash executable based on the operating system
     if os.name == "nt":
-        bash = [r"C:\Program Files\Git\bin\bash.exe"]
+        bash_path = shutil.which("bash")
+        if bash_path:
+            bash = [bash_path]
+        else:
+            bash = [r"C:\Program Files\Git\bin\bash.exe"]
     else:
         bash = ["bash"]
 
@@ -706,6 +711,9 @@ if __name__ == "__main__":
     def run() -> None:
         """Parse command line arguments and execute pipeline."""
         print(sys.argv)
+        if len(sys.argv) < 2:
+            print("Usage: python best_effort_runner.py <gitlab-ci.yml>", file=sys.stderr)
+            sys.exit(1)
         config = str(sys.argv[-1:][0])
         print(f"Running {config} ...")
         best_efforts_run(Path(config))

@@ -14,8 +14,12 @@ _POOL_TUPLE = None
 
 
 # @lru_cache(maxsize=1)
-def get_http_pool():
-    """Get or create cached urllib3 connection pool with SSL and retry config."""
+def get_http_pool(user_agent: str = "bash2gitlab-update-checker/2"):
+    """Get or create cached urllib3 connection pool with SSL and retry config.
+
+    Args:
+        user_agent: Custom User-Agent string for HTTP requests
+    """
     global _POOL_TUPLE
     if _POOL_TUPLE:
         return _POOL_TUPLE
@@ -39,7 +43,7 @@ def get_http_pool():
         retries=_RETRIES,
         ssl_context=_SSL_CTX,  # verified TLS, SNI + hostname verify by default
         headers={
-            "User-Agent": "bash2gitlab-update-checker/2",
+            "User-Agent": user_agent,
             "Accept": "application/json",
             "Accept-Encoding": "gzip, deflate, br",  # allow compression (urllib3 will auto-decode)
         },

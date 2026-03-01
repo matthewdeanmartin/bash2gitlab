@@ -767,10 +767,12 @@ def reset_global_state():
 
     update_checker._background_check_result = None
     update_checker._background_check_registered = False
+    update_checker._background_check_thread = None
     yield
     # Cleanup after test
     update_checker._background_check_result = None
     update_checker._background_check_registered = False
+    update_checker._background_check_thread = None
 
 
 @pytest.fixture

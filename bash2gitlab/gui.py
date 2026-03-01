@@ -94,7 +94,11 @@ class CommandRunner:
 
             self.notebook.select(self.output_frame)
 
-            # Start process
+            # Start process - use sys.executable to ensure we use the correct Python interpreter
+            # Replace "bash2gitlab" with module invocation
+            if cmd and cmd[0] == "bash2gitlab":
+                cmd = [sys.executable, "-m", "bash2gitlab"] + cmd[1:]
+
             env = {}
             for key, value in os.environ.items():
                 env[key] = value

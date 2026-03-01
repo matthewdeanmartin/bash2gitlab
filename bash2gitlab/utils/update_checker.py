@@ -53,6 +53,7 @@ from bash2gitlab.utils.urllib3_helper import fetch_json
 # Global state for background checking
 _background_check_result: str | None = None
 _background_check_registered = False
+_background_check_thread: threading.Thread | None = None
 
 
 class PackageNotFoundError(Exception):
@@ -549,7 +550,7 @@ def start_background_update_check(
         cache_ttl_seconds: Cache time-to-live in seconds.
         include_prereleases: Whether to consider prereleases newer.
     """
-    global _background_check_registered, _background_check_result
+    global _background_check_registered, _background_check_result, _background_check_thread
 
     # Only catch exceptions at this entry point
     try:
@@ -577,13 +578,13 @@ def start_background_update_check(
 
         actual_logger.debug("Starting background thread for update check")
         # Cache stale/missing -> refresh in the background; result will be printed on exit (if ready)
-        worker_thread = threading.Thread(
+        _background_check_thread = threading.Thread(
             target=_background_update_worker,
             args=(package_name, current_version, logger, cache_ttl_seconds, include_prereleases),
             daemon=True,
             name=f"UpdateChecker-{package_name}",
         )
-        worker_thread.start()
+        _background_check_thread.start()
 
     except Exception as e:
         # Silently fail for background checks only - log if we have a logger

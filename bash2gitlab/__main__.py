@@ -1089,7 +1089,7 @@ def main() -> int:
         else:
             args_output_dir = ""
         args.input_file = args_input_file or config.decompile_input_file
-        args.input_folder = args_input_folder or config.input_dir
+        args.input_folder = args_input_folder or config.decompile_input_folder
         args.output_dir = args_output_dir or config.output_dir
 
         # Validate required arguments after merging

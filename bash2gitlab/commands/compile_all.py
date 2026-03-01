@@ -204,7 +204,7 @@ def process_script_list(
             scripts_found.append(script_path_str)
 
         if script_path_str:
-            if script_path_str.strip().startswith("./") or script_path_str.strip().startswith("\\."):
+            if script_path_str.strip().startswith("./") or script_path_str.strip().startswith(".\\"):
                 rel_path = script_path_str.strip()[2:]
             else:
                 rel_path = script_path_str.strip()

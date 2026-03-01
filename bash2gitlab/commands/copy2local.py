@@ -68,7 +68,7 @@ def fetch_repository_archive(
         # Keep your project-specific error type if you have one; otherwise ValueError/TypeError is fine.
         raise TypeError(f"Expected http or https protocol, got {archive_url}")
 
-    _SSL_CTX, _HTTP, _RETRIES = get_http_pool()
+    _SSL_CTX, _HTTP, _RETRIES = get_http_pool(user_agent="bash2gitlab-copy2local/1")
     http = _HTTP  # _get_http_pool()
 
     try:
