@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pytest_mock import MockerFixture
 
-from bash2gitlab.commands.copy2local import fetch_repository_archive
+from bash2yaml.commands.copy2local import fetch_repository_archive
 
 
 @pytest.fixture

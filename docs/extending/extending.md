@@ -1,4 +1,4 @@
-# Extending bash2gitlab
+# Extending bash2yaml
 
 ## Orchestration
 
@@ -17,4 +17,4 @@ application's maintainers.
 
 ## Contributing
 
-You can extend bash2gitlab by making a merge request.
+You can extend bash2yaml by making a merge request.

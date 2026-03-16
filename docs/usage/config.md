@@ -10,13 +10,13 @@ Precedence rules:
 
 pyproject.toml example
 ```toml
-[tool.bash2gitlab]
+[tool.bash2yaml]
 input_file = "my_ci.yml"
 scripts_out = "decompiled_scripts/"
 dry_run = false
 ```
 
-bash2gitlab.toml example
+bash2yaml.toml example
 ```toml
 input_dir = "/path/from/toml"
 output_dir = "output/toml"
@@ -25,23 +25,23 @@ verbose = false
 
 ## Environment Variable Based
 
-Prefix any switch with BASH2GITLAB
+Prefix any switch with BASH2YAML
 ```bash
-export BASH2GITLAB_OUTPUT_FILE=out.yml
-export BASH2GITLAB_QUIET=1
+export BASH2YAML_OUTPUT_FILE=out.yml
+export BASH2YAML_QUIET=1
 ```
 
 ## Full Example
 
 ```toml
-# This file demonstrates all available configuration options for bash2gitlab.
+# This file demonstrates all available configuration options for bash2yaml.
 # You can place this in your project root, or configure it within pyproject.toml
-# under the tool.bash2gitlab section.
+# under the tool.bash2yaml section.
 
-[tool.bash2gitlab]
+[tool.bash2yaml]
 # --- General Settings ---
 # These settings apply to all commands unless overridden in a command-specific section.
-# They can also be set via environment variables (e.g., BASH2GITLAB_INPUT_DIR).
+# They can also be set via environment variables (e.g., BASH2YAML_INPUT_DIR).
 
 # The root directory for your uncompiled source files (.yml, .sh, etc.).
 input_dir = "ci/src"
@@ -102,7 +102,7 @@ output_dir = "ci/shredded"
 # your GitLab instance details once.
 output_dir = "ci/dist" # Directory containing compiled YAML to lint.
 gitlab_url = "https://gitlab.com"
-# token = "your_gitlab_private_token" # Can be set via env var BASH2GITLAB_LINT_TOKEN
+# token = "your_gitlab_private_token" # Can be set via env var BASH2YAML_LINT_TOKEN
 project_id = 12345678
 ref = "main"
 include_merged_yaml = false

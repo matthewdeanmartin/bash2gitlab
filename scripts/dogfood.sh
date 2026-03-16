@@ -19,22 +19,22 @@ b2g_clean_src() {
 }
 
 b2g_decompile() {
-  bash2gitlab decompile --in-folder .decompile_in --out .src
+  bash2yaml decompile --in-folder .decompile_in --out .src
   echo "✅ Decompile complete"
 }
 
 b2g_clean_build() {
-  bash2gitlab clean --out .build
+  bash2yaml clean --out .build
   echo "✅ Clean complete"
 }
 
 b2g_compile() {
-  bash2gitlab compile --in .src --out .build
+  bash2yaml compile --in .src --out .build
   echo "✅ Compile complete"
 }
 
 b2g_run_ci() {
-  python -m bash2gitlab.commands.best_effort_runner .build/.gitlab-ci.yml
+  python -m bash2yaml.commands.best_effort_runner .build/.gitlab-ci.yml
   echo "✅ Runner executed"
 }
 

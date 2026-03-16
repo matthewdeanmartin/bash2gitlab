@@ -17,5 +17,5 @@ YAML
   run_cli compile --in "$SRCDIR" --out "$OUTDIR" --dry-run
   [ "$status" -eq 0 ]
   # INFO logs generally go to stderr; bats merges streams into $output
-  [[ "$output" =~ "Starting bash2gitlab compiler" ]]
+  [[ "$output" =~ "Starting bash2yaml compiler" ]]
 }

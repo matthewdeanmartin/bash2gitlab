@@ -1,6 +1,6 @@
 """Tests for input_change_detector: hash-based incremental build detection."""
 
-from bash2gitlab.commands.input_change_detector import (
+from bash2yaml.commands.input_change_detector import (
     InputChangeDetector,
     compute_content_hash,
     get_changed_files,

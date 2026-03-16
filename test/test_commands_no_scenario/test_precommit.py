@@ -8,12 +8,12 @@ from pathlib import Path
 import pytest
 
 # We'll import config and the precommit module explicitly so we can reset config between tests
-from bash2gitlab import config as cfg_module
+from bash2yaml import config as cfg_module
 
 
 def write_pyproject(path: Path, input_dir: str = "ci", output_dir: str = "compiled") -> None:
     content = f"""
-[tool.bash2gitlab]
+[tool.bash2yaml]
 input_dir = "{input_dir}"
 output_dir = "{output_dir}"
 """
@@ -42,14 +42,14 @@ def make_git_repo_with_gitdir_file(tmp_path: Path) -> Path:
 
 def reload_precommit_module():
     # Ensure module picks up the latest config singleton
-    return importlib.import_module("bash2gitlab.commands.precommit")  # adjust to your module path
+    return importlib.import_module("bash2yaml.commands.precommit")  # adjust to your module path
 
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     # Remove env so tests control presence explicitly
     for k in list(os.environ.keys()):
-        if k.startswith("BASH2GITLAB_"):
+        if k.startswith("BASH2YAML_"):
             monkeypatch.delenv(k, raising=False)
     yield
 
@@ -71,7 +71,7 @@ def test_install_requires_config_when_missing(tmp_path):
 
     with pytest.raises(mod.PrecommitHookError) as ei:
         mod.install(repo)
-    assert "Missing bash2gitlab input/output" in str(ei.value)
+    assert "Missing bash2yaml input/output" in str(ei.value)
 
 
 def test_install_with_env_vars(tmp_path, monkeypatch):
@@ -79,8 +79,8 @@ def test_install_with_env_vars(tmp_path, monkeypatch):
     cfg_module.reset_for_testing(config_path_override=None)
     mod = reload_precommit_module()
 
-    monkeypatch.setenv("BASH2GITLAB_INPUT_DIR", "ci")
-    monkeypatch.setenv("BASH2GITLAB_OUTPUT_DIR", "compiled")
+    monkeypatch.setenv("BASH2YAML_INPUT_DIR", "ci")
+    monkeypatch.setenv("BASH2YAML_OUTPUT_DIR", "compiled")
 
     mod.install(repo)
     hook = mod.hook_path(repo)

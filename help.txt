@@ -1,4 +1,4 @@
-usage: bash2gitlab compile [-h] --in INPUT_DIR --out OUTPUT_DIR
+usage: bash2yaml compile [-h] --in INPUT_DIR --out OUTPUT_DIR
                            [--parallelism PARALLELISM] [--watch] [--dry-run]
                            [-v] [-q]
 
@@ -15,7 +15,7 @@ options:
   --dry-run             Simulate the command without filesystem changes.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab clean [-h] --out OUTPUT_DIR [--dry-run] [-v] [-q]
+usage: bash2yaml clean [-h] --out OUTPUT_DIR [--dry-run] [-v] [-q]
 
 options:
   -h, --help        show this help message and exit
@@ -23,7 +23,7 @@ options:
   --dry-run         Simulate the command without filesystem changes.
   -v, --verbose     Enable verbose (DEBUG) logging output.
   -q, --quiet       Disable output.
-usage: bash2gitlab decompile [-h] (--in-file INPUT_FILE |
+usage: bash2yaml decompile [-h] (--in-file INPUT_FILE |
                              --in-folder INPUT_FOLDER) --out OUTPUT_DIR
                              [--dry-run] [-v] [-q]
 
@@ -41,7 +41,7 @@ options:
   --dry-run             Simulate the command without filesystem changes.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab detect-drift [-h] [--out OUT] [--dry-run] [-v] [-q]
+usage: bash2yaml detect-drift [-h] [--out OUT] [--dry-run] [-v] [-q]
 
 options:
   -h, --help     show this help message and exit
@@ -49,7 +49,7 @@ options:
   --dry-run      Simulate the command without filesystem changes.
   -v, --verbose  Enable verbose (DEBUG) logging output.
   -q, --quiet    Disable output.
-usage: bash2gitlab copy2local [-h] --repo-url REPO_URL --branch BRANCH
+usage: bash2yaml copy2local [-h] --repo-url REPO_URL --branch BRANCH
                               --copy-dir COPY_DIR --source-dir SOURCE_DIR
                               [--dry-run] [-v] [-q]
 
@@ -63,7 +63,7 @@ options:
   --dry-run             Simulate the command without filesystem changes.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab init [-h] [--dry-run] [-v] [-q] [directory]
+usage: bash2yaml init [-h] [--dry-run] [-v] [-q] [directory]
 
 positional arguments:
   directory      The directory to initialize the project in. Defaults to the
@@ -74,33 +74,33 @@ options:
   --dry-run      Simulate the command without filesystem changes.
   -v, --verbose  Enable verbose (DEBUG) logging output.
   -q, --quiet    Disable output.
-usage: bash2gitlab map-deploy [-h] [--pyproject PYPROJECT_PATH] [--force]
+usage: bash2yaml map-deploy [-h] [--pyproject PYPROJECT_PATH] [--force]
                               [--dry-run] [-v] [-q]
 
 options:
   -h, --help            show this help message and exit
   --pyproject PYPROJECT_PATH
                         Path to the pyproject.toml file containing the
-                        [tool.bash2gitlab.map] section.
+                        [tool.bash2yaml.map] section.
   --force               Overwrite target files even if they have been modified
                         since the last deployment.
   --dry-run             Simulate the command without filesystem changes.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab commit-map [-h] [--pyproject PYPROJECT_PATH] [--force]
+usage: bash2yaml commit-map [-h] [--pyproject PYPROJECT_PATH] [--force]
                               [--dry-run] [-v] [-q]
 
 options:
   -h, --help            show this help message and exit
   --pyproject PYPROJECT_PATH
                         Path to the pyproject.toml file containing the
-                        [tool.bash2gitlab.map] section.
+                        [tool.bash2yaml.map] section.
   --force               Overwrite source files even if they have been modified
                         since the last deployment.
   --dry-run             Simulate the command without filesystem changes.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab lint [-h] --out OUTPUT_DIR --gitlab-url GITLAB_URL
+usage: bash2yaml lint [-h] --out OUTPUT_DIR --gitlab-url GITLAB_URL
                         [--token TOKEN] [--project-id PROJECT_ID] [--ref REF]
                         [--include-merged-yaml] [--parallelism PARALLELISM]
                         [--timeout TIMEOUT] [--dry-run] [-v] [-q]
@@ -131,7 +131,7 @@ options:
   --dry-run             Simulate the command without filesystem changes.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab install-precommit [-h] [--repo-root REPO_ROOT] [--force]
+usage: bash2yaml install-precommit [-h] [--repo-root REPO_ROOT] [--force]
                                      [-v] [-q]
 
 options:
@@ -141,7 +141,7 @@ options:
   --force               Overwrite an existing different hook.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab uninstall-precommit [-h] [--repo-root REPO_ROOT] [--force]
+usage: bash2yaml uninstall-precommit [-h] [--repo-root REPO_ROOT] [--force]
                                        [-v] [-q]
 
 options:
@@ -151,14 +151,14 @@ options:
   --force               Remove even if the hook content does not match.
   -v, --verbose         Enable verbose (DEBUG) logging output.
   -q, --quiet           Disable output.
-usage: bash2gitlab doctor [-h] [--dry-run] [-v] [-q]
+usage: bash2yaml doctor [-h] [--dry-run] [-v] [-q]
 
 options:
   -h, --help     show this help message and exit
   --dry-run      Simulate the command without filesystem changes.
   -v, --verbose  Enable verbose (DEBUG) logging output.
   -q, --quiet    Disable output.
-usage: bash2gitlab graph [-h] --in INPUT_DIR [--dry-run] [-v] [-q]
+usage: bash2yaml graph [-h] --in INPUT_DIR [--dry-run] [-v] [-q]
 
 options:
   -h, --help      show this help message and exit
@@ -167,7 +167,7 @@ options:
   --dry-run       Simulate the command without filesystem changes.
   -v, --verbose   Enable verbose (DEBUG) logging output.
   -q, --quiet     Disable output.
-usage: bash2gitlab show-config [-h] [--dry-run] [-v] [-q]
+usage: bash2yaml show-config [-h] [--dry-run] [-v] [-q]
 
 options:
   -h, --help     show this help message and exit

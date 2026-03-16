@@ -1,5 +1,5 @@
 """
-Unit tests for bash2gitlab/gui.py
+Unit tests for bash2yaml/gui.py
 
 Tests demonstrate that gui.py components are fully testable by mocking Tkinter,
 threading, and subprocess calls to run headless without requiring a display.
@@ -16,7 +16,7 @@ import pytest
 @pytest.fixture
 def mock_tk():
     """Mock Tkinter to avoid GUI display."""
-    with patch("bash2gitlab.gui.tk") as mock:
+    with patch("bash2yaml.gui.tk") as mock:
         # Mock common tk types
         mock.Tk = MagicMock
         mock.Text = MagicMock
@@ -37,7 +37,7 @@ def mock_tk():
 @pytest.fixture
 def mock_ttk():
     """Mock ttk widgets."""
-    with patch("bash2gitlab.gui.ttk") as mock:
+    with patch("bash2yaml.gui.ttk") as mock:
         mock.Notebook = MagicMock
         mock.Frame = MagicMock
         mock.LabelFrame = MagicMock
@@ -53,21 +53,21 @@ def mock_ttk():
 @pytest.fixture
 def mock_filedialog():
     """Mock file dialogs."""
-    with patch("bash2gitlab.gui.filedialog") as mock:
+    with patch("bash2yaml.gui.filedialog") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_messagebox():
     """Mock message boxes."""
-    with patch("bash2gitlab.gui.messagebox") as mock:
+    with patch("bash2yaml.gui.messagebox") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_scrolledtext():
     """Mock scrolledtext widget."""
-    with patch("bash2gitlab.gui.scrolledtext") as mock:
+    with patch("bash2yaml.gui.scrolledtext") as mock:
         mock.ScrolledText = MagicMock
         yield mock
 
@@ -89,7 +89,7 @@ class TestLogHandler:
 
     def test_loghandler_initialization(self, mock_text_widget):
         """Test LogHandler can be initialized with a text widget."""
-        from bash2gitlab.gui import LogHandler
+        from bash2yaml.gui import LogHandler
 
         handler = LogHandler(mock_text_widget)
         assert handler.text_widget is mock_text_widget
@@ -97,7 +97,7 @@ class TestLogHandler:
 
     def test_loghandler_emit_writes_to_widget(self, mock_text_widget):
         """Test that emit() writes formatted log messages to text widget."""
-        from bash2gitlab.gui import LogHandler
+        from bash2yaml.gui import LogHandler
 
         handler = LogHandler(mock_text_widget)
         handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
@@ -121,7 +121,7 @@ class TestLogHandler:
 
     def test_loghandler_append_to_widget(self, mock_text_widget):
         """Test _append_to_widget inserts text correctly."""
-        from bash2gitlab.gui import LogHandler
+        from bash2yaml.gui import LogHandler
 
         handler = LogHandler(mock_text_widget)
         # Call directly (normally called via after())
@@ -134,7 +134,7 @@ class TestLogHandler:
 
     def test_loghandler_multiple_emits(self, mock_text_widget):
         """Test multiple log emissions."""
-        from bash2gitlab.gui import LogHandler
+        from bash2yaml.gui import LogHandler
 
         handler = LogHandler(mock_text_widget)
         handler.setFormatter(logging.Formatter("%(message)s"))
@@ -168,7 +168,7 @@ class TestCommandRunner:
     @pytest.fixture
     def command_runner(self, mock_text_widget, mock_notebook):
         """Create CommandRunner instance with mocked dependencies."""
-        from bash2gitlab.gui import CommandRunner
+        from bash2yaml.gui import CommandRunner
 
         output_frame = MagicMock()
         return CommandRunner(mock_text_widget, mock_notebook, output_frame)
@@ -182,11 +182,11 @@ class TestCommandRunner:
 
     def test_run_command_starts_thread(self, command_runner, mock_text_widget, mock_messagebox):
         """Test that run_command starts a thread."""
-        with patch("bash2gitlab.gui.threading.Thread") as mock_thread:
+        with patch("bash2yaml.gui.threading.Thread") as mock_thread:
             mock_thread_instance = MagicMock()
             mock_thread.return_value = mock_thread_instance
 
-            cmd = ["bash2gitlab", "doctor"]
+            cmd = ["bash2yaml", "doctor"]
             command_runner.run_command(cmd)
 
             # Verify thread was created and started
@@ -198,8 +198,8 @@ class TestCommandRunner:
         """Test that run_command prevents running multiple commands."""
         command_runner.is_running = True
 
-        with patch("bash2gitlab.gui.threading.Thread") as mock_thread:
-            cmd = ["bash2gitlab", "doctor"]
+        with patch("bash2yaml.gui.threading.Thread") as mock_thread:
+            cmd = ["bash2yaml", "doctor"]
             command_runner.run_command(cmd)
 
             # Thread should not be started
@@ -214,8 +214,8 @@ class TestCommandRunner:
         mock_process.stdout.readline.side_effect = ["Line 1\n", "Line 2\n", ""]
         mock_process.wait.return_value = 0
 
-        with patch("bash2gitlab.gui.subprocess.Popen", return_value=mock_process):
-            cmd = ["bash2gitlab", "doctor"]
+        with patch("bash2yaml.gui.subprocess.Popen", return_value=mock_process):
+            cmd = ["bash2yaml", "doctor"]
             callback = MagicMock()
 
             # Execute in the same thread for testing
@@ -234,8 +234,8 @@ class TestCommandRunner:
         mock_process.stdout.readline.side_effect = ["Output line 1\n", "Output line 2\n", ""]
         mock_process.wait.return_value = 0
 
-        with patch("bash2gitlab.gui.subprocess.Popen", return_value=mock_process):
-            cmd = ["bash2gitlab", "doctor"]
+        with patch("bash2yaml.gui.subprocess.Popen", return_value=mock_process):
+            cmd = ["bash2yaml", "doctor"]
             command_runner._execute_command(cmd, None)
 
             # Verify output was written to widget (via after calls)
@@ -247,8 +247,8 @@ class TestCommandRunner:
         mock_process.stdout.readline.return_value = ""
         mock_process.wait.return_value = 1
 
-        with patch("bash2gitlab.gui.subprocess.Popen", return_value=mock_process):
-            cmd = ["bash2gitlab", "invalid-command"]
+        with patch("bash2yaml.gui.subprocess.Popen", return_value=mock_process):
+            cmd = ["bash2yaml", "invalid-command"]
             callback = MagicMock()
 
             command_runner._execute_command(cmd, callback)
@@ -259,10 +259,10 @@ class TestCommandRunner:
     def test_execute_command_exception_handling(self, command_runner, mock_text_widget):
         """Test command execution handles exceptions."""
         with patch(
-            "bash2gitlab.gui.subprocess.Popen",
+            "bash2yaml.gui.subprocess.Popen",
             side_effect=Exception("Command failed"),
         ):
-            cmd = ["bash2gitlab", "doctor"]
+            cmd = ["bash2yaml", "doctor"]
 
             # Should not raise, but handle gracefully
             command_runner._execute_command(cmd, None)
@@ -276,9 +276,9 @@ class TestCommandRunner:
         mock_process.stdout.readline.return_value = ""
         mock_process.wait.return_value = 0
 
-        with patch("bash2gitlab.gui.subprocess.Popen", return_value=mock_process) as mock_popen:
-            with patch("bash2gitlab.gui.os.environ", {"PATH": "/usr/bin"}):
-                cmd = ["bash2gitlab", "doctor"]
+        with patch("bash2yaml.gui.subprocess.Popen", return_value=mock_process) as mock_popen:
+            with patch("bash2yaml.gui.os.environ", {"PATH": "/usr/bin"}):
+                cmd = ["bash2yaml", "doctor"]
                 command_runner._execute_command(cmd, None)
 
                 # Check that NO_COLOR was set in environment
@@ -319,8 +319,8 @@ class TestCommandRunner:
         mock_text_widget.insert.assert_called()
 
 
-class TestBash2GitlabGUI:
-    """Test the Bash2GitlabGUI class."""
+class TestBash2YamlGUI:
+    """Test the Bash2YamlGUI class."""
 
     @pytest.fixture
     def mock_root(self, mock_tk):
@@ -333,10 +333,10 @@ class TestBash2GitlabGUI:
     @pytest.fixture
     def gui_instance(self, mock_root, mock_tk, mock_ttk, mock_scrolledtext, mock_filedialog, mock_messagebox):
         """Create GUI instance with all mocks."""
-        from bash2gitlab.gui import Bash2GitlabGUI
+        from bash2yaml.gui import Bash2YamlGUI
 
-        with patch.object(Bash2GitlabGUI, "setup_gui"):
-            gui = Bash2GitlabGUI(mock_root)
+        with patch.object(Bash2YamlGUI, "setup_gui"):
+            gui = Bash2YamlGUI(mock_root)
             # Manually set up minimal state
             gui.vars = {}
             gui.command_runner = MagicMock()
@@ -345,12 +345,12 @@ class TestBash2GitlabGUI:
 
     def test_gui_initialization(self, mock_root, mock_tk, mock_ttk, mock_scrolledtext):
         """Test GUI initialization sets up window."""
-        from bash2gitlab.gui import Bash2GitlabGUI
+        from bash2yaml.gui import Bash2YamlGUI
 
-        with patch.object(Bash2GitlabGUI, "setup_gui"):
-            _gui = Bash2GitlabGUI(mock_root)  # is this necessary?
+        with patch.object(Bash2YamlGUI, "setup_gui"):
+            _gui = Bash2YamlGUI(mock_root)  # is this necessary?
 
-            mock_root.title.assert_called_once_with("bash2gitlab GUI")
+            mock_root.title.assert_called_once_with("bash2yaml GUI")
             mock_root.geometry.assert_called_once_with("1000x700")
 
     def test_browse_directory(self, gui_instance, mock_filedialog):
@@ -416,7 +416,7 @@ class TestBash2GitlabGUI:
         cmd = gui_instance.build_command("compile", options)
 
         assert cmd == [
-            "bash2gitlab",
+            "bash2yaml",
             "compile",
             "--in",
             "/input/path",
@@ -434,7 +434,7 @@ class TestBash2GitlabGUI:
 
         cmd = gui_instance.build_command("compile", options)
 
-        assert "bash2gitlab" in cmd
+        assert "bash2yaml" in cmd
         assert "compile" in cmd
         assert "--dry-run" in cmd
         assert "--force" in cmd
@@ -531,11 +531,11 @@ class TestCommandMethods:
     @pytest.fixture
     def setup_gui(self, mock_tk, mock_ttk, mock_scrolledtext, mock_filedialog, mock_messagebox):
         """Setup GUI with mocked variables."""
-        from bash2gitlab.gui import Bash2GitlabGUI
+        from bash2yaml.gui import Bash2YamlGUI
 
         root = MagicMock()
-        with patch.object(Bash2GitlabGUI, "setup_gui"):
-            gui = Bash2GitlabGUI(root)
+        with patch.object(Bash2YamlGUI, "setup_gui"):
+            gui = Bash2YamlGUI(root)
             gui.command_runner = MagicMock()
             gui.output_text = MagicMock()
 
@@ -589,7 +589,7 @@ class TestCommandMethods:
         # Command runner should be called
         gui.command_runner.run_command.assert_called_once()
         cmd = gui.command_runner.run_command.call_args[0][0]
-        assert "bash2gitlab" in cmd
+        assert "bash2yaml" in cmd
         assert "compile" in cmd
         assert "--in" in cmd
         assert "/input" in cmd
@@ -654,7 +654,7 @@ class TestCommandMethods:
 
         gui.command_runner.run_command.assert_called_once()
         cmd = gui.command_runner.run_command.call_args[0][0]
-        assert "bash2gitlab" in cmd
+        assert "bash2yaml" in cmd
         assert "init" in cmd
         assert "." in cmd
 
@@ -677,7 +677,7 @@ class TestCommandMethods:
 
         gui.command_runner.run_command.assert_called_once()
         cmd = gui.command_runner.run_command.call_args[0][0]
-        assert cmd == ["bash2gitlab", "doctor"]
+        assert cmd == ["bash2yaml", "doctor"]
 
     def test_run_show_config(self, setup_gui):
         """Test run_show_config command."""
@@ -687,7 +687,7 @@ class TestCommandMethods:
 
         gui.command_runner.run_command.assert_called_once()
         cmd = gui.command_runner.run_command.call_args[0][0]
-        assert cmd == ["bash2gitlab", "show-config"]
+        assert cmd == ["bash2yaml", "show-config"]
 
     def test_run_lint_success(self, setup_gui, mock_messagebox):
         """Test run_lint with valid inputs."""
@@ -738,14 +738,14 @@ class TestMainFunction:
 
     def test_main_creates_window(self):
         """Test main() creates and runs the GUI."""
-        from bash2gitlab.gui import main
+        from bash2yaml.gui import main
 
         mock_root = MagicMock()
         mock_root.mainloop.side_effect = KeyboardInterrupt()
 
-        with patch("bash2gitlab.gui.tk.Tk", return_value=mock_root) as mock_tk_class:
-            with patch("bash2gitlab.gui.Bash2GitlabGUI"):
-                with patch("bash2gitlab.gui.logging.basicConfig"):
+        with patch("bash2yaml.gui.tk.Tk", return_value=mock_root) as mock_tk_class:
+            with patch("bash2yaml.gui.Bash2YamlGUI"):
+                with patch("bash2yaml.gui.logging.basicConfig"):
                     main()
 
                     # Verify window was created
@@ -755,15 +755,15 @@ class TestMainFunction:
 
     def test_main_handles_exception(self):
         """Test main() handles unexpected exceptions."""
-        from bash2gitlab.gui import main
+        from bash2yaml.gui import main
 
         mock_root = MagicMock()
         mock_root.mainloop.side_effect = Exception("Test error")
 
-        with patch("bash2gitlab.gui.tk.Tk", return_value=mock_root):
-            with patch("bash2gitlab.gui.Bash2GitlabGUI"):
-                with patch("bash2gitlab.gui.logging.basicConfig"):
-                    with patch("bash2gitlab.gui.messagebox.showerror") as mock_showerror:
+        with patch("bash2yaml.gui.tk.Tk", return_value=mock_root):
+            with patch("bash2yaml.gui.Bash2YamlGUI"):
+                with patch("bash2yaml.gui.logging.basicConfig"):
+                    with patch("bash2yaml.gui.messagebox.showerror") as mock_showerror:
                         main()
 
                         # Error dialog should be shown

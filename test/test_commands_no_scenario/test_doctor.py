@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands import doctor as doctor_mod
-from bash2gitlab.config import Config as ConfigClass
+from bash2yaml.commands import doctor as doctor_mod
+from bash2yaml.config import Config as ConfigClass
 
 # --------- helpers -----------------------------------------------------------
 
@@ -17,14 +17,14 @@ def _set_doctor_config(monkeypatch: pytest.MonkeyPatch, *, input_dir: Path | Non
     from environment variables. We only set env vars that are provided.
     """
     if input_dir is not None:
-        monkeypatch.setenv("BASH2GITLAB_INPUT_DIR", str(input_dir))
+        monkeypatch.setenv("BASH2YAML_INPUT_DIR", str(input_dir))
     else:
-        monkeypatch.delenv("BASH2GITLAB_INPUT_DIR", raising=False)
+        monkeypatch.delenv("BASH2YAML_INPUT_DIR", raising=False)
 
     if output_dir is not None:
-        monkeypatch.setenv("BASH2GITLAB_OUTPUT_DIR", str(output_dir))
+        monkeypatch.setenv("BASH2YAML_OUTPUT_DIR", str(output_dir))
     else:
-        monkeypatch.delenv("BASH2GITLAB_OUTPUT_DIR", raising=False)
+        monkeypatch.delenv("BASH2YAML_OUTPUT_DIR", raising=False)
 
     cfg = ConfigClass()
     monkeypatch.setattr(doctor_mod, "config", cfg, raising=False)

@@ -42,7 +42,7 @@ multitool tool aggregator.
 
 After I've already named and published this tool, it occurs to me that I could re-do this for github actions, etc.
 
-# bash2gitlab House Style Guide
+# bash2yaml House Style Guide
 
 ---
 

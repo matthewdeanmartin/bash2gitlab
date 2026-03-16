@@ -1,9 +1,9 @@
 # DO NOT EDIT
-# This is a compiled file, compiled with bash2gitlab
+# This is a compiled file, compiled with bash2yaml
 # Recompile instead of editing this file.
 #
 # Compiled with the command: 
-#     bash2gitlab\.venv\Scripts\bash2gitlab.exe compile --in src --out out
+#     bash2yaml\.venv\Scripts\bash2yaml.exe compile --in src --out out
 
 # .gitlab-ci.yml for a GnuCOBOL Payroll Tax Calculation Program
 

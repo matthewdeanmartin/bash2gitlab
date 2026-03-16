@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import types
 
-from bash2gitlab.watch_files import _RecompileHandler, start_watch
+from bash2yaml.watch_files import _RecompileHandler, start_watch
 
 
 class _Evt:
@@ -19,7 +19,7 @@ def test_handler_ignores_dirs_and_irrelevant_extensions(tmp_path, monkeypatch):
     def fake_compile(**kwargs):
         called["count"] += 1
 
-    monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", fake_compile)
+    monkeypatch.setattr("bash2yaml.watch_files.run_compile_all", fake_compile)
 
     handler = _RecompileHandler(
         input_dir=tmp_path,
@@ -51,7 +51,7 @@ def test_handler_triggers_on_yaml_and_sh(tmp_path, monkeypatch):
         recorded["kwargs"] = kwargs
         recorded["call_count"] += 1
 
-    monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", fake_compile)
+    monkeypatch.setattr("bash2yaml.watch_files.run_compile_all", fake_compile)
 
     handler = _RecompileHandler(
         input_dir=tmp_path,
@@ -86,8 +86,8 @@ def test_handler_debounce(monkeypatch, tmp_path):
     def fake_monotonic():
         return times.pop(0)
 
-    monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", fake_compile)
-    monkeypatch.setattr("bash2gitlab.watch_files.time", types.SimpleNamespace(monotonic=fake_monotonic))
+    monkeypatch.setattr("bash2yaml.watch_files.run_compile_all", fake_compile)
+    monkeypatch.setattr("bash2yaml.watch_files.time", types.SimpleNamespace(monotonic=fake_monotonic))
 
     handler = _RecompileHandler(
         input_dir=tmp_path,
@@ -111,7 +111,7 @@ def test_handler_handles_exception_gracefully(tmp_path, monkeypatch):
         exception_raised["value"] = True
         raise RuntimeError("boom")
 
-    monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", boom)
+    monkeypatch.setattr("bash2yaml.watch_files.run_compile_all", boom)
 
     handler = _RecompileHandler(
         input_dir=tmp_path,
@@ -147,7 +147,7 @@ def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, mon
             joined["value"] = True
 
     # Patch Observer used by start_watch
-    monkeypatch.setattr("bash2gitlab.watch_files.Observer", FakeObserver)
+    monkeypatch.setattr("bash2yaml.watch_files.Observer", FakeObserver)
 
     # Make the main loop raise KeyboardInterrupt immediately after start
     sleep_calls = {"n": 0}
@@ -156,10 +156,10 @@ def test_start_watch_wires_observer_and_stops_on_keyboardinterrupt(tmp_path, mon
         sleep_calls["n"] += 1
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("bash2gitlab.watch_files.time", types.SimpleNamespace(sleep=fake_sleep))
+    monkeypatch.setattr("bash2yaml.watch_files.time", types.SimpleNamespace(sleep=fake_sleep))
 
     # Patch run_compile_all so it's not accidentally called here
-    monkeypatch.setattr("bash2gitlab.watch_files.run_compile_all", lambda **_: None)
+    monkeypatch.setattr("bash2yaml.watch_files.run_compile_all", lambda **_: None)
 
     # Call start_watch: it should start, then promptly stop due to KeyboardInterrupt
     start_watch(

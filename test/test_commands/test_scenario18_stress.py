@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from test.temp_change_dir import chdir_to_file_dir
 
-from bash2gitlab.commands.compile_all import run_compile_all
+from bash2yaml.commands.compile_all import run_compile_all
 
 
 def test_yaml_it_src_to_out_18_stress():
@@ -12,7 +12,7 @@ def test_yaml_it_src_to_out_18_stress():
         uncompiled = Path("scenario18_stress/src")
         output_root = Path("scenario18_stress/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario18_stress/out"), ignore_errors=True)
-        shutil.rmtree(str(Path(__file__).parent / "scenario18_stress/src/.bash2gitlab"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario18_stress/src/.bash2yaml"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

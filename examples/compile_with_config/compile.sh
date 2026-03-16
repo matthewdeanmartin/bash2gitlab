@@ -1,3 +1,3 @@
 #! /bin/bash
 set -euo pipefail
-bash2gitlab compile
+bash2yaml compile

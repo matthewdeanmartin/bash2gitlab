@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-from bash2gitlab.commands.clean_all import (
+from bash2yaml.commands.clean_all import (
     CleanReport,
     base_from_hash,
     clean_targets,
@@ -51,7 +51,7 @@ def test_partner_hash_and_base_inverse(tmp_path: Path):
     base.touch()
     h = partner_hash_file(base, tmp_path)
     # New centralized location
-    assert h == tmp_path / ".bash2gitlab" / "output_hashes" / "foo" / "bar.yml.hash"
+    assert h == tmp_path / ".bash2yaml" / "output_hashes" / "foo" / "bar.yml.hash"
     # round-trip base_from_hash
     assert base_from_hash(h, tmp_path) == base
 

@@ -11,7 +11,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def no_update_and_no_argcomplete(monkeypatch):
     """Neutralize network-y or shell-y bits for every test and capture logging config level."""
-    import bash2gitlab.__main__ as m
+    import bash2yaml.__main__ as m
 
     # avoid real autocompletion setup
     monkeypatch.setattr(m.argcomplete, "autocomplete", lambda *a, **k: None)
@@ -42,7 +42,7 @@ def run_cli(monkeypatch):
     """Helper to run main() with argv and return (exit_code or None if not SystemExit)."""
 
     def _run(argv: list[str]) -> int | None:
-        import bash2gitlab.__main__ as m
+        import bash2yaml.__main__ as m
 
         monkeypatch.setattr(sys, "argv", argv)
         try:
@@ -54,7 +54,7 @@ def run_cli(monkeypatch):
 
 
 def _patch_compile_deps(monkeypatch, *, called: dict[str, Any]):
-    import bash2gitlab.__main__ as m
+    import bash2yaml.__main__ as m
 
     def fake_run_compile_all(**kwargs):
         called["run_compile_all"] = kwargs
@@ -67,7 +67,7 @@ def _patch_compile_deps(monkeypatch, *, called: dict[str, Any]):
 
 
 def _patch_detect_drift_deps(monkeypatch, *, called: dict[str, Any]):
-    import bash2gitlab.__main__ as m
+    import bash2yaml.__main__ as m
 
     def fake_check_for_drift(out: Path):
         called["run_detect_drift"] = out
@@ -76,7 +76,7 @@ def _patch_detect_drift_deps(monkeypatch, *, called: dict[str, Any]):
 
 
 def _patch_clone_deps(monkeypatch, *, called: dict[str, Any]):
-    import bash2gitlab.__main__ as m
+    import bash2yaml.__main__ as m
 
     def fake_clone_repository_ssh(repo_url, branch, source_dir, copy_dir, dry_run):
         called["clone_repository_ssh"] = (repo_url, branch, source_dir, copy_dir, dry_run)
@@ -91,7 +91,7 @@ def _patch_clone_deps(monkeypatch, *, called: dict[str, Any]):
 def _patch_map_commit_deps(
     monkeypatch, *, called: dict[str, Any], get_map_side_effect: Exception | dict[str, str] = None
 ):
-    import bash2gitlab.__main__ as m
+    import bash2yaml.__main__ as m
 
     def fake_map_deploy(mapping, dry_run: bool, force: bool):
         called["run_map_deploy"] = (mapping, dry_run, force)
@@ -105,7 +105,7 @@ def _patch_map_commit_deps(
 
 def _set_config(monkeypatch, **vals):
     """Set attributes on the imported config singleton inside __main__."""
-    import bash2gitlab.__main__ as m
+    import bash2yaml.__main__ as m
 
     defaults = dict(
         input_dir=None,
@@ -223,7 +223,7 @@ def test_copy2local_ssh_and_https(monkeypatch, run_cli, tmp_path):
 
 
 def test_init_uses_default_directory(monkeypatch, run_cli):
-    import bash2gitlab.__main__ as m
+    import bash2yaml.__main__ as m
 
     called: dict[str, Any] = {}
 

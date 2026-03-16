@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands.map_commit import run_commit_map
+from bash2yaml.commands.map_commit import run_commit_map
 
 
 def _hash(content: str) -> str:
@@ -24,7 +24,7 @@ def prepare_environment(tmp_path: Path):
     content = "original"
     source_file.write_text(content)
     target_file.write_text(content)
-    hash_path = target_dir / ".bash2gitlab" / "output_hashes" / "file.sh.hash"
+    hash_path = target_dir / ".bash2yaml" / "output_hashes" / "file.sh.hash"
     hash_path.parent.mkdir(parents=True, exist_ok=True)
     hash_path.write_text(_hash(content))
 
@@ -94,7 +94,7 @@ def test_commit_map_ignores_unsupported_files(tmp_path: Path):
 
     target_file = target_dir / "ignore.txt"
     target_file.write_text("content")
-    hash_path = target_dir / ".bash2gitlab" / "output_hashes" / "ignore.txt.hash"
+    hash_path = target_dir / ".bash2yaml" / "output_hashes" / "ignore.txt.hash"
     hash_path.parent.mkdir(parents=True, exist_ok=True)
     hash_path.write_text(_hash("content"))
 

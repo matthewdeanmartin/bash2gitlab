@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from test.temp_change_dir import chdir_to_file_dir
 
-from bash2gitlab.commands.compile_all import run_compile_all
+from bash2yaml.commands.compile_all import run_compile_all
 
 
 def test_artifact_inline_scenario():
@@ -21,7 +21,7 @@ def test_artifact_inline_scenario():
             ignore_errors=True,
         )
         shutil.rmtree(
-            str(Path(__file__).parent / "uncompiled/.bash2gitlab"),
+            str(Path(__file__).parent / "uncompiled/.bash2yaml"),
             ignore_errors=True,
         )
 

@@ -27,14 +27,14 @@ from typing import Any
 import urllib3
 
 # -- Module under test (must be importable from CWD)
-import bash2gitlab.utils.update_checker as uc
+import bash2yaml.utils.update_checker as uc
 
 # ============================
 # SETTINGS
 # ============================
 
 # Primary package to test *your* flow with (cache path is per-package)
-PKG = "bash2gitlab"
+PKG = "bash2yaml"
 CURRENT_VER = "0.0.0"   # use a very old version to likely trigger an update message
 
 # Additional packages to probe pypi.org behavior under concurrency

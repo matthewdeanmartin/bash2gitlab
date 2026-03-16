@@ -5,13 +5,13 @@ This is a standalone command, pipx is better:
 ```bash
 python -m pip install --user pipx
 python -m pipx ensurepath
-pipx install bash2gitlab[all]
+pipx install bash2yaml[all]
 ```
 
 To use it as a library or extend it with python:
 
 ```bash
-pip install bash2gitlab
+pip install bash2yaml
 ```
 
 ## Executing
@@ -19,27 +19,27 @@ pip install bash2gitlab
 CLI usage
 
 ```bash
-bash2gitlab
+bash2yaml
 b2gl # short alias
 ```
 
 Terminal UI (TUI) usage
 
 ```bash
-bash2gitlab-tui
+bash2yaml-tui
 b2gl-tui # short alias
 ```
 
 GUI usage
 
 ```bash
-bash2gitlab-gui
+bash2yaml-gui
 b2gl-gui # short alias
 ```
 
 Terminal interactive usage (menu, question and answer)
 
 ```bash
-bash2gitlab-interactive
+bash2yaml-interactive
 b2gl-interactive
 ```

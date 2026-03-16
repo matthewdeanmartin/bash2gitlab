@@ -19,7 +19,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bash2gitlab.commands.lint_all import (
+from bash2yaml.commands.lint_all import (
     LintIssue,
     LintResult,
     api_url,
@@ -277,7 +277,7 @@ class TestSummarizeResults:
 class TestLintSingleText:
     def _fake_post(self, resp_dict):
         """Return a patcher that makes post_json return resp_dict."""
-        return patch("bash2gitlab.commands.lint_all.post_json", return_value=resp_dict)
+        return patch("bash2yaml.commands.lint_all.post_json", return_value=resp_dict)
 
     def test_valid_response_parsed(self):
         resp = {"valid": True, "status": "valid", "errors": [], "warnings": []}
@@ -375,7 +375,7 @@ class TestLintSingleText:
             captured_urls.append(url)
             return resp
 
-        with patch("bash2gitlab.commands.lint_all.post_json", side_effect=fake_post):
+        with patch("bash2yaml.commands.lint_all.post_json", side_effect=fake_post):
             lint_single_text("k: v\n", gitlab_url="https://gitlab.com", project_id=55)
 
         assert len(captured_urls) == 1

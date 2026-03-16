@@ -1,4 +1,4 @@
-git2md bash2gitlab \
+git2md bash2yaml \
   --ignore __init__.py __pycache__ \
   gui.py tui.py interactive.py \
   utils \

@@ -1,6 +1,6 @@
-# bash2gitlab – Usage
+# bash2yaml – Usage
 
-This guide shows how to use **bash2gitlab** to move shell logic out of `.gitlab-ci.yml`, work locally with real shell
+This guide shows how to use **bash2yaml** to move shell logic out of `.gitlab-ci.yml`, work locally with real shell
 files, and compile back to clean CI YAML.
 
 ---
@@ -11,7 +11,7 @@ files, and compile back to clean CI YAML.
 * Pipelines where **most logic is Bash** but lives as YAML strings.
 * Developers who want **IDE/bash tooling** (linting, shellcheck, formatting) on the actual scripts.
 
-**Not a full YAML templating engine.** bash2gitlab focuses on inlining shell, not merging YAML structures or
+**Not a full YAML templating engine.** bash2yaml focuses on inlining shell, not merging YAML structures or
 orchestrating template complexity.
 
 ---
@@ -20,18 +20,18 @@ orchestrating template complexity.
 
 ```bash
 # 1) Extract shell commands from your pipeline to real scripts
-bash2gitlab decompile --in-file .gitlab-ci.yml --out ./decompiled
+bash2yaml decompile --in-file .gitlab-ci.yml --out ./decompiled
 
 # 2) Edit scripts locally (lint, test, run)
 vim decompiled/my_job.sh
 
 # 3) Compile: inline scripts into YAML again
-bash2gitlab compile \
+bash2yaml compile \
   --in ./decompiled \
   --out ./compiled
 
 # 4) (Optional) Watch for changes and recompile
-bash2gitlab compile --in ./decompiled --out ./compiled --watch
+bash2yaml compile --in ./decompiled --out ./compiled --watch
 ```
 
 Results land in `./compiled` by default (customizable). Commit as needed.
@@ -56,7 +56,7 @@ Results land in `./compiled` by default (customizable). Commit as needed.
 Inline shell files into YAML `script:` steps.
 
 ```bash
-bash2gitlab compile \
+bash2yaml compile \
   --in <INPUT_DIR> \
   --out <OUTPUT_DIR> \
   [--parallelism <N>] \
@@ -93,14 +93,14 @@ repo/
 Extract shell from YAML into real files so your IDE and shell tooling can work.
 
 ```bash
-bash2gitlab decompile \
+bash2yaml decompile \
   --in-file <INPUT_FILE> \
   --out <OUTPUT_DIR> \
   [--dry-run] [-v|-q]
 
 # OR
 
-bash2gitlab decompile \
+bash2yaml decompile \
   --in-folder <INPUT_DIR> \
   --out <OUTPUT_DIR> \
   [--dry-run] [-v|-q]
@@ -119,7 +119,7 @@ bash2gitlab decompile \
 Bring remote/centralized CI templates into your repo for fast local cycles.
 
 ```bash
-bash2gitlab copy2local \
+bash2yaml copy2local \
   --in <TEMPLATES_IN> \
   --out <TEMPLATES_OUT>
 ```
@@ -140,7 +140,7 @@ bash2gitlab copy2local \
 Create a minimal skeleton to try the workflow quickly.
 
 ```bash
-bash2gitlab init --out .
+bash2yaml init --out .
 ```
 
 Prompts you with questions and then creates a toml config.
@@ -199,16 +199,16 @@ You can set options via **CLI flags**, **environment variables**, or **TOML conf
 
 1. **CLI flags** (highest)
 2. **Environment variables**
-3. **TOML config** (e.g., `.bash2gitlab.toml`) (lowest)
+3. **TOML config** (e.g., `.bash2yaml.toml`) (lowest)
 
 **Environment variables**
 
-* Prefix: `BASH2GITLAB_` (e.g., `BASH2GITLAB_IN=.` `BASH2GITLAB_OUT=./compiled`).
+* Prefix: `BASH2YAML_` (e.g., `BASH2YAML_IN=.` `BASH2YAML_OUT=./compiled`).
 
 **TOML example**
 
 ```toml
-[tool.bash2gitlab]
+[tool.bash2yaml]
 # --- General Settings ---
 input_dir = "ci/src"
 output_dir = "ci/dist"
@@ -262,9 +262,9 @@ build:
 ### Example: decompile then edit
 
 ```bash
-bash2gitlab decompile --in-file .gitlab-ci.yml --out ./decompiled
+bash2yaml decompile --in-file .gitlab-ci.yml --out ./decompiled
 # edit ./decompiled/test.sh
-bash2gitlab compile --in ./decompiled --out ./compiled
+bash2yaml compile --in ./decompiled --out ./compiled
 ```
 
 ---

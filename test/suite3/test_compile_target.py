@@ -9,7 +9,7 @@ upcoming rewrite will need to respect:
 - The `# Pragma: do-not-validate-schema` contract in compiled output
 - process_script_list boundary conditions (empty, mixed types, nested)
 
-All tests use tmp_path and the BASH2GITLAB_SKIP_ROOT_CHECKS env var to avoid
+All tests use tmp_path and the BASH2YAML_SKIP_ROOT_CHECKS env var to avoid
 the project-root security check that blocks sourcing files from system temp.
 """
 
@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands.compile_all import (
+from bash2yaml.commands.compile_all import (
     as_items,
     compact_runs_to_literal,
     get_banner,
@@ -30,13 +30,13 @@ from bash2gitlab.commands.compile_all import (
     write_compiled_file,
     write_yaml_and_hash,
 )
-from bash2gitlab.errors.exceptions import CompileError
+from bash2yaml.errors.exceptions import CompileError
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
-SKIP_ROOT = "BASH2GITLAB_SKIP_ROOT_CHECKS"
+SKIP_ROOT = "BASH2YAML_SKIP_ROOT_CHECKS"
 
 SIMPLE_YAML = textwrap.dedent("""\
     # Pragma: do-not-validate-schema
@@ -92,31 +92,31 @@ class TestInferCli:
 
 class TestGetBanner:
     def test_contains_do_not_edit(self, monkeypatch):
-        import bash2gitlab.commands.compile_all as mod
+        import bash2yaml.commands.compile_all as mod
 
         monkeypatch.setattr(mod.config, "file_config", {})
-        banner = get_banner("bash2gitlab compile --in x --out y")
+        banner = get_banner("bash2yaml compile --in x --out y")
         assert "DO NOT EDIT" in banner
 
     def test_contains_command(self, monkeypatch):
-        import bash2gitlab.commands.compile_all as mod
+        import bash2yaml.commands.compile_all as mod
 
         monkeypatch.setattr(mod.config, "file_config", {})
-        cmd = "bash2gitlab compile --in x --out y"
+        cmd = "bash2yaml compile --in x --out y"
         banner = get_banner(cmd)
         assert cmd in banner
 
     def test_custom_header_overrides_default(self, tmp_path, monkeypatch):
-        import bash2gitlab.commands.compile_all as mod
+        import bash2yaml.commands.compile_all as mod
 
         # Inject a custom_header by overriding the file_config on the shared config object
         monkeypatch.setattr(mod.config, "file_config", {"custom_header": "# custom banner"})
-        banner = get_banner("bash2gitlab compile --in x --out y")
+        banner = get_banner("bash2yaml compile --in x --out y")
         assert "custom banner" in banner
         assert "DO NOT EDIT" not in banner
 
     def test_banner_ends_with_newline(self, monkeypatch):
-        import bash2gitlab.commands.compile_all as mod
+        import bash2yaml.commands.compile_all as mod
 
         monkeypatch.setattr(mod.config, "file_config", {})
         banner = get_banner("cmd")
@@ -350,7 +350,7 @@ class TestInlineGitlabScriptsEdgeCases:
 
     def test_missing_script_raises(self, tmp_path, monkeypatch):
         monkeypatch.setenv(SKIP_ROOT, "1")
-        from bash2gitlab.errors.exceptions import Bash2GitlabError
+        from bash2yaml.errors.exceptions import Bash2YamlError
 
         yaml_content = textwrap.dedent("""\
             build-job:
@@ -358,7 +358,7 @@ class TestInlineGitlabScriptsEdgeCases:
               script:
                 - ./nonexistent.sh
         """)
-        with pytest.raises((Bash2GitlabError, FileNotFoundError, Exception)):
+        with pytest.raises((Bash2YamlError, FileNotFoundError, Exception)):
             inline_gitlab_scripts(yaml_content, tmp_path, {}, tmp_path)
 
     def test_skips_reserved_top_level_keys(self, tmp_path):
@@ -534,7 +534,7 @@ class TestCompileTargetReadiness:
         """Output of inline_gitlab_scripts must be parseable YAML."""
         import io
 
-        from bash2gitlab.utils.yaml_factory import get_yaml
+        from bash2yaml.utils.yaml_factory import get_yaml
 
         count, result = inline_gitlab_scripts(SIMPLE_YAML, tmp_path, {}, tmp_path)
         yaml = get_yaml()

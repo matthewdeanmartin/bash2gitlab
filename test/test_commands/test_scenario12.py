@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from test.temp_change_dir import chdir_to_file_dir
 
-from bash2gitlab.commands.compile_all import run_compile_all
+from bash2yaml.commands.compile_all import run_compile_all
 
 
 def test_yaml_it_src_to_out_12_powershell():
@@ -12,7 +12,7 @@ def test_yaml_it_src_to_out_12_powershell():
         uncompiled = Path("scenario12_ps1/folder")
         output_root = Path("scenario12_ps1/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario12_ps1/out"), ignore_errors=True)
-        shutil.rmtree(str(Path(__file__).parent / "scenario12_ps1/folder/.bash2gitlab"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario12_ps1/folder/.bash2yaml"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

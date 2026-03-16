@@ -7,7 +7,7 @@ import pytest
 
 # Assuming the code is in a file named 'file_hasher.py'
 # If your file has a different name, adjust the import
-from bash2gitlab.commands.clean_all import (
+from bash2yaml.commands.clean_all import (
     CleanReport,
     base_from_hash,
     clean_targets,
@@ -66,10 +66,10 @@ def complex_dir(tmp_path: Path) -> Path:
 @pytest.mark.parametrize(
     "base_name, expected_hash_name",
     [
-        ("foo.txt", ".bash2gitlab/output_hashes/foo.txt.hash"),
-        ("bar.tar.gz", ".bash2gitlab/output_hashes/bar.tar.gz.hash"),
-        ("baz", ".bash2gitlab/output_hashes/baz.hash"),
-        ("dir/file.ext", ".bash2gitlab/output_hashes/dir/file.ext.hash"),
+        ("foo.txt", ".bash2yaml/output_hashes/foo.txt.hash"),
+        ("bar.tar.gz", ".bash2yaml/output_hashes/bar.tar.gz.hash"),
+        ("baz", ".bash2yaml/output_hashes/baz.hash"),
+        ("dir/file.ext", ".bash2yaml/output_hashes/dir/file.ext.hash"),
     ],
 )
 def test_partner_hash_file(tmp_path: Path, base_name, expected_hash_name):
@@ -80,10 +80,10 @@ def test_partner_hash_file(tmp_path: Path, base_name, expected_hash_name):
 @pytest.mark.parametrize(
     "hash_name, expected_base_name",
     [
-        (".bash2gitlab/output_hashes/foo.txt.hash", "foo.txt"),
-        (".bash2gitlab/output_hashes/bar.tar.gz.hash", "bar.tar.gz"),
-        (".bash2gitlab/output_hashes/baz.hash", "baz"),
-        (".bash2gitlab/output_hashes/dir/file.ext.hash", "dir/file.ext"),
+        (".bash2yaml/output_hashes/foo.txt.hash", "foo.txt"),
+        (".bash2yaml/output_hashes/bar.tar.gz.hash", "bar.tar.gz"),
+        (".bash2yaml/output_hashes/baz.hash", "baz"),
+        (".bash2yaml/output_hashes/dir/file.ext.hash", "dir/file.ext"),
         ("foo.txt.hash", "foo.txt"),  # Old-style sibling hash
         ("bar.tar.gz.hash", "bar.tar.gz"),  # Old-style sibling hash
     ],
@@ -104,7 +104,7 @@ def test_iter_target_pairs_empty(tmp_path: Path):
 def test_list_stray_files_no_strays(tmp_path: Path):
     """Tests that a directory with only valid pairs has no strays."""
     (tmp_path / "a.txt").touch()
-    hash_path = tmp_path / ".bash2gitlab" / "output_hashes" / "a.txt.hash"
+    hash_path = tmp_path / ".bash2yaml" / "output_hashes" / "a.txt.hash"
     hash_path.parent.mkdir(parents=True, exist_ok=True)
     hash_path.touch()
     assert list_stray_files(tmp_path) == []

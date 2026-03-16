@@ -4,7 +4,7 @@ import textwrap
 
 import pytest
 
-from bash2gitlab.commands.decompile_all import (
+from bash2yaml.commands.decompile_all import (
     bashify_script_items,
     create_script_filename,
     decompile_script_block,
@@ -12,7 +12,7 @@ from bash2gitlab.commands.decompile_all import (
     run_decompile_gitlab_file,
     run_decompile_gitlab_tree,
 )
-from bash2gitlab.utils.yaml_factory import get_yaml
+from bash2yaml.utils.yaml_factory import get_yaml
 
 SIMPLE_GITLAB_CI = textwrap.dedent("""\
     # Pragma: do-not-validate-schema
@@ -132,7 +132,7 @@ class TestDecompileVariablesBlock:
 
     def test_escapes_quotes_in_values(self, tmp_path):
         variables = {"MSG": 'say "hello"'}
-        _filename = decompile_variables_block(variables, "test", tmp_path)
+        decompile_variables_block(variables, "test", tmp_path)
         content = (tmp_path / "test_variables.sh").read_text()
         assert '\\"' in content
 

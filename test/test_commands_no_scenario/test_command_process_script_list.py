@@ -6,8 +6,8 @@ from ruamel.yaml.constructor import TaggedScalar
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 # Import the function to be tested
-from bash2gitlab.commands.compile_all import process_script_list
-from bash2gitlab.commands.compile_bash_reader import SourceSecurityError
+from bash2yaml.commands.compile_all import process_script_list
+from bash2yaml.commands.compile_bash_reader import SourceSecurityError
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def test_multiline_string_not_a_reference_is_kept_as_is(scripts_root):
     assert result == script_list
 
 
-@patch("bash2gitlab.plugins.get_pm")
+@patch("bash2yaml.plugins.get_pm")
 def test_plugin_hook_inlining(mock_get_pm, scripts_root):
     """Test that the pm.hook.inline_command is called and its result is used."""
     # Setup mock plugin manager and hook

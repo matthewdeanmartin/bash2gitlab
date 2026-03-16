@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-from bash2gitlab.commands.compile_all import run_compile_all
+from bash2yaml.commands.compile_all import run_compile_all
 
 # Initialize YAML parser for checking output
 yaml = YAML()
@@ -84,7 +84,7 @@ template_job:
         verifying inlining, variable merging, and file output.
         """
         try:
-            os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"] = "True"
+            os.environ["BASH2YAML_SKIP_ROOT_CHECKS"] = "True"
             input_dir, output_path = setup_project_structure
 
             # --- Run the main function ---
@@ -134,4 +134,4 @@ template_job:
 
             assert "variables" in template_data
         finally:
-            del os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"]
+            del os.environ["BASH2YAML_SKIP_ROOT_CHECKS"]

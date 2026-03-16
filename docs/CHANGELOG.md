@@ -94,12 +94,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Installation is `bash2gitlab` for core in the CI/build server or `bash2gitlab[all]` for all commands on your laptop.
+- Installation is `bash2yaml` for core in the CI/build server or `bash2yaml[all]` for all commands on your laptop.
   this will mitigate against supply chain risks as the core has very, very few 3rd party packages.
 
 ### Added
 
-- CLI option for `bash2gitlab run --in-file .gitlab-ci.yml` for best efforts to run a pipeline locally. This is not a
+- CLI option for `bash2yaml run --in-file .gitlab-ci.yml` for best efforts to run a pipeline locally. This is not a
   real runner!
 
 ## [0.8.22] - 2025-08-21
@@ -167,8 +167,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Interactive mode via bash2gitlab-interactive command
-- GUI via bash2gitlab-gui command
+- Interactive mode via bash2yaml-interactive command
+- GUI via bash2yaml-gui command
 
 ### Changed
 
@@ -233,7 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Minimize all "script as yaml lists" because they are not compatible with line continuation characters. No one should
-  use any version of bash2gitlab before 0.8.10.
+  use any version of bash2yaml before 0.8.10.
 
 ## [0.8.9] - 2025-08-11
 
@@ -360,7 +360,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - A `--format` option was a bad idea because all of the major yaml formatting tools are in various states of
-  unsupportedness and cause failures unrelated to bash2gitlab's outputs. Use your favorite orchestration tool, such as
+  unsupportedness and cause failures unrelated to bash2yaml's outputs. Use your favorite orchestration tool, such as
   make or just to format with a yaml formatter that works for you.
 
 ## [0.6.0] - 2025-07-30
@@ -396,7 +396,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Command line aliases are now bash2gitlab and b2gl. Previously had some copy-paste junk.
+- Command line aliases are now bash2yaml and b2gl. Previously had some copy-paste junk.
 
 ## [0.4.0] - 2025-07-27
 

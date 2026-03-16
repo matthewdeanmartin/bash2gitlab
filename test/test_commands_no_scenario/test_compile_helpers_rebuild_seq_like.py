@@ -2,7 +2,7 @@
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedSeq
 
-from bash2gitlab.commands.compile_all import rebuild_seq_like
+from bash2yaml.commands.compile_all import rebuild_seq_like
 
 
 def test_returns_plain_list_when_flag_false():

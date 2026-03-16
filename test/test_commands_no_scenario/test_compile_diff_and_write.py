@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-import bash2gitlab.commands.compile_all as m
-from bash2gitlab.commands.compile_all import write_compiled_file
-from bash2gitlab.utils.diff_helpers import diff_stats, unified_diff
+import bash2yaml.commands.compile_all as m
+from bash2yaml.commands.compile_all import write_compiled_file
+from bash2yaml.utils.diff_helpers import diff_stats, unified_diff
 
 # --- Helpers used in monkeypatching -------------------------------------------------
 
@@ -115,7 +115,7 @@ def test_dry_run_existing_change_returns_true(tmp_path: Path):
 
 def test_first_write_creates_file_and_hash(tmp_path: Path):
     out = tmp_path / "compiled.yml"
-    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "compiled.yml.hash"
+    hash_file = tmp_path / ".bash2yaml" / "output_hashes" / "compiled.yml.hash"
     assert not out.exists() and not hash_file.exists()
 
     result = write_compiled_file(out, "a: 1\n", tmp_path, dry_run=False)
@@ -129,7 +129,7 @@ def test_first_write_creates_file_and_hash(tmp_path: Path):
 
 def test_rewrite_when_hash_valid_and_new_differs(tmp_path: Path):
     out = tmp_path / "compiled.yml"
-    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "compiled.yml.hash"
+    hash_file = tmp_path / ".bash2yaml" / "output_hashes" / "compiled.yml.hash"
 
     # Seed with last-known content (file + matching .hash)
     last_known = "a: 1\n"
@@ -149,7 +149,7 @@ def test_rewrite_when_hash_valid_and_new_differs(tmp_path: Path):
 
 def test_skip_when_no_changes_structurally(tmp_path: Path):
     out = tmp_path / "compiled.yml"
-    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "compiled.yml.hash"
+    hash_file = tmp_path / ".bash2yaml" / "output_hashes" / "compiled.yml.hash"
 
     # Seed file + matching hash for "a: 1\n"
     content = "a: 1\n"

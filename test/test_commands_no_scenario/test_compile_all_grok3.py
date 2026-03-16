@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands.compile_all import infer_cli, run_compile_all
-from bash2gitlab.errors.exceptions import CompileError, ValidationFailed
-from bash2gitlab.utils.temp_env import temporary_env_var
+from bash2yaml.commands.compile_all import infer_cli, run_compile_all
+from bash2yaml.errors.exceptions import CompileError, ValidationFailed
+from bash2yaml.utils.temp_env import temporary_env_var
 
 # Configure logging for tests
 logging.basicConfig(level=logging.DEBUG)
@@ -47,7 +47,7 @@ echo "Hello, World!"
 
 def test_compile_single_script_reference(setup_dirs: tuple[Path, Path, Path, Path]):
     """Test compiling a .gitlab-ci.yml with a single script reference."""
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         uncompiled_dir, output_dir, yaml_file, script_file = setup_dirs
         output_file = output_dir / ".gitlab-ci.yml"
 
@@ -68,7 +68,7 @@ def test_compile_single_script_reference(setup_dirs: tuple[Path, Path, Path, Pat
 
 def test_dry_run_no_changes(setup_dirs: tuple[Path, Path, Path, Path]):
     """Test dry run mode does not write files but reports changes."""
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         uncompiled_dir, output_dir, yaml_file, _ = setup_dirs
         output_file = output_dir / ".gitlab-ci.yml"
 
@@ -81,7 +81,7 @@ def test_dry_run_no_changes(setup_dirs: tuple[Path, Path, Path, Path]):
 
 def test_no_changes_no_write(setup_dirs: tuple[Path, Path, Path, Path]):
     """Test that no changes result in no file write."""
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         uncompiled_dir, output_dir, yaml_file, script_file = setup_dirs
         output_dir / ".gitlab-ci.yml"
 
@@ -99,7 +99,7 @@ def test_no_changes_no_write(setup_dirs: tuple[Path, Path, Path, Path]):
 
 def test_manual_edit_prevents_overwrite(setup_dirs: tuple[Path, Path, Path, Path]):
     """Test that manual edits to output file prevent overwrite."""
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         uncompiled_dir, output_dir, yaml_file, _ = setup_dirs
         output_file = output_dir / ".gitlab-ci.yml"
 
@@ -118,7 +118,7 @@ def test_manual_edit_prevents_overwrite(setup_dirs: tuple[Path, Path, Path, Path
 
 def test_invalid_yaml_validation(setup_dirs: tuple[Path, Path, Path, Path]):
     """Test that invalid YAML output raises ValidationFailed."""
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         uncompiled_dir, output_dir, yaml_file, _ = setup_dirs
         output_dir / ".gitlab-ci.yml"
 
@@ -140,7 +140,7 @@ def test_invalid_yaml_validation(setup_dirs: tuple[Path, Path, Path, Path]):
 
 def test_global_variables(setup_dirs: tuple[Path, Path, Path, Path]):
     """Test inlining global variables from global_variables.sh."""
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         uncompiled_dir, output_dir, yaml_file, _ = setup_dirs
         output_file = output_dir / ".gitlab-ci.yml"
 
@@ -163,18 +163,18 @@ def test_global_variables(setup_dirs: tuple[Path, Path, Path, Path]):
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows path quirk")
 def test_infer_cli():
     """Test the infer_cli function generates correct command."""
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         input_dir = Path("/path/to/uncompiled")
         output_path = Path("/path/to/output")
 
         # Test without dry_run and parallelism
         command = infer_cli(input_dir, output_path).replace("C:", "")
-        assert command == f"bash2gitlab compile --in {input_dir} --out {output_path}"
+        assert command == f"bash2yaml compile --in {input_dir} --out {output_path}"
 
         # Test with dry_run
         command = infer_cli(input_dir, output_path, dry_run=True).replace("C:", "")
-        assert command == f"bash2gitlab compile --in {input_dir} --out {output_path} --dry-run"
+        assert command == f"bash2yaml compile --in {input_dir} --out {output_path} --dry-run"
 
         # Test with parallelism
         command = infer_cli(input_dir, output_path, parallelism=4).replace("C:", "")
-        assert command == f"bash2gitlab compile --in {input_dir} --out {output_path} --parallelism 4"
+        assert command == f"bash2yaml compile --in {input_dir} --out {output_path} --parallelism 4"

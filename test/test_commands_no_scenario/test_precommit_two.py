@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 
 # Adjust if your module path differs:
-import bash2gitlab.commands.precommit as mod
+import bash2yaml.commands.precommit as mod
 
 # ---------- Helpers ----------
 
 
 def write_pyproject(path: Path, input_dir: str = "ci", output_dir: str = "compiled") -> None:
     content = f"""
-[tool.bash2gitlab]
+[tool.bash2yaml]
 input_dir = "{input_dir}"
 output_dir = "{output_dir}"
 """
@@ -65,7 +65,7 @@ class DummyCfg:
 def clean_env(monkeypatch):
     # Ensure tests explicitly decide whether config comes from env
     for k in list(os.environ.keys()):
-        if k.startswith("BASH2GITLAB_"):
+        if k.startswith("BASH2YAML_"):
             monkeypatch.delenv(k, raising=False)
     yield
 
@@ -99,15 +99,15 @@ def test_install_requires_config_when_missing(tmp_path, swap_config):
     swap_config(DummyCfg(None, None))  # simulate no TOML and no env
     with pytest.raises(mod.PrecommitHookError) as ei:
         mod.install(repo)
-    assert "Missing bash2gitlab input/output" in str(ei.value)
+    assert "Missing bash2yaml input/output" in str(ei.value)
 
 
 def test_install_with_env_vars_only(tmp_path, monkeypatch, swap_config):
     repo = make_git_repo(tmp_path)
     # config object can be anything; env takes precedence
     swap_config(DummyCfg(None, None))
-    monkeypatch.setenv("BASH2GITLAB_INPUT_DIR", "ci")
-    monkeypatch.setenv("BASH2GITLAB_OUTPUT_DIR", "compiled")
+    monkeypatch.setenv("BASH2YAML_INPUT_DIR", "ci")
+    monkeypatch.setenv("BASH2YAML_OUTPUT_DIR", "compiled")
 
     mod.install(repo)
     hook = mod.hook_path(repo)

@@ -1,4 +1,4 @@
-## bash2gitlab - Code of Conduct
+## bash2yaml - Code of Conduct
 As contributors and maintainers of this project, we are dedicated to providing a respectful and harassment-free
 experience for everyone. We are committed to fostering an open and welcoming environment.
 

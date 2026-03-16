@@ -2,7 +2,7 @@ import argparse
 
 import pytest
 
-from bash2gitlab.utils.cli_suggestions import SmartParser
+from bash2yaml.utils.cli_suggestions import SmartParser
 
 
 @pytest.fixture()

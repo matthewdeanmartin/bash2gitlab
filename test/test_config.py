@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bash2gitlab import config as config_module
+from bash2yaml import config as config_module
 
 
 @pytest.fixture(autouse=True)
@@ -32,8 +32,8 @@ def reset_singleton_and_env():
 
 
 def test_load_from_bash2gitlab_toml(tmp_path: Path):
-    """Verify that config is loaded correctly from a .bash2gitlab.toml file."""
-    config_file = tmp_path / "bash2gitlab.toml"
+    """Verify that config is loaded correctly from a .bash2yaml.toml file."""
+    config_file = tmp_path / "bash2yaml.toml"
     config_file.write_text("""
         input_dir = "/path/from/toml"
         output_dir = "output/toml"
@@ -49,13 +49,13 @@ def test_load_from_bash2gitlab_toml(tmp_path: Path):
 
 
 def test_load_from_pyproject_toml(tmp_path: Path):
-    """Verify that config is loaded correctly from a [tool.bash2gitlab] section."""
+    """Verify that config is loaded correctly from a [tool.bash2yaml] section."""
     config_file = tmp_path / "pyproject.toml"
     config_file.write_text("""
         [tool.other_tool]
         setting = "ignore"
 
-        [tool.bash2gitlab]
+        [tool.bash2yaml]
         input_dir = "my_ci.yml"
         scripts_out = "decompileded_scripts/"
         dry_run = false
@@ -69,7 +69,7 @@ def test_load_from_pyproject_toml(tmp_path: Path):
 
 def test_env_var_overrides_file_config(tmp_path: Path):
     """Ensure environment variables take precedence over file settings."""
-    config_file = tmp_path / "bash2gitlab.toml"
+    config_file = tmp_path / "bash2yaml.toml"
     config_file.write_text("""
         input_dir = "/path/from/toml"
         output_dir = "output/toml"
@@ -80,8 +80,8 @@ def test_env_var_overrides_file_config(tmp_path: Path):
     with patch.dict(
         os.environ,
         {
-            "BASH2GITLAB_INPUT_DIR": "/path/from/env",
-            "BASH2GITLAB_VERBOSE": "true",
+            "BASH2YAML_INPUT_DIR": "/path/from/env",
+            "BASH2YAML_VERBOSE": "true",
         },
     ):
         config_module.reset_for_testing(config_path_override=config_file)
@@ -116,7 +116,7 @@ def test_env_var_overrides_file_config(tmp_path: Path):
 )
 def test_boolean_env_var_parsing(env_value: str, expected: bool):
     """Test various string representations for boolean environment variables."""
-    with patch.dict(os.environ, {"BASH2GITLAB_DRY_RUN": env_value}):
+    with patch.dict(os.environ, {"BASH2YAML_DRY_RUN": env_value}):
         config_module.reset_for_testing()
         config = config_module.config
         assert config.dry_run is expected
@@ -136,7 +136,7 @@ def test_no_config_file_found(tmp_path: Path):
 def test_config_file_finding_logic(tmp_path: Path):
     """Test that the config file is found in a parent directory."""
     # Create config in the root of tmp_path
-    root_config = tmp_path / "bash2gitlab.toml"
+    root_config = tmp_path / "bash2yaml.toml"
     root_config.write_text('input_dir = "found_in_root"')
 
     # Create a subdirectory and change CWD to it

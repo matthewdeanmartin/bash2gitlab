@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.utils.utils import remove_leading_blank_lines, short_path
+from bash2yaml.utils.utils import remove_leading_blank_lines, short_path
 
 # ----------------------
 # remove_leading_blank_lines

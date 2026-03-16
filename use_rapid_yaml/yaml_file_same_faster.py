@@ -4,7 +4,7 @@ from typing import Any
 
 import ryml  # module name: ryml
 
-from bash2gitlab.utils.yaml_file_same import normalize_for_compare
+from bash2yaml.utils.yaml_file_same import normalize_for_compare
 
 # keep your existing helpers
 # normalize_for_compare(...)

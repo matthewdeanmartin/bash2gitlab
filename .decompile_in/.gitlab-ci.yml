@@ -18,7 +18,7 @@ variables:
     description: common default
   # Adjust if your package name differs
   PACKAGE_DIR:
-    value: bash2gitlab
+    value: bash2yaml
     description: single module, no src
 
 stages:

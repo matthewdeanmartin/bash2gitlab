@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands import graph_all as graph_mod
+from bash2yaml.commands import graph_all as graph_mod
 
 # ---------- small helpers -----------------------------------------------------
 
@@ -123,7 +123,7 @@ def test_generate_dependency_graph_handles_yaml_error(tmp_path: Path):
     bad_rel = _norm_rel(root, bad_yaml)
     assert f'"{bad_rel}" [label="{bad_rel}"]' in dot
     # Likely no edges, but be tolerant — just ensure DOT header/footer exist
-    assert dot.startswith("digraph bash2gitlab {")
+    assert dot.startswith("digraph bash2yaml {")
     assert dot.strip().endswith("}")
 
 

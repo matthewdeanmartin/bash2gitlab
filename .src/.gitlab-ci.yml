@@ -1,5 +1,7 @@
-# Simple GitLab pipeline using uv. All bash is inlined; no Makefile logic.
-# Stages: test (lint, mypy, pytest), security (bandit), docs (checks & build), build (package), release (manual publish)
+# Simple GitLab pipeline using uv. All bash is inlined; no Makefile logic.
+
+# Stages: test (lint, mypy, pytest), security (bandit), docs (checks & build), build (package), release (manual publish)
+
 
 image: python:3.11-slim
 
@@ -8,8 +10,9 @@ variables:
   UV_LINK_MODE: copy
   UV_PROJECT_ENVIRONMENT: .venv
   UV_CACHE_DIR: .uv
-  # Adjust if your package name differs
-  PACKAGE_DIR: bash2gitlab
+  # Adjust if your package name differs
+
+  PACKAGE_DIR: bash2yaml
 
 stages:
   - test
@@ -18,7 +21,8 @@ stages:
   - build
   - release
 
-# Shared setup to avoid duplication
+# Shared setup to avoid duplication
+
 before_script:
   - set -euo pipefail
   - apt-get update -y && apt-get install -y --no-install-recommends curl git ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -38,9 +42,12 @@ cache:
     - .uv/
     - .cache/
 
-# ------------------------
-# TEST STAGE
-# ------------------------
+# ------------------------
+
+# TEST STAGE
+
+# ------------------------
+
 
 lint:
   stage: test
@@ -72,9 +79,12 @@ pytest:
       - htmlcov/
       - coverage.xml
 
-# ------------------------
-# SECURITY STAGE
-# ------------------------
+# ------------------------
+
+# SECURITY STAGE
+
+# ------------------------
+
 
 bandit:
   stage: security
@@ -92,9 +102,12 @@ build_docs:
     paths:
       - docs/
 
-# ------------------------
-# BUILD STAGE
-# ------------------------
+# ------------------------
+
+# BUILD STAGE
+
+# ------------------------
+
 
 build_package:
   stage: build
@@ -104,9 +117,12 @@ build_package:
     paths:
       - dist/
 
-# ------------------------
-# RELEASE STAGE (manual)
-# ------------------------
+# ------------------------
+
+# RELEASE STAGE (manual)
+
+# ------------------------
+
 
 publish_pypi:
   stage: release

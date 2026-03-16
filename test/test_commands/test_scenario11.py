@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from test.temp_change_dir import chdir_to_file_dir
 
-from bash2gitlab.commands.compile_all import run_compile_all
+from bash2yaml.commands.compile_all import run_compile_all
 
 
 def test_yaml_must_preserve_references_and_multiscripts():
@@ -12,7 +12,7 @@ def test_yaml_must_preserve_references_and_multiscripts():
         uncompiled = Path("scenario11/uncompiled")
         output_root = Path("scenario11/out")
         shutil.rmtree(str(Path(__file__).parent / "scenario11/out"), ignore_errors=True)
-        shutil.rmtree(str(Path(__file__).parent / "scenario11/uncompiled/.bash2gitlab"), ignore_errors=True)
+        shutil.rmtree(str(Path(__file__).parent / "scenario11/uncompiled/.bash2yaml"), ignore_errors=True)
 
         run_compile_all(uncompiled, output_root)
 

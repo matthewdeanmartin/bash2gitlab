@@ -11,7 +11,7 @@ Common needs:
 ## Makefile
 Makefile can be used to order jobs, somewhat like a gitlab pipeline.
 
-Bash2gitlab will generate a makefile when you decompile.
+Bash2Yaml will generate a makefile when you decompile.
 
 ## Justfile
 Justfile is like makefile, with fewer quirky design decisions.

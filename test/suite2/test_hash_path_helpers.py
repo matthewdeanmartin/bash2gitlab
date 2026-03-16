@@ -1,6 +1,6 @@
 """Tests for hash_path_helpers: path computation, migration, iteration."""
 
-from bash2gitlab.commands.hash_path_helpers import (
+from bash2yaml.commands.hash_path_helpers import (
     find_hash_file,
     get_old_hash_path,
     get_output_hash_path,
@@ -15,13 +15,13 @@ class TestGetOutputHashPath:
         out_base = tmp_path / "out"
         out_file = out_base / "ci.yml"
         result = get_output_hash_path(out_file, out_base)
-        assert result == out_base / ".bash2gitlab" / "output_hashes" / "ci.yml.hash"
+        assert result == out_base / ".bash2yaml" / "output_hashes" / "ci.yml.hash"
 
     def test_nested_file(self, tmp_path):
         out_base = tmp_path / "out"
         out_file = out_base / "sub" / "deploy.yml"
         result = get_output_hash_path(out_file, out_base)
-        assert result == out_base / ".bash2gitlab" / "output_hashes" / "sub" / "deploy.yml.hash"
+        assert result == out_base / ".bash2yaml" / "output_hashes" / "sub" / "deploy.yml.hash"
 
     def test_suffix_preserved(self, tmp_path):
         out_base = tmp_path / "out"
@@ -114,7 +114,7 @@ class TestMigrateHashFile:
 class TestGetSourceFileFromHash:
     def test_new_location(self, tmp_path):
         out_base = tmp_path / "out"
-        hash_file = out_base / ".bash2gitlab" / "output_hashes" / "ci" / "deploy.yml.hash"
+        hash_file = out_base / ".bash2yaml" / "output_hashes" / "ci" / "deploy.yml.hash"
         result = get_source_file_from_hash(hash_file, out_base)
         assert result == out_base / "ci" / "deploy.yml"
 
@@ -128,7 +128,7 @@ class TestGetSourceFileFromHash:
 class TestIterHashFilesInDirectory:
     def test_finds_new_hash_files(self, tmp_path):
         out_base = tmp_path / "out"
-        hash_dir = out_base / ".bash2gitlab" / "output_hashes"
+        hash_dir = out_base / ".bash2yaml" / "output_hashes"
         hash_dir.mkdir(parents=True)
         h = hash_dir / "ci.yml.hash"
         h.write_text("abc")

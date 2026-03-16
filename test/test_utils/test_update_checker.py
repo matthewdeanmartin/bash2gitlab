@@ -1,7 +1,7 @@
 import os
 from unittest import mock
 
-from bash2gitlab.utils.update_checker import _Color, can_use_color, check_for_updates, reset_cache
+from bash2yaml.utils.update_checker import _Color, can_use_color, check_for_updates, reset_cache
 
 
 def test_finds_newer_version():
@@ -31,7 +31,7 @@ def test_prerelease_check_finds_newer():
         assert "A new stable version of pandas is available" in result
 
 
-@mock.patch("bash2gitlab.utils.update_checker.can_use_color", return_value=True)
+@mock.patch("bash2yaml.utils.update_checker.can_use_color", return_value=True)
 def test_color_output_enabled(mock_color):
     """Test that ANSI color codes are present when color is enabled."""
     reset_cache("requests")

@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 # Locate the schemas directory relative to the package
-_SCHEMAS_DIR = Path(__file__).parent.parent.parent / "bash2gitlab" / "schemas"
+_SCHEMAS_DIR = Path(__file__).parent.parent.parent / "bash2yaml" / "schemas"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -96,7 +96,7 @@ class TestGitLabCISchema:
 class TestValidatorUsesBundledSchema:
     def test_validator_loads_fallback_without_network(self, tmp_path):
         """_load_fallback_schema returns a dict or None (None in dev if resources not resolved)."""
-        from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
+        from bash2yaml.utils.validate_pipeline import GitLabCIValidator
 
         v = GitLabCIValidator(cache_dir=str(tmp_path))
         schema = v._load_fallback_schema()
@@ -105,7 +105,7 @@ class TestValidatorUsesBundledSchema:
 
     def test_fallback_schema_is_same_as_bundled_file_if_loads(self, tmp_path):
         """If fallback loads, its top-level keys must match the schemas/ file."""
-        from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
+        from bash2yaml.utils.validate_pipeline import GitLabCIValidator
 
         bundled = _load_json(_SCHEMAS_DIR / "gitlab_ci_schema.json")
         v = GitLabCIValidator(cache_dir=str(tmp_path))
@@ -116,7 +116,7 @@ class TestValidatorUsesBundledSchema:
 
     def test_pragma_bypass_does_not_require_schema(self, tmp_path, monkeypatch):
         """Pragma bypass must short-circuit before any schema I/O."""
-        from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
+        from bash2yaml.utils.validate_pipeline import GitLabCIValidator
 
         v = GitLabCIValidator(cache_dir=str(tmp_path))
 
@@ -179,14 +179,14 @@ class TestMultiSchemaReadiness:
 
     def test_validator_cache_dir_is_configurable(self, tmp_path):
         """Cache dir must be injectable for isolation — critical for multi-target setup."""
-        from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
+        from bash2yaml.utils.validate_pipeline import GitLabCIValidator
 
         v = GitLabCIValidator(cache_dir=str(tmp_path))
         assert v.cache_dir == tmp_path
 
     def test_schema_url_is_a_string(self, tmp_path):
         """schema_url must be a string — the rewrite will make this target-dependent."""
-        from bash2gitlab.utils.validate_pipeline import GitLabCIValidator
+        from bash2yaml.utils.validate_pipeline import GitLabCIValidator
 
         v = GitLabCIValidator(cache_dir=str(tmp_path))
         assert isinstance(v.schema_url, str)

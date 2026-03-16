@@ -1,4 +1,4 @@
-from bash2gitlab.utils.parse_bash import extract_script_path
+from bash2yaml.utils.parse_bash import extract_script_path
 
 
 def test_extract_script():

@@ -4,7 +4,7 @@ load './test_helper.bash'
 @test "shows help and exits 0" {
   run_cli --help
   [ "$status" -eq 0 ]
-  [[ "$output" =~ "usage: bash2gitlab" ]]
+  [[ "$output" =~ "usage: bash2yaml" ]]
   [[ "$output" =~ "compile" ]]
   [[ "$output" =~ "lint" ]]
 }
@@ -12,5 +12,5 @@ load './test_helper.bash'
 @test "shows version and exits 0" {
   run_cli --version
   [ "$status" -eq 0 ]
-  [[ "$output" =~ "bash2gitlab " ]]
+  [[ "$output" =~ "bash2yaml " ]]
 }

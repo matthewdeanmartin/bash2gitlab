@@ -7,39 +7,39 @@ IN=test/test_commands/scenario2/src
 OUT=test/test_commands/scenario2/out
 set -eou pipefail
 echo "help..."
-bash2gitlab --help
+bash2yaml --help
 echo "compile help..."
-bash2gitlab compile --help
+bash2yaml compile --help
 echo "compile version..."
-bash2gitlab --version
+bash2yaml --version
 echo "compile (1)..."
-bash2gitlab compile --in "$IN" --out "$OUT"
+bash2yaml compile --in "$IN" --out "$OUT"
 echo "compile (2)..."
-bash2gitlab compile --in "$IN" --out "$OUT" --verbose
+bash2yaml compile --in "$IN" --out "$OUT" --verbose
 echo "compile (3)..."
-bash2gitlab compile --in "$IN" --out "$OUT" --dry-run
+bash2yaml compile --in "$IN" --out "$OUT" --dry-run
 echo "compile (4)..."
-bash2gitlab compile --in "$IN" --out "$OUT" --quiet
+bash2yaml compile --in "$IN" --out "$OUT" --quiet
 echo "Clean..."
 mkdir --parents tmp
-bash2gitlab clean --out tmp
+bash2yaml clean --out tmp
 rmdir tmp
 echo "graph..."
-bash2gitlab graph --in "$IN"
+bash2yaml graph --in "$IN"
 echo "Doctor..."
-bash2gitlab doctor # --in "$IN" --out "$OUT"
+bash2yaml doctor # --in "$IN" --out "$OUT"
 echo "Decompile dry run..."
-bash2gitlab decompile --in-folder "$OUT" --out tmp --dry-run
+bash2yaml decompile --in-folder "$OUT" --out tmp --dry-run
 echo "Detect uncompiled..."
-bash2gitlab detect-uncompiled  --in "$IN" --list-changed
+bash2yaml detect-uncompiled  --in "$IN" --list-changed
 echo "Detect drift"
-bash2gitlab detect-drift  --out "$OUT"
+bash2yaml detect-drift  --out "$OUT"
 echo "Show config..."
-bash2gitlab show-config
+bash2yaml show-config
 echo "Map deploy..."
-bash2gitlab map-deploy --dry-run
+bash2yaml map-deploy --dry-run
 echo "Commit map..."
-bash2gitlab commit-map --dry-run
-# bash2gitlab copy2local  --dry-run # needs live git repo
+bash2yaml commit-map --dry-run
+# bash2yaml copy2local  --dry-run # needs live git repo
 
 echo "done..."

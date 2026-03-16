@@ -13,9 +13,9 @@ teardown_tmpdir() {
 
 run_cli() {
   # Prefer installed entrypoint; fall back to python -m for repo checkouts
-  if command -v bash2gitlab >/dev/null 2>&1; then
-    run bash2gitlab "$@"
+  if command -v bash2yaml >/dev/null 2>&1; then
+    run bash2yaml "$@"
   else
-    run python -m bash2gitlab "$@"
+    run python -m bash2yaml "$@"
   fi
 }

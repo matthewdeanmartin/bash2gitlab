@@ -1,6 +1,6 @@
-# -------- Config (override on the CLI: make build IMAGE_NAME=youruser/bash2gitlab) --------
-IMAGE_NAME ?= matthewdeanmartin/bash2gitlab
-B2G_VERSION ?= 0.9.8           # bash2gitlab version to install in the image
+# -------- Config (override on the CLI: make build IMAGE_NAME=youruser/bash2yaml) --------
+IMAGE_NAME ?= matthewdeanmartin/bash2yaml
+B2G_VERSION ?= 0.9.8           # bash2yaml version to install in the image
 TAG ?= $(B2G_VERSION)          # image tag; default to the same as B2G version
 IMG := $(IMAGE_NAME):$(TAG)
 LATEST := $(IMAGE_NAME):latest

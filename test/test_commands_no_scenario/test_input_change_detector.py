@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import bash2gitlab.commands.input_change_detector as cd
+import bash2yaml.commands.input_change_detector as cd
 
 # --- Tests for Helper Functions ---
 

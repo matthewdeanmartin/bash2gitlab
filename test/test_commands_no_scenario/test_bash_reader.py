@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.commands.compile_bash_reader import inline_bash_source
+from bash2yaml.commands.compile_bash_reader import inline_bash_source
 
 
 def test_inline_bash_source_success_and_circular_dependency(tmp_path: Path):
@@ -12,7 +12,7 @@ def test_inline_bash_source_success_and_circular_dependency(tmp_path: Path):
     circular dependencies.
     """
     try:
-        os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"] = "True"
+        os.environ["BASH2YAML_SKIP_ROOT_CHECKS"] = "True"
         # --- Setup Test Files using pytest's tmp_path fixture ---
         helpers_dir = tmp_path / "helpers"
         helpers_dir.mkdir()
@@ -60,7 +60,7 @@ def test_inline_bash_source_success_and_circular_dependency(tmp_path: Path):
 
         assert result == expected_output
     finally:
-        del os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"]
+        del os.environ["BASH2YAML_SKIP_ROOT_CHECKS"]
 
 
 def test_inline_bash_source_file_not_found(tmp_path: Path):
@@ -68,7 +68,7 @@ def test_inline_bash_source_file_not_found(tmp_path: Path):
     Tests that FileNotFoundError is raised when a sourced script does not exist.
     """
     try:
-        os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"] = "True"
+        os.environ["BASH2YAML_SKIP_ROOT_CHECKS"] = "True"
         # --- Setup Test File ---
         main_sh = tmp_path / "main.sh"
         main_sh.write_text("source non_existent_file.sh\n")
@@ -80,4 +80,4 @@ def test_inline_bash_source_file_not_found(tmp_path: Path):
         # Optionally, check the exception message for clarity
         assert "non_existent_file.sh" in str(excinfo.value)
     finally:
-        del os.environ["BASH2GITLAB_SKIP_ROOT_CHECKS"]
+        del os.environ["BASH2YAML_SKIP_ROOT_CHECKS"]

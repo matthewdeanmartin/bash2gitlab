@@ -6,7 +6,7 @@
 
 | Name | Default Value | Description |
 |---|---|---|
-| `PACKAGE_DIR` | `bash2gitlab` | single module, no src |
+| `PACKAGE_DIR` | `bash2yaml` | single module, no src |
 | `PIP_DISABLE_PIP_VERSION_CHECK` | `1` | No need to check version if not interactive |
 | `UV_CACHE_DIR` | `.uv` | common default |
 | `UV_LINK_MODE` | `copy` | 'copy' is more docker friendly |

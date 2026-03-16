@@ -2,7 +2,7 @@
 
 import pytest
 
-from bash2gitlab.commands.compile_bash_reader import (
+from bash2yaml.commands.compile_bash_reader import (
     SOURCE_COMMAND_REGEX,
     PragmaError,
     SourceSecurityError,
@@ -87,12 +87,12 @@ class TestSecureJoin:
 @pytest.fixture(autouse=False)
 def skip_root_checks(monkeypatch):
     """Allow scripts outside the project root (needed when using tmp_path)."""
-    monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+    monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
 
 
 class TestReadBashScript:
     def test_simple_script(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         script = tmp_path / "run.sh"
         script.write_text("#!/bin/bash\necho hello\n")
         result = read_bash_script(script)
@@ -101,12 +101,12 @@ class TestReadBashScript:
         assert "#!/bin/bash" not in result
 
     def test_empty_script_raises(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         script = tmp_path / "empty.sh"
         script.write_text("#!/bin/bash\n   \n")
-        from bash2gitlab.errors.exceptions import Bash2GitlabError
+        from bash2yaml.errors.exceptions import Bash2YamlError
 
-        with pytest.raises((Bash2GitlabError, Exception)):
+        with pytest.raises((Bash2YamlError, Exception)):
             read_bash_script(script)
 
     def test_missing_file_raises(self, tmp_path):
@@ -114,7 +114,7 @@ class TestReadBashScript:
             read_bash_script(tmp_path / "missing.sh")
 
     def test_inlines_sourced_file(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         lib = tmp_path / "lib.sh"
         lib.write_text("echo from_lib\n")
         main = tmp_path / "main.sh"
@@ -126,7 +126,7 @@ class TestReadBashScript:
         assert "source lib.sh" not in result
 
     def test_dot_source_inlined(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         lib = tmp_path / "lib.sh"
         lib.write_text("MYVAR=42\n")
         main = tmp_path / "main.sh"
@@ -135,7 +135,7 @@ class TestReadBashScript:
         assert "MYVAR=42" in result
 
     def test_nested_source(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         deep = tmp_path / "deep.sh"
         deep.write_text("echo deep\n")
         mid = tmp_path / "mid.sh"
@@ -148,7 +148,7 @@ class TestReadBashScript:
         assert "echo main" in result
 
     def test_circular_source_skipped(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         a = tmp_path / "a.sh"
         b = tmp_path / "b.sh"
         a.write_text("echo a\nsource b.sh\n")
@@ -161,7 +161,7 @@ class TestReadBashScript:
         assert "echo b" in result
 
     def test_shebang_stripped_from_main_only(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         lib = tmp_path / "lib.sh"
         lib.write_text("#!/bin/bash\necho lib\n")
         main = tmp_path / "main.sh"
@@ -172,7 +172,7 @@ class TestReadBashScript:
         assert result.count("#!/bin/bash") == 1  # lib's shebang stays; main's gone
 
     def test_ends_with_newline(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         script = tmp_path / "run.sh"
         script.write_text("#!/bin/bash\necho hi")  # no trailing newline
         result = read_bash_script(script)
@@ -181,7 +181,7 @@ class TestReadBashScript:
 
 class TestInlineBashSourcePragmas:
     def test_do_not_inline_pragma_skips_sourcing(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         lib = tmp_path / "lib.sh"
         lib.write_text("echo lib\n")
         main = tmp_path / "main.sh"
@@ -193,7 +193,7 @@ class TestInlineBashSourcePragmas:
         assert "echo main" in result
 
     def test_do_not_inline_next_line_pragma(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         lib = tmp_path / "lib.sh"
         lib.write_text("echo lib\n")
         main = tmp_path / "main.sh"
@@ -204,7 +204,7 @@ class TestInlineBashSourcePragmas:
         assert "echo main" in result
 
     def test_start_end_do_not_inline_block(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         lib = tmp_path / "lib.sh"
         lib.write_text("echo lib\n")
         main = tmp_path / "main.sh"
@@ -220,7 +220,7 @@ class TestInlineBashSourcePragmas:
         assert "echo after" in result
 
     def test_nested_start_do_not_inline_raises(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         main = tmp_path / "main.sh"
         main.write_text(
             "#!/bin/bash\n"
@@ -233,14 +233,14 @@ class TestInlineBashSourcePragmas:
             read_bash_script(main)
 
     def test_end_without_start_raises(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         main = tmp_path / "main.sh"
         main.write_text("#!/bin/bash\n# Pragma: end-do-not-inline\necho x\n")
         with pytest.raises((PragmaError, Exception)):
             read_bash_script(main)
 
     def test_unclosed_block_raises(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         main = tmp_path / "main.sh"
         main.write_text("#!/bin/bash\n# Pragma: start-do-not-inline\necho x\n")
         with pytest.raises((PragmaError, Exception)):

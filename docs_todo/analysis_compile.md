@@ -1,8 +1,8 @@
-# Bash2GitLab Analysis and Design Document
+# Bash2Yaml Analysis and Design Document
 
 ## Executive Summary
 
-Bash2GitLab is a Python tool designed to solve a critical limitation in GitLab CI/CD pipelines: the
+Bash2Yaml is a Python tool designed to solve a critical limitation in GitLab CI/CD pipelines: the
 inability to reference external script files directly in pipeline definitions. The tool automatically inlines shell
 scripts and other interpreter-based scripts directly into GitLab CI YAML files, creating self-contained pipeline
 definitions that can be executed in any GitLab runner environment.
@@ -55,7 +55,7 @@ structure for development.
 ```
 Input YAML Files → YAML Parser → Script Detection → Multi-Language Inliner → YAML Reconstruction → Output Files
      ↓                ↓              ↓                    ↓                      ↓                ↓
-Uncompiled/       ruamel.yaml    Pattern Match     bash2gitlab readers    Preserve YAML      Compiled/
+Uncompiled/       ruamel.yaml    Pattern Match     bash2yaml readers    Preserve YAML      Compiled/
  ├── .yml          Parsing       Script blocks      ├── Bash scripts      Features          ├── .yml
  ├── scripts/                    (script:,          ├── Python modules    (tags, anchors,   ├── .hash
  └── variables.sh                before_script:,    └── Other interpreters comments)         └── ...
@@ -140,9 +140,9 @@ def compact_runs_to_literal(items: list[Any], *, min_lines: int = 2) -> list[Any
 
 ### Environment Variables
 
-- `BASH2GITLAB_SKIP_ROOT_CHECKS`: Disable path security checks
-- `BASH2GITLAB_MAX_INLINE_LEN`: Control maximum inline payload size
-- `BASH2GITLAB_ALLOW_ANY_EXT`: Allow inlining regardless of file extension
+- `BASH2YAML_SKIP_ROOT_CHECKS`: Disable path security checks
+- `BASH2YAML_MAX_INLINE_LEN`: Control maximum inline payload size
+- `BASH2YAML_ALLOW_ANY_EXT`: Allow inlining regardless of file extension
 
 ### Plugin System Integration
 

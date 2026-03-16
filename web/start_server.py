@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convenience script to start the bash2gitlab API server
+Convenience script to start the bash2yaml API server
 """
 
 import sys
@@ -8,11 +8,11 @@ import sys
 
 def main():
     """Start the API server with appropriate settings"""
-    # Check if bash2gitlab is installed
+    # Check if bash2yaml is installed
     try:
-        import bash2gitlab  # noqa
+        import bash2yaml  # noqa
     except ImportError:
-        print("❌ bash2gitlab package not found. Please install it first:")
+        print("❌ bash2yaml package not found. Please install it first:")
         print("   pip install -e .")
         sys.exit(1)
 
@@ -25,7 +25,7 @@ def main():
         print("   pip install fastapi uvicorn[standard] pydantic")
         sys.exit(1)
 
-    print("🚀 Starting bash2gitlab API Server...")
+    print("🚀 Starting bash2yaml API Server...")
     print("   This will start the server at http://localhost:8000")
     print("   Press Ctrl+C to stop")
     print()
@@ -35,7 +35,7 @@ def main():
         import uvicorn
 
         uvicorn.run(
-            "bash2gitlab_api:app",
+            "bash2yaml_api:app",
             host="localhost",
             port=8000,
             reload=True,  # Enable auto-reload for development

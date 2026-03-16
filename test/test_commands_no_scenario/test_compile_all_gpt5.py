@@ -8,8 +8,8 @@ import pytest
 from ruamel.yaml.scalarstring import LiteralScalarString
 
 # Module under test
-from bash2gitlab.commands import compile_all as mod
-from bash2gitlab.utils.yaml_factory import get_yaml
+from bash2yaml.commands import compile_all as mod
+from bash2yaml.utils.yaml_factory import get_yaml
 
 # ---------- helpers for monkeypatching ----------
 
@@ -188,7 +188,7 @@ def test_write_compiled_file_creates_and_hashes_then_no_rewrite_on_same_content(
     wrote = mod.write_compiled_file(target, content, tmp_path, dry_run=False)
     assert wrote is True
     assert target.exists()
-    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / ".gitlab-ci.yml.hash"
+    hash_file = tmp_path / ".bash2yaml" / "output_hashes" / ".gitlab-ci.yml.hash"
     assert hash_file.exists()
     assert hash_file.read_text(encoding="utf-8").strip() != ""
 

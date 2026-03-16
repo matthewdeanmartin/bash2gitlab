@@ -5,7 +5,7 @@ import textwrap
 
 import pytest
 
-from bash2gitlab.commands.compile_all import (
+from bash2yaml.commands.compile_all import (
     as_items,
     compact_runs_to_literal,
     get_banner,
@@ -14,7 +14,7 @@ from bash2gitlab.commands.compile_all import (
     write_compiled_file,
     write_yaml_and_hash,
 )
-from bash2gitlab.errors.exceptions import CompileError
+from bash2yaml.errors.exceptions import CompileError
 
 # ---------------------------------------------------------------------------
 # infer_cli / get_banner
@@ -39,11 +39,11 @@ class TestInferCli:
 
 class TestGetBanner:
     def test_contains_do_not_edit(self):
-        banner = get_banner("bash2gitlab compile --in in --out out")
+        banner = get_banner("bash2yaml compile --in in --out out")
         assert "DO NOT EDIT" in banner
 
     def test_contains_command(self):
-        cmd = "bash2gitlab compile --in in --out out"
+        cmd = "bash2yaml compile --in in --out out"
         banner = get_banner(cmd)
         assert cmd in banner
 
@@ -130,7 +130,7 @@ YAML_WITH_SCRIPT_REF = textwrap.dedent("""\
 @pytest.fixture(autouse=False)
 def skip_root_checks(monkeypatch):
     """Allow scripts outside the project root (needed when using tmp_path)."""
-    monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+    monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
 
 
 class TestInlineGitlabScripts:
@@ -140,7 +140,7 @@ class TestInlineGitlabScripts:
         assert "echo hello" in result
 
     def test_inlines_bash_script(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         script = tmp_path / "build.sh"
         script.write_text("#!/bin/bash\necho building\n")
         count, result = inline_gitlab_scripts(YAML_WITH_SCRIPT_REF, tmp_path, {}, tmp_path)
@@ -149,10 +149,10 @@ class TestInlineGitlabScripts:
         assert "BEGIN inline" in result
 
     def test_missing_script_raises(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
-        from bash2gitlab.errors.exceptions import Bash2GitlabError
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
+        from bash2yaml.errors.exceptions import Bash2YamlError
 
-        with pytest.raises((Bash2GitlabError, FileNotFoundError, Exception)):
+        with pytest.raises((Bash2YamlError, FileNotFoundError, Exception)):
             inline_gitlab_scripts(YAML_WITH_SCRIPT_REF, tmp_path, {}, tmp_path)
 
     def test_global_variables_merged(self, tmp_path):
@@ -194,7 +194,7 @@ class TestInlineGitlabScripts:
         assert "stages" in result
 
     def test_before_script_inlined(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         script = tmp_path / "setup.sh"
         script.write_text("echo setup\n")
         yaml_content = textwrap.dedent("""\
@@ -209,7 +209,7 @@ class TestInlineGitlabScripts:
         assert "echo setup" in result
 
     def test_after_script_inlined(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_SKIP_ROOT_CHECKS", "1")
+        monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         script = tmp_path / "teardown.sh"
         script.write_text("echo teardown\n")
         yaml_content = textwrap.dedent("""\

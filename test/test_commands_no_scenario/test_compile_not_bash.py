@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from bash2gitlab.commands.compile_not_bash import maybe_inline_interpreter_command, shell_single_quote
+from bash2yaml.commands.compile_not_bash import maybe_inline_interpreter_command, shell_single_quote
 
 
 def write_script(tmp_path: Path, name: str, content: str) -> Path:
@@ -74,7 +74,7 @@ def test_unexpected_extension_returns_none(tmp_path: Path):
 def test_large_payload_skips(tmp_path: Path, monkeypatch):
     script = write_script(tmp_path, "big.py", "x" * 20000)
     line = f"python {script.name}"
-    monkeypatch.setenv("BASH2GITLAB_MAX_INLINE_LEN", "1000")
+    monkeypatch.setenv("BASH2YAML_MAX_INLINE_LEN", "1000")
     result, _found_path = maybe_inline_interpreter_command(line, tmp_path)
     assert result is None
 

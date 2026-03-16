@@ -61,13 +61,13 @@ def run() -> None:
 
 **2. Shared `User-Agent` Identity Crisis (`utils/urllib3_helper.py`)**
 You set up a global singleton HTTP pool in `get_http_pool()` and hardcode the header:
-`"User-Agent": "bash2gitlab-update-checker/2"`
+`"User-Agent": "bash2yaml-update-checker/2"`
 This exact pool is reused in `commands/copy2local.py` to download repository ZIP archives. This means your tool requests source code from GitHub/GitLab while introducing itself as an "update checker".
 
 **3. GUI/TUI Process Spawning (`gui.py` & `tui.py`)**
-Both UI wrappers use `subprocess.Popen(["bash2gitlab", ...])` to run commands.
-If the tool is run from source, or within an unactivated virtual environment via `python -m bash2gitlab.gui`, the OS won't find `bash2gitlab` in the system `PATH` and will throw a `FileNotFoundError`.
-*Fix:* Use `[sys.executable, "-m", "bash2gitlab", ...]` to guarantee it leverages the current Python context.
+Both UI wrappers use `subprocess.Popen(["bash2yaml", ...])` to run commands.
+If the tool is run from source, or within an unactivated virtual environment via `python -m bash2yaml.gui`, the OS won't find `bash2yaml` in the system `PATH` and will throw a `FileNotFoundError`.
+*Fix:* Use `[sys.executable, "-m", "bash2yaml", ...]` to guarantee it leverages the current Python context.
 
 **4. Artifact Pragma Parsing Gotcha (`commands/compile_artifacts.py`)**
 The `ARTIFACT_PRAGMA_REGEX` is designed to look for: `^\s*-?\s*\#\s*Pragma: inline-artifact`.

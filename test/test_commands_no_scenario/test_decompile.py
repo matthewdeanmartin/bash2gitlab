@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-from bash2gitlab.commands.decompile_all import SHEBANG, create_script_filename, run_decompile_gitlab_file
+from bash2yaml.commands.decompile_all import SHEBANG, create_script_filename, run_decompile_gitlab_file
 
 # A sample GitLab CI configuration with various script definitions for comprehensive testing.
 SAMPLE_GITLAB_CI_CONTENT = """

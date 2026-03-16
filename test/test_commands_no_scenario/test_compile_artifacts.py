@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from bash2gitlab.commands.compile_artifacts import (
+from bash2yaml.commands.compile_artifacts import (
     create_zip_artifact,
     encode_artifact,
     format_size,
@@ -105,7 +105,7 @@ def test_artifact_too_large_returns_none(tmp_path: Path, monkeypatch):
     write_file(tmp_path, "large.txt", large_content)
 
     # Set a very small max size to ensure failure
-    monkeypatch.setenv("BASH2GITLAB_MAX_ARTIFACT_SIZE", "100")
+    monkeypatch.setenv("BASH2YAML_MAX_ARTIFACT_SIZE", "100")
 
     line = "- # Pragma: inline-artifact large.txt"
     result, _found_path = maybe_inline_artifact(line, tmp_path)

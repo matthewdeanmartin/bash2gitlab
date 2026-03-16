@@ -3,7 +3,7 @@
 ```
 BIP: 001
 Title: Inline Artifacts (Zipped Files and Folders) in GitLab CI YAML
-Author: bash2gitlab maintainers
+Author: bash2yaml maintainers
 Status: Draft
 Type: Feature
 Created: 2026-02-28
@@ -11,9 +11,9 @@ Created: 2026-02-28
 
 ## Abstract
 
-This BIP proposes extending bash2gitlab's inlining capabilities to support **artifact inlining**: the ability to inline
+This BIP proposes extending bash2yaml's inlining capabilities to support **artifact inlining**: the ability to inline
 entire directory trees as compressed, YAML-safe encoded strings at compile time, with automatic extraction at runtime.
-This addresses the same pain point that bash2gitlab solves for scripts—keeping reusable artifacts in a central
+This addresses the same pain point that bash2yaml solves for scripts—keeping reusable artifacts in a central
 repository while including them in distributed GitLab CI pipelines without relying on GitLab's `include:` mechanism or
 external dependencies.
 
@@ -21,7 +21,7 @@ external dependencies.
 
 ### Current Problem
 
-bash2gitlab currently solves the problem of inlining scripts (Bash, Python, PowerShell, etc.) from a central repository
+bash2yaml currently solves the problem of inlining scripts (Bash, Python, PowerShell, etc.) from a central repository
 into GitLab CI YAML files. However, many CI/CD workflows require not just scripts, but entire **directory trees** of
 supporting files:
 
@@ -39,7 +39,7 @@ Currently, users have three unsatisfactory options:
 
 ### Why This Matters
 
-Just as bash2gitlab lets users develop scripts with full IDE support and then inline them into YAML, **artifact inlining
+Just as bash2yaml lets users develop scripts with full IDE support and then inline them into YAML, **artifact inlining
 ** would let users:
 
 - Maintain artifact directories in a central repository with version control
@@ -47,14 +47,14 @@ Just as bash2gitlab lets users develop scripts with full IDE support and then in
 - Compile artifacts into self-contained YAML at build time
 - Have GitLab runners automatically extract artifacts at runtime without external dependencies
 
-This is a **compile-time inline + runtime extract** pattern, identical in spirit to how bash2gitlab currently handles
+This is a **compile-time inline + runtime extract** pattern, identical in spirit to how bash2yaml currently handles
 scripts.
 
 ## Specification
 
 ### 1. Pragma Syntax
 
-Artifact inlining uses the **Pragma** comment syntax, consistent with existing bash2gitlab pragmas. The pragma must be a **quoted string** in YAML to be properly parsed as a list item:
+Artifact inlining uses the **Pragma** comment syntax, consistent with existing bash2yaml pragmas. The pragma must be a **quoted string** in YAML to be properly parsed as a list item:
 
 ```yaml
 build-job:
@@ -88,7 +88,7 @@ build-job:
 
 ### 2. Compile-Time Behavior
 
-When `bash2gitlab compile` processes a YAML file containing `# Pragma: inline-artifact`:
+When `bash2yaml compile` processes a YAML file containing `# Pragma: inline-artifact`:
 
 1. **Read source directory/file** from `<source_path>` (relative to `input_dir`)
 2. **Compress** using specified format (default: zip)
@@ -133,7 +133,7 @@ This happens **transparently** as part of the `before_script`, `script`, or `aft
 ### 5. Size Limits and Safety
 
 - **Warning threshold:** 100 KB (compressed)
-- **Hard limit (default):** 1 MB (compressed) – Configurable via `BASH2GITLAB_MAX_ARTIFACT_SIZE`
+- **Hard limit (default):** 1 MB (compressed) – Configurable via `BASH2YAML_MAX_ARTIFACT_SIZE`
 - **Rationale:**
     - Base64 encoding increases size by ~33%
     - YAML spec has no size limit, but readability and Git performance degrade
@@ -141,7 +141,7 @@ This happens **transparently** as part of the `before_script`, `script`, or `aft
 
 ### 6. Security Considerations
 
-- **Path traversal protection:** Source paths must be within `input_dir` (existing bash2gitlab behavior)
+- **Path traversal protection:** Source paths must be within `input_dir` (existing bash2yaml behavior)
 - **Extraction safety:** Shim uses safe extraction flags to prevent zip bombs and path traversal
     - `unzip -q -d <dir> -` (safe: extracts to specific dir only)
     - `tar --no-same-owner -C <dir>` (safe: prevents ownership issues)
@@ -149,7 +149,7 @@ This happens **transparently** as part of the `before_script`, `script`, or `aft
 
 ### 7. Configuration Options
 
-**In `.bash2gitlab.toml`:**
+**In `.bash2yaml.toml`:**
 
 ```toml
 [compile]
@@ -161,12 +161,12 @@ artifact_checksum_validation = false  # Add checksum check to shim (future)
 
 **Environment Variables:**
 
-- `BASH2GITLAB_MAX_ARTIFACT_SIZE` – Max size in bytes
-- `BASH2GITLAB_ARTIFACT_FORMAT` – Default format
+- `BASH2YAML_MAX_ARTIFACT_SIZE` – Max size in bytes
+- `BASH2YAML_ARTIFACT_FORMAT` – Default format
 
 ### 8. Decompile Behavior
 
-When running `bash2gitlab decompile`:
+When running `bash2yaml decompile`:
 
 - **Detect inlined artifacts** by looking for `# >>> BEGIN inline-artifact` markers
 - **Extract base64 payload** and decode
@@ -285,7 +285,7 @@ lint:
 
 ### 2. **Git Submodules**
 
-- **Rejected:** Already a poor user experience; bash2gitlab aims to eliminate this
+- **Rejected:** Already a poor user experience; bash2yaml aims to eliminate this
 
 ### 3. **Inline as Plain Text (No Compression)**
 
@@ -345,8 +345,8 @@ lint:
 ## References
 
 - PEP 1 – PEP Purpose and Guidelines (Python Enhancement Proposals)
-- bash2gitlab existing script inlining: `compile_not_bash.py`
-- bash2gitlab source inlining: `compile_bash_reader.py`
+- bash2yaml existing script inlining: `compile_not_bash.py`
+- bash2yaml source inlining: `compile_bash_reader.py`
 - GitLab CI YAML reference: https://docs.gitlab.com/ee/ci/yaml/
 
 ## Copyright

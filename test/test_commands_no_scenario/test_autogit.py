@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-import bash2gitlab.commands.autogit as autogit_mod
-from bash2gitlab.commands.autogit import run_autogit
-from bash2gitlab.errors.exceptions import ConfigInvalid
+import bash2yaml.commands.autogit as autogit_mod
+from bash2yaml.commands.autogit import run_autogit
+from bash2yaml.errors.exceptions import ConfigInvalid
 
 
 @dataclass

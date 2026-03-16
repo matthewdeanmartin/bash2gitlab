@@ -1,4 +1,4 @@
-import bash2gitlab
-import bash2gitlab.__main__
+import bash2yaml
+import bash2yaml.__main__
 
-bash2gitlab.__main__.main()
+bash2yaml.__main__.main()

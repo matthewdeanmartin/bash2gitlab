@@ -2,9 +2,9 @@
 
 ## decompileding
 
-bash2gitlab decompileding is not necessarily opinionated.
+bash2yaml decompileding is not necessarily opinionated.
 
-- Decompile your `.gitlab-ci.yml` or other template with `bash2gitlab decompile`
+- Decompile your `.gitlab-ci.yml` or other template with `bash2yaml decompile`
 - Open in your IDE for syntax highlighting
 - Lint with shellcheck
 - Find bugs and edit your original yaml to fix via copy-paste.
@@ -14,7 +14,7 @@ Round trip decompile-compile is not guaranteed, yaml is too quirky.
 
 ## Compiling
 
-bash2gitlab compilation is a somewhat opinionated workflow and make the most sense when you are using a centralized
+bash2yaml compilation is a somewhat opinionated workflow and make the most sense when you are using a centralized
 repo for your gitlab templates.
 
 ## Repo setup

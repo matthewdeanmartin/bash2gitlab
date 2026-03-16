@@ -1,9 +1,9 @@
 # DO NOT EDIT
-# This is a compiled file, compiled with bash2gitlab
+# This is a compiled file, compiled with bash2yaml
 # Recompile instead of editing this file.
 #
 # Compiled with the command: 
-#     bash2gitlab compile --in C:\github\bash2gitlab\test\test_commands\scenario_artifact_inline\uncompiled --out C:\github\bash2gitlab\test\test_commands\scenario_artifact_inline\.out
+#     bash2yaml compile --in C:\github\bash2gitlab\test\test_commands\scenario_artifact_inline\uncompiled --out C:\github\bash2gitlab\test\test_commands\scenario_artifact_inline\.out
 
 test-artifact-inline:
   stage: test

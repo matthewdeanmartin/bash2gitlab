@@ -4,7 +4,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from bash2gitlab.utils.dotenv import (
+from bash2yaml.utils.dotenv import (
     env_vars_to_simple_dict,
     parse_env_file,
     parse_env_file_with_descriptions,

@@ -41,16 +41,16 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    # "Programming Language :: Python :: 3.14", # rtoml doesn't support
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.urls]
-Repository = "https://github.com/matthewdeanmartin/bash2gitlab"
-Documentation = "https://bash2gitlab.readthedocs.io/en/latest/"
-Changelog = "https://github.com/matthewdeanmartin/bash2gitlab/blob/main/CHANGELOG.md"
+Repository = "https://github.com/matthewdeanmartin/bash2yaml"
+Documentation = "https://bash2yaml.readthedocs.io/en/latest/"
+Changelog = "https://github.com/matthewdeanmartin/bash2yaml/blob/main/CHANGELOG.md"
 
-homepage = "https://github.com/matthewdeanmartin/bash2gitlab"
-issues = "https://github.com/matthewdeanmartin/bash2gitlab/issues/"
+homepage = "https://github.com/matthewdeanmartin/bash2yaml"
+issues = "https://github.com/matthewdeanmartin/bash2yaml/issues/"
 # support – e.g. chat or forum - TODO
 
 [project.optional-dependencies]
@@ -81,9 +81,9 @@ all = [
 ]
 
 #[project.optional-dependencies]
-#chat = ["bash2gitlab-chat"]
+#chat = ["bash2yaml-chat"]
 #all = [
-#    "bash2gitlab-chat",
+#    "bash2yaml-chat",
 #]
 
 [dependency-groups]
@@ -140,31 +140,40 @@ dev = [
 default-groups = "all"
 
 [tool.uv.sources]
-bash2gitlab = { workspace = true }
+bash2yaml = { workspace = true }
 
 [tool.uv.workspace]
 members = ["./",
     # App plugins
-    "plugins/bash2gitlab_chat",
-    "plugins/bash2gitlab_issue_tracker",
-    "plugins/bash2gitlab_issue_tracker_gh_sync",
-    # data tags plugins
-    "plugins/bash2gitlab_universal",
-    "plugins/bash2gitlab_to_sqlite"
+    "plugins/bash2yaml_sample",
 ]
 
 [project.scripts]
-bash2gitlab = "bash2gitlab.__main__:main"
-b2gl = "bash2gitlab.__main__:main"
+bash2yaml = "bash2yaml.__main__:main"
+b2y = "bash2yaml.__main__:main"
 
-bash2gitlab-tui = "bash2gitlab.tui:main"
-b2gl-tui = "bash2gitlab.tui:main"
+bash2yaml-tui = "bash2yaml.tui:main"
+b2y-tui = "bash2yaml.tui:main"
 
-bash2gitlab-gui = "bash2gitlab.gui:main"
-b2gl-gui = "bash2gitlab.gui:main"
+bash2yaml-gui = "bash2yaml.gui:main"
+b2y-gui = "bash2yaml.gui:main"
 
-bash2gitlab-interactive = "bash2gitlab.interactive:main"
-b2gl-interactive = "bash2gitlab.interactive:main"
+bash2yaml-interactive = "bash2yaml.interactive:main"
+b2y-interactive = "bash2yaml.interactive:main"
+
+# legacy names
+bash2gitlab = "bash2yaml.__main__:main"
+b2gl = "bash2yaml.__main__:main"
+
+bash2gitlab-tui = "bash2yaml.tui:main"
+b2gl-tui = "bash2yaml.tui:main"
+
+bash2gitlab-gui = "bash2yaml.gui:main"
+b2gl-gui = "bash2yaml.gui:main"
+
+bash2gitlab-interactive = "bash2yaml.interactive:main"
+b2gl-interactive = "bash2yaml.interactive:main"
+
 
 [build-system]
 requires = ["hatchling"]
@@ -172,19 +181,19 @@ build-backend = "hatchling.build"
 
 
 [tool.hatch.build.targets.wheel.sources]
-"schemas" = "bash2gitlab/schemas"
+"schemas" = "bash2yaml/schemas"
 
 [tool.hatch.build.targets.wheel]
-packages = ["bash2gitlab"]
+packages = ["bash2yaml"]
 include = [
-    "bash2gitlab/**/*.py",
-    "bash2gitlab/schemas/**/*.json",
-    "bash2gitlab/py.typed",
+    "bash2yaml/**/*.py",
+    "bash2yaml/schemas/**/*.json",
+    "bash2yaml/py.typed",
     "/README.md", "LICENSE",
 ]
 
 [tool.hatch.build.targets.sdist]
-include = ["/README.md", "LICENSE", "/bash2gitlab", "/tests"]
+include = ["/README.md", "LICENSE", "/bash2yaml", "/tests"]
 
 
 [tool.black]
@@ -325,10 +334,10 @@ vulture = { name = "vulture", version = "*", schema = "semver" }
 
 
 [tool.bug_trail]
-app_name = "bash2gitlab"
+app_name = "bash2yaml"
 app_author = "matth"
-source_folder = "bash2gitlab"
+source_folder = "bash2yaml"
 # ctags_file = "code_tags.tags"
 
-# [tool.bash2gitlab]
+# [tool.bash2yaml]
 # nothing yet

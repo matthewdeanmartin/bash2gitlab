@@ -1,6 +1,6 @@
 # Documentation Skills for AI Contributors
 
-This guide explains how to update documentation in bash2gitlab. Documentation consists of three areas: README.md, the readthedocs website in `/docs/`, and Python docstrings.
+This guide explains how to update documentation in bash2yaml. Documentation consists of three areas: README.md, the readthedocs website in `/docs/`, and Python docstrings.
 
 ## Critical Rule: ALWAYS Run Formatters
 
@@ -33,7 +33,7 @@ The main project documentation. Contains installation, quick start, usage exampl
 
 ### 2. ReadTheDocs Site (/docs/)
 
-Detailed documentation in `/docs/` rendered at https://bash2gitlab.readthedocs.io/
+Detailed documentation in `/docs/` rendered at https://bash2yaml.readthedocs.io/
 
 **Structure:**
 
@@ -191,7 +191,7 @@ When updating documentation for a new feature:
 1. **Update docstrings** in the relevant Python files
 
    ```bash
-   # Edit bash2gitlab/commands/new_feature.py
+   # Edit bash2yaml/commands/new_feature.py
    make black
    make check_docs
    ```

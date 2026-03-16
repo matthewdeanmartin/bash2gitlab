@@ -4,7 +4,7 @@ from ruamel.yaml import CommentedMap
 from ruamel.yaml.comments import TaggedScalar
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from bash2gitlab.commands.compile_all import compact_runs_to_literal
+from bash2yaml.commands.compile_all import compact_runs_to_literal
 
 
 def is_lit(obj):

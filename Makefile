@@ -27,28 +27,28 @@ clean: clean-pyc clean-test
 # tests are often slow and linting is fast, so run tests on linted code.
 test: clean uv.lock install_plugins
 	@echo "Running unit tests"
-	# $(VENV) pytest --doctest-modules bash2gitlab
+	# $(VENV) pytest --doctest-modules bash2yaml
 	# $(VENV) python -m unittest discover
-	$(VENV) pytest test -vv -n 2 --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
+	$(VENV) pytest test -vv -n 2 --cov=bash2yaml --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
 	$(VENV) bash ./scripts/basic_checks.sh
 #	$(VENV) bash basic_test_with_logging.sh
 
 .PHONY: test-summary
 test-summary: clean uv.lock install_plugins
 	@echo "Running tests with summary output"
-	$(VENV) pytest test -q --tb=short --no-header --cov=bash2gitlab --cov-fail-under 48 --cov-branch --timeout=5 --session-timeout=600
+	$(VENV) pytest test -q --tb=short --no-header --cov=bash2yaml --cov-fail-under 48 --cov-branch --timeout=5 --session-timeout=600
 	$(VENV) bash ./scripts/basic_checks.sh
 
 .PHONY: test-llm
 test-llm: clean uv.lock install_plugins
 	@echo "Running tests (LLM-optimized output)"
-	NO_COLOR=1 $(VENV) pytest test -q --tb=line --no-header --color=no --cov=bash2gitlab --cov-fail-under 48 --cov-branch --cov-report=term-missing:skip-covered --timeout=5 --session-timeout=600 2>&1 | head -100
+	NO_COLOR=1 $(VENV) pytest test -q --tb=line --no-header --color=no --cov=bash2yaml --cov-fail-under 48 --cov-branch --cov-report=term-missing:skip-covered --timeout=5 --session-timeout=600 2>&1 | head -100
 	$(VENV) bash ./scripts/basic_checks.sh
 
 .PHONY: test-ci
 test-ci: clean uv.lock install_plugins
 	@echo "Running tests (CI mode)"
-	$(VENV) pytest test -v -n auto --tb=short --cov=bash2gitlab --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
+	$(VENV) pytest test -v -n auto --tb=short --cov=bash2yaml --cov-report=html --cov-fail-under 48 --cov-branch --cov-report=xml --junitxml=junit.xml -o junit_family=legacy --timeout=5 --session-timeout=600
 	$(VENV) bash ./scripts/basic_checks.sh
 
 .PHONY: isort
@@ -72,9 +72,9 @@ endif
 black: isort jiggle_version
 	@echo "Formatting code"
 	$(VENV) metametameta pep621
-	$(VENV) black bash2gitlab # --exclude .venv
+	$(VENV) black bash2yaml # --exclude .venv
 	$(VENV) black test # --exclude .venv
-	$(VENV) git2md bash2gitlab --ignore __init__.py __pycache__ --output SOURCE.md
+	$(VENV) git2md bash2yaml --ignore __init__.py __pycache__ --output SOURCE.md
 
 .PHONY: pre-commit
 pre-commit: isort black
@@ -85,7 +85,7 @@ pre-commit: isort black
 .PHONY: bandit
 bandit:
 	@echo "Security checks"
-	$(VENV) bandit bash2gitlab -r --quiet
+	$(VENV) bandit bash2yaml -r --quiet
 
 
 
@@ -93,7 +93,7 @@ bandit:
 pylint:  isort black
 	@echo "Linting with pylint"
 	$(VENV) ruff check --fix
-	$(VENV) pylint bash2gitlab --fail-under 9.8
+	$(VENV) pylint bash2yaml --fail-under 9.8
 
 # for when using -j (jobs, run in parallel)
 .NOTPARALLEL: /isort /black
@@ -106,13 +106,13 @@ quick-check: mypy bandit
 llm-check: uv.lock
 	@echo "Running LLM-optimized checks"
 	@echo "→ Type checking..."
-	@NO_COLOR=1 $(VENV) mypy bash2gitlab --ignore-missing-imports --check-untyped-defs 2>&1 | head -20
+	@NO_COLOR=1 $(VENV) mypy bash2yaml --ignore-missing-imports --check-untyped-defs 2>&1 | head -20
 	@echo "→ Security scanning..."
-	@if NO_COLOR=1 $(VENV) bandit bash2gitlab -r --quiet 2>&1 | grep -v "nosec encountered" | grep -v "^\[" > /tmp/bandit_output.txt 2>&1; then \
+	@if NO_COLOR=1 $(VENV) bandit bash2yaml -r --quiet 2>&1 | grep -v "nosec encountered" | grep -v "^\[" > /tmp/bandit_output.txt 2>&1; then \
 		if [ -s /tmp/bandit_output.txt ]; then cat /tmp/bandit_output.txt; fi; \
 	fi; rm -f /tmp/bandit_output.txt || true
 	@echo "→ Running tests..."
-	@NO_COLOR=1 $(VENV) pytest test -q --tb=line --no-header --color=no --cov=bash2gitlab --cov-fail-under 48 --cov-branch --cov-report=term:skip-covered --timeout=5 --session-timeout=600 2>&1 | tail -50
+	@NO_COLOR=1 $(VENV) pytest test -q --tb=line --no-header --color=no --cov=bash2yaml --cov-fail-under 48 --cov-branch --cov-report=term:skip-covered --timeout=5 --session-timeout=600 2>&1 | tail -50
 	@echo "✅ LLM checks complete"
 
 .PHONY: ci-check
@@ -136,15 +136,15 @@ publish: test
 .PHONY: mypy
 mypy:
 	$(VENV) echo $$PYTHONPATH
-	$(VENV) mypy bash2gitlab --ignore-missing-imports --check-untyped-defs
+	$(VENV) mypy bash2yaml --ignore-missing-imports --check-untyped-defs
 
 
 check_docs:
-	$(VENV) interrogate bash2gitlab --verbose  --fail-under 70
+	$(VENV) interrogate bash2yaml --verbose  --fail-under 70
 	$(VENV) pydoctest --config .pydoctest.json | grep -v "__init__" | grep -v "__main__" | grep -v "Unable to parse"
 
 make_docs:
-	pdoc bash2gitlab --html -o docs --force
+	pdoc bash2yaml --html -o docs --force
 
 check_md:
 	$(VENV) linkcheckMarkdown README.md
@@ -153,10 +153,10 @@ check_md:
 
 
 check_spelling:
-	$(VENV) pylint bash2gitlab --enable C0402 --rcfile=.pylintrc_spell
+	$(VENV) pylint bash2yaml --enable C0402 --rcfile=.pylintrc_spell
 	$(VENV) pylint docs --enable C0402 --rcfile=.pylintrc_spell
 	$(VENV) codespell README.md --ignore-words=private_dictionary.txt
-	$(VENV) codespell bash2gitlab --ignore-words=private_dictionary.txt
+	$(VENV) codespell bash2yaml --ignore-words=private_dictionary.txt
 	$(VENV) codespell docs --ignore-words=private_dictionary.txt
 
 check_changelog:
@@ -170,8 +170,8 @@ check_self:
 	$(VENV) ./scripts/dog_food.sh
 
 #audit:
-#	# $(VENV) python -m bash2gitlab audit
-#	$(VENV) tool_audit single bash2gitlab --version=">=2.0.0"
+#	# $(VENV) python -m bash2yaml audit
+#	$(VENV) tool_audit single bash2yaml --version=">=2.0.0"
 
 install_plugins:
 	echo "N/A"
@@ -181,19 +181,19 @@ issues:
 	echo "N/A"
 
 core_all_tests:
-	./scripts/exercise_core_all.sh bash2gitlab "compile --in examples/compile/src --out examples/compile/out --dry-run"
+	./scripts/exercise_core_all.sh bash2yaml "compile --in examples/compile/src --out examples/compile/out --dry-run"
 	uv sync --all-extras
 
 update-schema:
-	@mkdir -p bash2gitlab/schemas
+	@mkdir -p bash2yaml/schemas
 	@echo "Downloading GitLab CI schema..."
-	@if curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json" -o bash2gitlab/schemas/gitlab_ci_schema.json ; then \
+	@if curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/ci.json" -o bash2yaml/schemas/gitlab_ci_schema.json ; then \
 		echo "✅ Schema saved"; \
 	else \
 		echo "⚠️  Warning: Failed to download schema"; \
 	fi
 	@echo "Downloading NOTICE..."
-	@if curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/NOTICE?ref_type=heads" -o bash2gitlab/schemas/NOTICE.txt ; then \
+	@if curl -fsSL "https://gitlab.com/gitlab-org/gitlab/-/raw/master/app/assets/javascripts/editor/schema/NOTICE?ref_type=heads" -o bash2yaml/schemas/NOTICE.txt ; then \
 		echo "✅ NOTICE saved"; \
 	else \
 		echo "⚠️  Warning: Failed to download NOTICE"; \

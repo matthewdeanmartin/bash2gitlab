@@ -8,7 +8,7 @@ It wants a shebang or a special comment to indicate what shell is active.
 #!/bin/bash
 ```
 
-bash2gitlab strips off the shebang.
+bash2yaml strips off the shebang.
 
 It might not resolve the location of you script with 
 the same base folder you're using, so you can specify where

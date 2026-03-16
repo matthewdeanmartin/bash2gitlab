@@ -419,7 +419,7 @@ which CI system the compiled YAML runs on.
 
 ## Feature: `doctor` Command Expansion
 
-The current `doctor` checks the environment for bash2gitlab prerequisites.
+The current `doctor` checks the environment for bash2yaml prerequisites.
 
 With multiple platforms, `doctor` becomes a per-target health check:
 
@@ -497,4 +497,4 @@ MIT License. Plugin-extensible. Built on a proven core.
 
 ---
 
-*Built on bash2gitlab v0.9.10 — production-stable since 2024.*
+*Built on bash2yaml v0.9.10 — production-stable since 2024.*

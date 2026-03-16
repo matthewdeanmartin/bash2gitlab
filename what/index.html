@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>bash2gitlab - Accessible Web Interface</title>
+    <title>bash2yaml - Accessible Web Interface</title>
     <style>
         :root {
             --primary: #0066cc;
@@ -306,12 +306,12 @@
         </div>
 
         <header>
-            <h1>bash2gitlab</h1>
+            <h1>bash2yaml</h1>
             <p>Accessible Web Interface for GitLab CI Template Management</p>
         </header>
 
         <main class="main-content">
-            <form id="bash2gitlab-form" role="form" aria-label="bash2gitlab Configuration">
+            <form id="bash2yaml-form" role="form" aria-label="bash2yaml Configuration">
                 <div class="form-grid">
                     <!-- Left Column -->
                     <div>
@@ -445,7 +445,7 @@
                      id="output-log"
                      aria-live="polite"
                      aria-label="Operation output log"
-                     tabindex="0">Welcome to bash2gitlab Web Interface!
+                     tabindex="0">Welcome to bash2yaml Web Interface!
 Ready to process your GitLab CI templates.
 
 Use Tab to navigate, Enter to activate buttons.
@@ -759,7 +759,7 @@ Enable audio feedback for spoken notifications.
             };
 
             // Save to localStorage (in real app, would save to server/file)
-            localStorage.setItem('bash2gitlab-config', JSON.stringify(config));
+            localStorage.setItem('bash2yaml-config', JSON.stringify(config));
 
             const log = document.getElementById('output-log');
             log.textContent += `\n💾 ${getTranslation('configSaved')}\n`;
@@ -770,7 +770,7 @@ Enable audio feedback for spoken notifications.
 
         function loadConfig() {
             try {
-                const saved = localStorage.getItem('bash2gitlab-config');
+                const saved = localStorage.getItem('bash2yaml-config');
                 if (saved) {
                     const config = JSON.parse(saved);
 
@@ -827,7 +827,7 @@ Enable audio feedback for spoken notifications.
         // Initialize on load
         document.addEventListener('DOMContentLoaded', () => {
             loadConfig();
-            announce("bash2gitlab web interface loaded. Use keyboard shortcuts: Ctrl+Enter to run, Ctrl+S to save, Escape to stop.");
+            announce("bash2yaml web interface loaded. Use keyboard shortcuts: Ctrl+Enter to run, Ctrl+S to save, Escape to stop.");
         });
 
         // Add focus management for better keyboard navigation

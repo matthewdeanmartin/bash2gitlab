@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from bash2gitlab.commands.best_effort_runner import LocalGitLabRunner
+from bash2yaml.commands.best_effort_runner import LocalGitLabRunner
 
 
 # Example test case

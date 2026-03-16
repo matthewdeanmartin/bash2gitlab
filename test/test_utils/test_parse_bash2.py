@@ -1,7 +1,7 @@
 import pytest
 
 # Adjust the import to match your actual module location if different
-from bash2gitlab.utils.parse_bash import extract_script_path
+from bash2yaml.utils.parse_bash import extract_script_path
 
 # ----------------------------- POSITIVE CASES --------------------------------
 

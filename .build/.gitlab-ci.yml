@@ -1,9 +1,9 @@
 # DO NOT EDIT
-# This is a compiled file, compiled with bash2gitlab
+# This is a compiled file, compiled with bash2yaml
 # Recompile instead of editing this file.
 #
 # Compiled with the command: 
-#     bash2gitlab compile --in .src --out .build
+#     bash2yaml compile --in .src --out .build
 
 # Simple GitLab pipeline using uv. All bash is inlined; no Makefile logic.
 
@@ -17,7 +17,7 @@ variables:
   UV_LINK_MODE: copy
   UV_PROJECT_ENVIRONMENT: .venv
   UV_CACHE_DIR: .uv
-  PACKAGE_DIR: bash2gitlab
+  PACKAGE_DIR: bash2yaml
 stages:
 - test
 - security
@@ -63,7 +63,7 @@ lint:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     uv run ruff format .
@@ -82,7 +82,7 @@ mypy:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     uv run mypy "$PACKAGE_DIR" --ignore-missing-imports --check-untyped-defs
@@ -97,7 +97,7 @@ precommit:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     uv run pre-commit run --all-files
@@ -113,7 +113,7 @@ pytest:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     uv run pytest test -vv \
@@ -151,7 +151,7 @@ bandit:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     uv run bandit "$PACKAGE_DIR" -r --quiet
@@ -166,7 +166,7 @@ check_docs:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     uv run interrogate "$PACKAGE_DIR" --verbose --fail-under 70
@@ -190,7 +190,7 @@ build_docs:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     uv run pdoc "$PACKAGE_DIR" --html -o docs --force
@@ -216,7 +216,7 @@ build_package:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     rm -rf dist
@@ -248,7 +248,7 @@ publish_pypi:
     export UV_LINK_MODE="copy"
     export UV_PROJECT_ENVIRONMENT=".venv"
     export UV_CACHE_DIR=".uv"
-    export PACKAGE_DIR="bash2gitlab"
+    export PACKAGE_DIR="bash2yaml"
     fi
 
     exit 0

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 # Import the unit under test
-from bash2gitlab.commands.graph_all import format_dot_output, generate_dependency_graph
+from bash2yaml.commands.graph_all import format_dot_output, generate_dependency_graph
 
 # ----- Helpers -----------------------------------------------------------------
 
@@ -82,7 +82,7 @@ echo C
     dot = generate_dependency_graph(root, open_graph_in_browser=False)
 
     # Basic sanity
-    assert "digraph bash2gitlab" in dot
+    assert "digraph bash2yaml" in dot
     # Nodes appear grouped (we won't assert cluster styling beyond presence)
     assert "subgraph cluster_yaml" in dot
     assert "subgraph cluster_scripts" in dot

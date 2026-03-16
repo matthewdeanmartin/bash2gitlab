@@ -7,7 +7,7 @@ from pathlib import Path, PurePath
 
 import pytest
 
-from bash2gitlab.utils.pathlib_polyfills import (
+from bash2yaml.utils.pathlib_polyfills import (
     glob_cs,
     hardlink_to,
     is_relative_to,

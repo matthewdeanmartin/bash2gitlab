@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FastAPI server for bash2gitlab web interface
+FastAPI server for bash2yaml web interface
 Provides REST API endpoints for the accessible web UI
 """
 
@@ -19,12 +19,12 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from bash2gitlab.commands.clean_all import clean_targets
-# Import your existing bash2gitlab modules
-from bash2gitlab.commands.compile_all import run_compile_all
-from bash2gitlab.commands.decompile_all import run_decompile_gitlab_tree
-from bash2gitlab.commands.lint_all import lint_output_folder, summarize_results
-from bash2gitlab.config import config
+from bash2yaml.commands.clean_all import clean_targets
+# Import your existing bash2yaml modules
+from bash2yaml.commands.compile_all import run_compile_all
+from bash2yaml.commands.decompile_all import run_decompile_gitlab_tree
+from bash2yaml.commands.lint_all import lint_output_folder, summarize_results
+from bash2yaml.config import config
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 tasks: dict[str, dict[str, Any]] = {}
 configs: dict[str, dict[str, Any]] = {}
 
-app = FastAPI(title="bash2gitlab API", description="Accessible API for bash2gitlab operations", version="1.0.0", docs_url="/docs", redoc_url="/redoc")
+app = FastAPI(title="bash2yaml API", description="Accessible API for bash2yaml operations", version="1.0.0", docs_url="/docs", redoc_url="/redoc")
 
 # Enable CORS for web interface
 app.add_middleware(
@@ -133,7 +133,7 @@ def log_task_message(task_id: str, message: str):
 @app.get("/api/v1/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "service": "bash2gitlab-api", "version": "1.0.0"}
+    return {"status": "healthy", "service": "bash2yaml-api", "version": "1.0.0"}
 
 
 @app.post("/api/v1/validate", response_model=ValidationResponse)
@@ -272,7 +272,7 @@ async def save_config(config_data: ConfigData):
 
     # Optionally save to file
     try:
-        config_file = Path("bash2gitlab-web-config.json")
+        config_file = Path("bash2yaml-web-config.json")
         with config_file.open("w") as f:
             json.dump(configs[config_id], f, indent=2)
     except Exception as e:
@@ -288,7 +288,7 @@ async def load_config():
 
     # Try to load from file first
     try:
-        config_file = Path("bash2gitlab-web-config.json")
+        config_file = Path("bash2yaml-web-config.json")
         if config_file.exists():
             with config_file.open("r") as f:
                 file_config = json.load(f)
@@ -478,7 +478,7 @@ async def run_decompile_operation(task_id: str, input_dir: str, output_dir: str,
 @app.on_event("startup")
 async def startup_event():
     """Cleanup tasks on startup"""
-    logger.info("bash2gitlab API server starting up")
+    logger.info("bash2yaml API server starting up")
 
     # Clean up old task data (keep last 100 tasks)
     def cleanup_old_tasks():
@@ -494,7 +494,7 @@ async def startup_event():
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="bash2gitlab API Server")
+    parser = argparse.ArgumentParser(description="bash2yaml API Server")
     parser.add_argument("--host", default="localhost", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
@@ -502,7 +502,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     print(f"""
-🚀 Starting bash2gitlab API Server
+🚀 Starting bash2yaml API Server
 
    API URL: http://{args.host}:{args.port}
    Docs: http://{args.host}:{args.port}/docs
@@ -511,4 +511,4 @@ if __name__ == "__main__":
    Web Interface should connect to: http://{args.host}:{args.port}
     """)
 
-    uvicorn.run("bash2gitlab_api:app" if not args.reload else __file__ + ":app", host=args.host, port=args.port, reload=args.reload, log_level="info")
+    uvicorn.run("bash2yaml_api:app" if not args.reload else __file__ + ":app", host=args.host, port=args.port, reload=args.reload, log_level="info")

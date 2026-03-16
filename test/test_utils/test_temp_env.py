@@ -1,6 +1,6 @@
 import os
 
-from bash2gitlab.utils.temp_env import temporary_env_var
+from bash2yaml.utils.temp_env import temporary_env_var
 
 
 def test_it():

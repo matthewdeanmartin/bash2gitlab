@@ -7,7 +7,7 @@ import ruamel.yaml
 from ruamel.yaml import CommentedSeq
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from bash2gitlab.commands.compile_all import (
+from bash2yaml.commands.compile_all import (
     as_items,
     compact_runs_to_literal,
     compile_single_file,
@@ -22,20 +22,20 @@ from bash2gitlab.commands.compile_all import (
     write_compiled_file,
     write_yaml_and_hash,
 )
-from bash2gitlab.errors.exceptions import Bash2GitlabError, ValidationFailed
-from bash2gitlab.utils.temp_env import temporary_env_var
+from bash2yaml.errors.exceptions import Bash2YamlError, ValidationFailed
+from bash2yaml.utils.temp_env import temporary_env_var
 
 
 @pytest.fixture
 def mock_config():
-    with patch("bash2gitlab.commands.compile_all.config") as mock_config:
+    with patch("bash2yaml.commands.compile_all.config") as mock_config:
         mock_config.custom_header = None
         yield mock_config
 
 
 @pytest.fixture
 def mock_logger():
-    with patch("bash2gitlab.commands.compile_all.logger") as mock_logger:
+    with patch("bash2yaml.commands.compile_all.logger") as mock_logger:
         yield mock_logger
 
 
@@ -52,7 +52,7 @@ def test_infer_cli():
 
     # Test without optional params
     result = infer_cli(input_dir, output_path)
-    assert "bash2gitlab compile" in result
+    assert "bash2yaml compile" in result
     for part in ["--in", "path", "to", "input"]:
         assert part in result
 
@@ -70,11 +70,11 @@ def test_infer_cli():
 
 def test_get_banner(mock_config):
     mock_config.custom_header = None
-    inferred_cli = "bash2gitlab compile --in test --out test"
+    inferred_cli = "bash2yaml compile --in test --out test"
 
     result = get_banner(inferred_cli)
     assert "DO NOT EDIT" in result
-    assert "bash2gitlab" in result
+    assert "bash2yaml" in result
     assert inferred_cli in result
 
     # Test with custom header
@@ -150,7 +150,7 @@ def test_process_script_list_basic(mock_logger, tmp_path):
 
 
 def test_process_script_list_with_script_file(mock_logger, tmp_path):
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         # Create a test script file
         script_file = tmp_path / "test.sh"
         script_file.write_text("echo 'test script'\necho 'second line'")
@@ -165,7 +165,7 @@ def test_process_script_list_with_script_file(mock_logger, tmp_path):
 
 
 def test_process_job(tmp_path):
-    with temporary_env_var("BASH2GITLAB_SKIP_ROOT_CHECKS", "1"):
+    with temporary_env_var("BASH2YAML_SKIP_ROOT_CHECKS", "1"):
         job_data = {
             "script": ["echo hello", "echo world"],
             "before_script": ["setup.sh"],
@@ -239,7 +239,7 @@ def test_write_yaml_and_hash(tmp_path, mock_logger):
     hash_file = tmp_path / "test.yml.hash"
     content = "test: value\n"
 
-    with patch("bash2gitlab.commands.compile_all.GitLabCIValidator") as mock_validator:
+    with patch("bash2yaml.commands.compile_all.GitLabCIValidator") as mock_validator:
         mock_instance = mock_validator.return_value
         mock_instance.validate_ci_config.return_value = (True, [])
 
@@ -259,7 +259,7 @@ def test_write_yaml_and_hash_validation_failed(tmp_path):
     hash_file = tmp_path / "test.yml.hash"
     content = "invalid: yaml\n"
 
-    with patch("bash2gitlab.commands.compile_all.GitLabCIValidator") as mock_validator:
+    with patch("bash2yaml.commands.compile_all.GitLabCIValidator") as mock_validator:
         mock_instance = mock_validator.return_value
         mock_instance.validate_ci_config.return_value = (False, ["validation error"])
 
@@ -274,7 +274,7 @@ def test_write_compiled_file_new_file(tmp_path, mock_logger):
     output_file = tmp_path / "test.yml"
     content = "test: content\n"
 
-    with patch("bash2gitlab.commands.compile_all.GitLabCIValidator") as mock_validator:
+    with patch("bash2yaml.commands.compile_all.GitLabCIValidator") as mock_validator:
         mock_instance = mock_validator.return_value
         mock_instance.validate_ci_config.return_value = (True, [])
 
@@ -294,7 +294,7 @@ def test_write_compiled_file_dry_run(tmp_path, mock_logger):
 
 def test_write_compiled_file_existing_no_changes(tmp_path, mock_logger):
     output_file = tmp_path / "test.yml"
-    hash_file = tmp_path / ".bash2gitlab" / "output_hashes" / "test.yml.hash"
+    hash_file = tmp_path / ".bash2yaml" / "output_hashes" / "test.yml.hash"
     content = "test: content\n"
 
     # Create existing files
@@ -303,7 +303,7 @@ def test_write_compiled_file_existing_no_changes(tmp_path, mock_logger):
     encoded = base64.b64encode(content.encode()).decode()
     hash_file.write_text(encoded)
 
-    with patch("bash2gitlab.commands.compile_all.yaml_is_same", return_value=True):
+    with patch("bash2yaml.commands.compile_all.yaml_is_same", return_value=True):
         result = write_compiled_file(output_file, content, tmp_path, dry_run=False)
         assert result is False
 
@@ -321,9 +321,9 @@ test-job:
 """
     source_path.write_text(source_content)
 
-    with patch("bash2gitlab.commands.compile_all.inline_gitlab_scripts") as mock_inline:
+    with patch("bash2yaml.commands.compile_all.inline_gitlab_scripts") as mock_inline:
         mock_inline.return_value = (1, "compiled content")
-        with patch("bash2gitlab.commands.compile_all.write_compiled_file") as mock_write:
+        with patch("bash2yaml.commands.compile_all.write_compiled_file") as mock_write:
             mock_write.return_value = True
 
             inlined, written = compile_single_file(
@@ -337,7 +337,7 @@ test-job:
 
 
 def test_run_compile_all_no_changes(tmp_path, mock_logger):
-    with patch("bash2gitlab.commands.compile_all.needs_compilation") as mock_needs:
+    with patch("bash2yaml.commands.compile_all.needs_compilation") as mock_needs:
         mock_needs.return_value = False
 
         result = run_compile_all(tmp_path, tmp_path, force=False)
@@ -345,11 +345,11 @@ def test_run_compile_all_no_changes(tmp_path, mock_logger):
 
 
 def test_run_compile_all_with_force(tmp_path, mock_logger):
-    with patch("bash2gitlab.commands.compile_all.needs_compilation") as mock_needs:
+    with patch("bash2yaml.commands.compile_all.needs_compilation") as mock_needs:
         mock_needs.return_value = False
-        with patch("bash2gitlab.commands.compile_all.report_targets") as mock_report:
+        with patch("bash2yaml.commands.compile_all.report_targets") as mock_report:
             mock_report.return_value = []
-            with patch("bash2gitlab.commands.compile_all.compile_single_file") as mock_compile:
+            with patch("bash2yaml.commands.compile_all.compile_single_file") as mock_compile:
                 mock_compile.return_value = (1, 1)
 
                 result = run_compile_all(tmp_path, tmp_path, force=True)
@@ -361,23 +361,23 @@ def test_run_compile_all_with_files(tmp_path, mock_logger):
     yaml_file = tmp_path / "test.yml"
     yaml_file.write_text("test: content")
 
-    with patch("bash2gitlab.commands.compile_all.needs_compilation") as mock_needs:
+    with patch("bash2yaml.commands.compile_all.needs_compilation") as mock_needs:
         mock_needs.return_value = True
-        with patch("bash2gitlab.commands.compile_all.report_targets") as mock_report:
+        with patch("bash2yaml.commands.compile_all.report_targets") as mock_report:
             mock_report.return_value = []
-            with patch("bash2gitlab.commands.compile_all.compile_single_file") as mock_compile:
+            with patch("bash2yaml.commands.compile_all.compile_single_file") as mock_compile:
                 mock_compile.return_value = (2, 1)
-                with patch("bash2gitlab.commands.compile_all.mark_compilation_complete") as mock_mark:
+                with patch("bash2yaml.commands.compile_all.mark_compilation_complete") as mock_mark:
                     result = run_compile_all(tmp_path, tmp_path, force=False)
                     assert result == 2
                     mock_mark.assert_called_once()
 
 
 def test_process_script_list_error_handling(tmp_path):
-    """Test that missing script files raise Bash2GitlabError with appropriate message."""
+    """Test that missing script files raise Bash2YamlError with appropriate message."""
     script_list = ["./nonexistent.sh"]
 
-    with pytest.raises(Bash2GitlabError) as exc_info:
+    with pytest.raises(Bash2YamlError) as exc_info:
         process_script_list(script_list, tmp_path)
 
     # Behavior: exception should contain information about the missing file

@@ -1,6 +1,6 @@
-# bash2gitlab API Server
+# bash2yaml API Server
 
-This directory contains the API server and web interface for bash2gitlab, providing an accessible web-based interface for users who prefer GUI interactions or need accessibility features.
+This directory contains the API server and web interface for bash2yaml, providing an accessible web-based interface for users who prefer GUI interactions or need accessibility features.
 
 ## Quick Start
 
@@ -16,13 +16,13 @@ pip install -r requirements-api.txt
 ### 2. Start the API Server
 ```bash
 # Option 1: Direct command
-python bash2gitlab_api.py
+python bash2yaml_api.py
 
 # Option 2: Using the convenience script
 python start-api.py
 
 # Option 3: Using uvicorn directly
-uvicorn bash2gitlab_api:app --reload --host localhost --port 8000
+uvicorn bash2yaml_api:app --reload --host localhost --port 8000
 ```
 
 ### 3. Open the Web Interface
@@ -76,7 +76,7 @@ The web interface includes:
 ## Development
 
 ### Adding New Operations
-1. Create a new endpoint in `bash2gitlab_api.py`
+1. Create a new endpoint in `bash2yaml_api.py`
 2. Add a background task function
 3. Update the web interface operation selection
 4. Test with both API and web interface
@@ -96,7 +96,7 @@ docker-compose up -d
 ### Using Gunicorn
 ```bash
 pip install gunicorn
-gunicorn bash2gitlab_api:app -w 4 -k uvicorn.workers.UvicornWorker
+gunicorn bash2yaml_api:app -w 4 -k uvicorn.workers.UvicornWorker
 ```
 
 ### Reverse Proxy (Nginx)
@@ -122,7 +122,7 @@ server {
 
 ### API Server Won't Start
 - Check if port 8000 is available
-- Verify bash2gitlab package is installed
+- Verify bash2yaml package is installed
 - Check Python version (3.8+ required)
 
 ### Web Interface Can't Connect to API
@@ -132,7 +132,7 @@ server {
 
 ### Operations Fail
 - Verify input/output directory permissions
-- Check bash2gitlab configuration
+- Check bash2yaml configuration
 - Review API server logs
 - Use validation endpoint to check configuration
 

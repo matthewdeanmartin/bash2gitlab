@@ -2,13 +2,13 @@
 
 ## Overview
 
-This document describes the plan to evolve `bash2gitlab` into `bash2yaml` — a multi-platform CI/CD script compilation
+This document describes the plan to evolve `bash2yaml` into `bash2yaml` — a multi-platform CI/CD script compilation
 tool. The core idea stays the same: write your scripts in real files, compile them into CI YAML. The expansion: support
 GitLab CI, GitHub Actions, CircleCI, AWS CodeBuild (`buildspec.yml`), Bitbucket Pipelines, and Semaphore CI.
 
 ---
 
-## What We Have Today (bash2gitlab)
+## What We Have Today (bash2yaml)
 
 **Core concept:** Read an "uncompiled" YAML file where CI job `script:` blocks contain references to `.sh` files. Inline
 those script files recursively. Validate the result against an official schema. Write the compiled output.
@@ -82,11 +82,11 @@ The CLI gets a `--target` flag (or the target is auto-detected from the input fi
 
 **This phase must be complete and all tests passing before any other phase begins.**
 
-1. Rename internal module from `bash2gitlab/` to `bash2yaml/`
-2. Rename config file from `bash2gitlab.toml` → `bash2yaml.toml` (with backwards-compatible fallback for a few versions)
-3. Rename env var prefix `BASH2GITLAB_` → `BASH2YAML_` (with backwards-compatible fallback for a few versions)
+1. Rename internal module from `bash2yaml/` to `bash2yaml/`
+2. Rename config file from `bash2yaml.toml` → `bash2yaml.toml` (with backwards-compatible fallback for a few versions)
+3. Rename env var prefix `bash2yaml_` → `BASH2YAML_` (with backwards-compatible fallback for a few versions)
 4. Update CLI entry points: `bash2yaml` / `b2y` (keep `b2gl` as a deprecated alias for a few versions)
-5. Keep `bash2gitlab` as a separate thin wrapper package on PyPI that depends on `bash2yaml` and re-exports everything —
+5. Keep `bash2yaml` as a separate thin wrapper package on PyPI that depends on `bash2yaml` and re-exports everything —
    maintained for a few versions then deprecated
 6. Write additional unit tests to improve coverage of existing behavior before the rename, so regressions are caught
    during the rename itself
@@ -285,12 +285,12 @@ non-standard name? Should it fail loudly and demand `--target`, or fall back to 
 existing behaviour)?
 
 **12. The `init` command per platform**
-Currently `init` scaffolds a new bash2gitlab project. Each platform needs a different directory layout. Should
+Currently `init` scaffolds a new bash2yaml project. Each platform needs a different directory layout. Should
 `init --target github` produce the correct scaffold for that platform, or should `init` stay GitLab-only until after all
 targets are implemented?
 
 **13. Compiled file header**
-The output file currently gets a `# DO NOT EDIT — compiled with bash2gitlab` header. For bash2yaml the header needs to
+The output file currently gets a `# DO NOT EDIT — compiled with bash2yaml` header. For bash2yaml the header needs to
 name the tool correctly. Should there be a `# target: github` line in the header too, so the tool can auto-detect the
 target on subsequent runs by reading its own output? Or is that too clever?
 
@@ -331,12 +331,12 @@ target's `script_key_paths()` / `variables_key_paths()` methods in isolation suf
 live in `test/fixtures/github/`, `test/fixtures/circleci/`, etc.?
 
 **20. `pyproject.toml` tool section name**
-Currently config can live in `pyproject.toml` under `[tool.bash2gitlab]`. After the rename this becomes
-`[tool.bash2yaml]`. Should the backwards-compat fallback also read `[tool.bash2gitlab]` for a few versions, or is
+Currently config can live in `pyproject.toml` under `[tool.bash2yaml]`. After the rename this becomes
+`[tool.bash2yaml]`. Should the backwards-compat fallback also read `[tool.bash2yaml]` for a few versions, or is
 `pyproject.toml` considered too "permanent" to carry a stale section name and users should migrate it?
 
 **21. Version numbering after rename**
-Does bash2yaml start at `1.0.0` (clean break, signals new tool), continue from wherever bash2gitlab left off (
+Does bash2yaml start at `1.0.0` (clean break, signals new tool), continue from wherever bash2yaml left off (
 continuity), or something else?
 
 ---
@@ -346,7 +346,7 @@ continuity), or something else?
 | Decision                       | Answer                                                                                                                              |
 |--------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
 | Package name                   | `bash2yaml` / `b2y`                                                                                                                 |
-| `bash2gitlab` backwards compat | Thin wrapper package maintained for a few versions, then deprecated                                                                 |
+| `bash2yaml` backwards compat | Thin wrapper package maintained for a few versions, then deprecated                                                                 |
 | GitHub `run:` inlining         | Entire `run:` block treated as a single script reference                                                                            |
 | Variable file format           | Keep `global_variables.sh` shell syntax; tool converts to each platform's native format; `.sh` enables `source` for local debugging |
 | Phase 0 first                  | Yes — rename must be complete with green tests before any platform work begins                                                      |
@@ -360,13 +360,13 @@ continuity), or something else?
 
 ## Files That Will Change Most
 
-- `bash2gitlab/commands/compile_all.py` — needs target abstraction injected
-- `bash2gitlab/commands/decompile_all.py` — needs target awareness
-- `bash2gitlab/commands/lint_all.py` — needs target-aware validation
-- `bash2gitlab/utils/validate_pipeline.py` — generalize to `validate_yaml.py`
-- `bash2gitlab/config.py` — add `target` config key
-- `bash2gitlab/__main__.py` — add `--target` flag
-- `bash2gitlab/schemas/` — add schemas for other platforms
+- `bash2yaml/commands/compile_all.py` — needs target abstraction injected
+- `bash2yaml/commands/decompile_all.py` — needs target awareness
+- `bash2yaml/commands/lint_all.py` — needs target-aware validation
+- `bash2yaml/utils/validate_pipeline.py` — generalize to `validate_yaml.py`
+- `bash2yaml/config.py` — add `target` config key
+- `bash2yaml/__main__.py` — add `--target` flag
+- `bash2yaml/schemas/` — add schemas for other platforms
 
 ## Files That Are Largely Platform-Agnostic (Change Little)
 

@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.10.0] - 2025-11-29
+
+### Changed
+
+- bash2gitlab's name is changed to bash2yaml. Gitlab is a trademark and subject to Gitlab's trademark policies. Rather than figure
+  out how to comply, I will just change the name. This is also in preparation for supporting GitHub Actions and other
+  bash-in-yaml build scripts. bash2gitlab will be left up on pypi, but soon the library will be published as bash2yaml
+  and no further updates will be published to bash2gitlab. The userbase is approximately zero, so this shouldn't be
+  disruptive.
 
 ## [0.9.10] - 2025-11-29
 
@@ -53,7 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- json schema loaded from cache, then URL, then resource. Won't start using resource until there is some staleness logic.
+- json schema loaded from cache, then URL, then resource. Won't start using resource until there is some staleness
+  logic.
 - Prime cache before attempting to validate on multiple threads
 
 ## [0.9.5] - 2025-08-28
@@ -62,18 +72,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Backwards compatibility for 3.8, etc
 
-
 ## [0.9.4] - 2025-08-28
 
 ### Added
+
 - New validate command to validate yaml against json schema. Previously you had to compile to validate.
 
 ### Changed
+
 - New dependency on orjson, urllib3 for speed. Tomli for backwards compatibility.
 
 ## [0.9.3] - 2025-08-27
 
 ### Fixed
+
 - Detect drift failed on arg parse. Validated with more comprehensive basic_check.sh test.
 
 ## [0.9.2] - 2025-08-23

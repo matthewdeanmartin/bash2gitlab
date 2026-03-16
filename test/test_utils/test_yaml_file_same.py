@@ -1,6 +1,6 @@
 import pytest
 
-from bash2gitlab.utils.yaml_file_same import normalize_for_compare, yaml_is_same
+from bash2yaml.utils.yaml_file_same import normalize_for_compare, yaml_is_same
 
 # --- Tests for normalize_for_compare ---
 
@@ -123,7 +123,7 @@ def test_yaml_is_same(content1, content2, expected_result):
 # To run these tests, you would save the original code as `yaml_utils.py`
 # and this test code as `test_yaml_utils.py`, then run `pytest` in your terminal.
 # You will need to have `pytest` and `ruamel.yaml` installed (`pip install pytest ruamel.yaml`).
-# You'll also need a dummy `bash2gitlab` directory with `utils/yaml_factory.py`
+# You'll also need a dummy `bash2yaml` directory with `utils/yaml_factory.py`
 # or adjust the imports to match your project structure.
 
 # Dummy structure for the import to work out of the box.
@@ -133,10 +133,10 @@ def test_yaml_is_same(content1, content2, expected_result):
 
 def create_dummy_factory(tmp_path):
     """Creates a dummy yaml_factory module for testing purposes."""
-    utils_dir = tmp_path / "bash2gitlab" / "utils"
+    utils_dir = tmp_path / "bash2yaml" / "utils"
     utils_dir.mkdir(parents=True, exist_ok=True)
     (utils_dir / "__init__.py").touch()
-    (tmp_path / "bash2gitlab" / "__init__.py").touch()
+    (tmp_path / "bash2yaml" / "__init__.py").touch()
     factory_path = utils_dir / "yaml_factory.py"
     factory_path.write_text(
         "from ruamel.yaml import YAML\n\ndef get_yaml():\n    yaml = YAML()\n    yaml.preserve_quotes = True\n    yaml.indent(mapping=2, sequence=4, offset=2)\n    return yaml\n"
@@ -156,6 +156,6 @@ def test_with_dummy_factory(tmp_path, monkeypatch):
     create_dummy_factory(tmp_path)
 
     # Re-import the function now that the dummy module is in the path
-    from bash2gitlab.utils.yaml_file_same import yaml_is_same
+    from bash2yaml.utils.yaml_file_same import yaml_is_same
 
     assert yaml_is_same("a: 1", "a: 1")

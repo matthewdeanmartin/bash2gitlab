@@ -2,8 +2,8 @@
 
 import base64
 
-from bash2gitlab.commands.detect_drift import decode_hash_content, find_hash_files, run_detect_drift
-from bash2gitlab.commands.hash_path_helpers import get_output_hash_path
+from bash2yaml.commands.detect_drift import decode_hash_content, find_hash_files, run_detect_drift
+from bash2yaml.commands.hash_path_helpers import get_output_hash_path
 
 
 def _make_hash_file(content: str, hash_file_path):
@@ -41,7 +41,7 @@ class TestDecodeHashContent:
 class TestFindHashFiles:
     def test_finds_hash_files_in_new_location(self, tmp_path):
         out_base = tmp_path / "out"
-        hash_dir = out_base / ".bash2gitlab" / "output_hashes"
+        hash_dir = out_base / ".bash2yaml" / "output_hashes"
         hash_dir.mkdir(parents=True)
         h = hash_dir / "ci.yml.hash"
         h.write_text("abc")
@@ -56,8 +56,8 @@ class TestFindHashFiles:
     def test_finds_hash_files_in_multiple_dirs(self, tmp_path):
         dir1 = tmp_path / "dir1"
         dir2 = tmp_path / "dir2"
-        h1 = dir1 / ".bash2gitlab" / "output_hashes" / "a.yml.hash"
-        h2 = dir2 / ".bash2gitlab" / "output_hashes" / "b.yml.hash"
+        h1 = dir1 / ".bash2yaml" / "output_hashes" / "a.yml.hash"
+        h2 = dir2 / ".bash2yaml" / "output_hashes" / "b.yml.hash"
         for h in [h1, h2]:
             h.parent.mkdir(parents=True)
             h.write_text("abc")

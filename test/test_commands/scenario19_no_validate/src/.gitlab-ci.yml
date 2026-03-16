@@ -1,3 +1,3 @@
-# This will not validate without merging all templates, which expands scope too much for bash2gitlab
+# This will not validate without merging all templates, which expands scope too much for bash2yaml
 # Pragma: do-not-validate-schema
 variables: [!reference .foo, variables]

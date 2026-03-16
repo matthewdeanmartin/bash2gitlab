@@ -8,8 +8,8 @@ import base64
 import logging
 from pathlib import Path
 
-from bash2gitlab.commands import detect_drift
-from bash2gitlab.commands.detect_drift import (
+from bash2yaml.commands import detect_drift
+from bash2yaml.commands.detect_drift import (
     Colors,
     decode_hash_content,
     find_hash_files,
@@ -44,7 +44,7 @@ def test_get_source_file_from_hash(tmp_path: Path):
     assert get_source_file_from_hash(hash_path, tmp_path) == expected_source_path
 
     # Test new-style centralized hash file
-    new_hash_path = tmp_path / ".bash2gitlab" / "output_hashes" / "nested" / "some.file.yml.hash"
+    new_hash_path = tmp_path / ".bash2yaml" / "output_hashes" / "nested" / "some.file.yml.hash"
     expected_new_source = tmp_path / "nested" / "some.file.yml"
     assert get_source_file_from_hash(new_hash_path, tmp_path) == expected_new_source
 

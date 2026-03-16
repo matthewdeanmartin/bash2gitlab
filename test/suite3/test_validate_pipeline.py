@@ -13,7 +13,7 @@ import json
 import time
 from pathlib import Path
 
-from bash2gitlab.utils.validate_pipeline import GitLabCIValidator, ValidationResult, validate_gitlab_ci_yaml
+from bash2yaml.utils.validate_pipeline import GitLabCIValidator, ValidationResult, validate_gitlab_ci_yaml
 
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
@@ -102,7 +102,7 @@ class TestSchemaCache:
 
     def test_stale_cache_not_loaded(self, tmp_path):
         """A cache file older than 7 days should not be used."""
-        _v = _make_validator(tmp_path)
+        _make_validator(tmp_path)
         # Write a fake cache file with ancient mtime
         cache_file = tmp_path / "gitlab_ci_schema.json"
         fake_schema = {"type": "object", "$schema": "draft-07", "title": "fake"}

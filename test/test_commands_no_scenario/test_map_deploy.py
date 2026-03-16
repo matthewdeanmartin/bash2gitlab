@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 import toml
 
-from bash2gitlab.commands.map_deploy import run_map_deploy
-from bash2gitlab.config import reset_for_testing
+from bash2yaml.commands.map_deploy import run_map_deploy
+from bash2yaml.config import reset_for_testing
 
 
 @pytest.fixture
@@ -29,7 +29,7 @@ def setup_test_environment(tmp_path: Path):
     # pyproject.toml
     pyproject_content = {
         "tool": {
-            "bash2gitlab": {
+            "bash2yaml": {
                 "map": {
                     str(source_angular): [str(target_angular)],
                     str(source_java.parent): [str(target_java)],  # testing parent dir mapping
@@ -56,13 +56,13 @@ def test_initial_deployment(setup_test_environment):
     target_angular_file = tmp_path / "dest" / "angular_app" / "script1.sh"
     assert target_angular_file.exists()
     assert (tmp_path / "dest" / "angular_app" / ".gitignore").exists()
-    assert (tmp_path / "dest" / "angular_app" / ".bash2gitlab" / "output_hashes" / "script1.sh.hash").exists()
+    assert (tmp_path / "dest" / "angular_app" / ".bash2yaml" / "output_hashes" / "script1.sh.hash").exists()
 
     # Check Java deployment
     target_java_file = tmp_path / "dest" / "java_app" / "deep" / "script2.yml"
     assert target_java_file.exists()
     assert (tmp_path / "dest" / "java_app" / ".gitignore").exists()
-    assert (tmp_path / "dest" / "java_app" / ".bash2gitlab" / "output_hashes" / "deep" / "script2.yml.hash").exists()
+    assert (tmp_path / "dest" / "java_app" / ".bash2yaml" / "output_hashes" / "deep" / "script2.yml.hash").exists()
 
 
 def test_skips_unsupported_extensions(setup_test_environment):
@@ -75,7 +75,7 @@ def test_skips_unsupported_extensions(setup_test_environment):
     run_map_deploy(deployment_map)
 
     assert not (tmp_path / "dest" / "angular_app" / "ignore.xyzzy").exists()
-    assert not (tmp_path / "dest" / "angular_app" / ".bash2gitlab" / "output_hashes" / "ignore.xyzzy.hash").exists()
+    assert not (tmp_path / "dest" / "angular_app" / ".bash2yaml" / "output_hashes" / "ignore.xyzzy.hash").exists()
 
 
 def test_unchanged_redeployment(setup_test_environment):

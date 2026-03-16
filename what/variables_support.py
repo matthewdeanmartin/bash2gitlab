@@ -1,5 +1,5 @@
 """
-Implementation draft: variables handling & local-bash helpers for bash2gitlab
+Implementation draft: variables handling & local-bash helpers for bash2yaml
 
 This module adds:
 
@@ -51,7 +51,7 @@ from typing import dict
 from ruamel.yaml import CommentedMap
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
-from bash2gitlab.utils.dotenv import parse_env_file  # type: ignore
+from bash2yaml.utils.dotenv import parse_env_file  # type: ignore
 
 SAFE_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -204,7 +204,7 @@ def extract_job_names_from_yaml(data) -> tuple[str, ...]:
 
 
 def _load_yaml(path: Path):
-    from bash2gitlab.utils.yaml_factory import get_yaml  # lazy import to use project's config
+    from bash2yaml.utils.yaml_factory import get_yaml  # lazy import to use project's config
 
     yaml = get_yaml()
     return yaml.load(path.read_text(encoding="utf-8"))

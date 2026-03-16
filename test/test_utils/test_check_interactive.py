@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from bash2gitlab.utils.check_interactive import detect_environment
+from bash2yaml.utils.check_interactive import detect_environment
 
 
 @pytest.mark.parametrize(

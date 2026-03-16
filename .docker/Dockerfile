@@ -23,21 +23,21 @@ RUN set -eux; \
 # ---- Python deps ----
 # Installs the CLI with the [all] extra
 RUN python -m pip install --upgrade pip setuptools wheel && \
-    pip install "bash2gitlab[all]==${B2G_VERSION}"
+    pip install "bash2yaml[all]==${B2G_VERSION}"
 
 # Workspace; the wrapper sets -w /work and mounts PWD here
 WORKDIR /work
 
 # OCI labels (pulled from the PyPI page)
 # title/description/license/version/url/source/docs
-LABEL org.opencontainers.image.title="bash2gitlab" \
+LABEL org.opencontainers.image.title="bash2yaml" \
       org.opencontainers.image.description="Compile bash to GitLab pipeline YAML." \
       org.opencontainers.image.version="${B2G_VERSION}" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.url="https://pypi.org/project/bash2gitlab/" \
-      org.opencontainers.image.source="https://github.com/matthewdeanmartin/bash2gitlab" \
-      org.opencontainers.image.documentation="https://bash2gitlab.readthedocs.io"
+      org.opencontainers.image.url="https://pypi.org/project/bash2yaml/" \
+      org.opencontainers.image.source="https://github.com/matthewdeanmartin/bash2yaml" \
+      org.opencontainers.image.documentation="https://bash2yaml.readthedocs.io"
 
 # Use tini for proper signal handling; default to the CLI
-ENTRYPOINT ["/usr/bin/tini","--","bash2gitlab"]
+ENTRYPOINT ["/usr/bin/tini","--","bash2yaml"]
 CMD ["--help"]

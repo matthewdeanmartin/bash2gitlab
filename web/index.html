@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>bash2gitlab - Accessible Web Interface</title>
+    <title>bash2yaml - Accessible Web Interface</title>
     <style>
         :root {
             --primary: #0066cc;
@@ -306,12 +306,12 @@
         </div>
 
         <header>
-            <h1>bash2gitlab</h1>
+            <h1>bash2yaml</h1>
             <p>Accessible Web Interface for GitLab CI Template Management</p>
         </header>
 
         <main class="main-content">
-            <form id="bash2gitlab-form" role="form" aria-label="bash2gitlab Configuration">
+            <form id="bash2yaml-form" role="form" aria-label="bash2yaml Configuration">
                 <div class="form-grid">
                     <!-- Left Column -->
                     <div>
@@ -445,7 +445,7 @@
                      id="output-log"
                      aria-live="polite"
                      aria-label="Operation output log"
-                     tabindex="0">Welcome to bash2gitlab Web Interface!
+                     tabindex="0">Welcome to bash2yaml Web Interface!
 Ready to process your GitLab CI templates.
 
 Use Tab to navigate, Enter to activate buttons.
@@ -647,7 +647,7 @@ Enable audio feedback for spoken notifications.
                 return await response.json();
             } catch (error) {
                 if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                    throw new Error('Cannot connect to bash2gitlab API at localhost:8000. Please ensure the API server is running.');
+                    throw new Error('Cannot connect to bash2yaml API at localhost:8000. Please ensure the API server is running.');
                 }
                 throw error;
             }
@@ -930,7 +930,7 @@ Enable audio feedback for spoken notifications.
 
             } catch (error) {
                 // Fallback to localStorage
-                localStorage.setItem('bash2gitlab-config', JSON.stringify(config));
+                localStorage.setItem('bash2yaml-config', JSON.stringify(config));
 
                 log.textContent += `\n💾 ${getTranslation('configSaved')} (local storage)\n`;
                 log.textContent += `Note: Server save failed: ${error.message}\n`;
@@ -956,7 +956,7 @@ Enable audio feedback for spoken notifications.
 
             // Fallback to localStorage
             try {
-                const saved = localStorage.getItem('bash2gitlab-config');
+                const saved = localStorage.getItem('bash2yaml-config');
                 if (saved) {
                     const config = JSON.parse(saved);
                     applyConfig(config);
@@ -1031,12 +1031,12 @@ Enable audio feedback for spoken notifications.
             try {
                 await apiCall('/api/v1/health');
                 const log = document.getElementById('output-log');
-                log.textContent = 'bash2gitlab API connected successfully!\nReady to process your GitLab CI templates.\n\nUse Tab to navigate, Enter to activate buttons.\nEnable audio feedback for spoken notifications.\n';
-                announce("bash2gitlab web interface loaded with API connectivity. Use keyboard shortcuts: Ctrl+Enter to run, Ctrl+S to save, Escape to stop.");
+                log.textContent = 'bash2yaml API connected successfully!\nReady to process your GitLab CI templates.\n\nUse Tab to navigate, Enter to activate buttons.\nEnable audio feedback for spoken notifications.\n';
+                announce("bash2yaml web interface loaded with API connectivity. Use keyboard shortcuts: Ctrl+Enter to run, Ctrl+S to save, Escape to stop.");
             } catch (error) {
                 const log = document.getElementById('output-log');
                 log.textContent = `⚠️ API Connection Warning: ${error.message}\n\nWeb interface loaded in offline mode.\nSome features may not be available.\n\nUse Tab to navigate, Enter to activate buttons.\nEnable audio feedback for spoken notifications.\n`;
-                announce("bash2gitlab web interface loaded in offline mode. API server at localhost:8000 is not available.");
+                announce("bash2yaml web interface loaded in offline mode. API server at localhost:8000 is not available.");
             }
         });
 

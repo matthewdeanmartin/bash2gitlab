@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  bash2gitlab-api:
+  bash2yaml-api:
     build: .
     ports:
       - "8000:8000"
@@ -11,14 +11,14 @@ services:
       - ./config:/app/config
     environment:
       - PYTHONPATH=/app
-    command: uvicorn bash2gitlab_api:app --host 0.0.0.0 --port 8000
+    command: uvicorn bash2yaml_api:app --host 0.0.0.0 --port 8000
 
-  bash2gitlab-web:
+  bash2yaml-web:
     image: nginx:alpine
     ports:
       - "3000:80"
     volumes:
       - ./web-interface.html:/usr/share/nginx/html/index.html
     depends_on:
-      - bash2gitlab-api
+      - bash2yaml-api
 

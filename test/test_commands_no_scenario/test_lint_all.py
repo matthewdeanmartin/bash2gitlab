@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-import bash2gitlab.commands.lint_all as mod  # preferred path
+import bash2yaml.commands.lint_all as mod  # preferred path
 
 # --- Test api_url -----------------------------------------------------------
 

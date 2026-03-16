@@ -1,4 +1,4 @@
-"""Tests for bash2gitlab.config.Config — TOML loading, env-var override, type coercion.
+"""Tests for bash2yaml.config.Config — TOML loading, env-var override, type coercion.
 
 Focus areas for the upcoming rewrite:
 - A new `target` config key needs to slot cleanly into the existing loading hierarchy.
@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from bash2gitlab.config import Config, reset_for_testing
-from bash2gitlab.errors.exceptions import ConfigInvalid
+from bash2yaml.config import Config, reset_for_testing
+from bash2yaml.errors.exceptions import ConfigInvalid
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -33,19 +33,19 @@ def _write_toml(path: Path, content: str) -> Path:
 
 class TestEmptyConfig:
     def test_no_config_file_returns_none_for_properties(self, tmp_path, monkeypatch):
-        monkeypatch.chdir(tmp_path)  # no .bash2gitlab.toml here
+        monkeypatch.chdir(tmp_path)  # no .bash2yaml.toml here
         cfg = Config(config_path_override=None)
         assert cfg.input_dir is None
         assert cfg.output_dir is None
         assert cfg.parallelism is None
 
     def test_empty_toml_is_valid(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", "")
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", "")
         cfg = Config(config_path_override=cfg_file)
         assert cfg.input_dir is None
 
     def test_custom_header_defaults_to_none(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", "")
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", "")
         cfg = Config(config_path_override=cfg_file)
         assert cfg.custom_header is None
 
@@ -57,32 +57,32 @@ class TestEmptyConfig:
 
 class TestTopLevelKeys:
     def test_input_dir_read(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", 'input_dir = "src"\n')
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", 'input_dir = "src"\n')
         cfg = Config(config_path_override=cfg_file)
         assert cfg.input_dir == "src"
 
     def test_output_dir_read(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", 'output_dir = "dist"\n')
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", 'output_dir = "dist"\n')
         cfg = Config(config_path_override=cfg_file)
         assert cfg.output_dir == "dist"
 
     def test_custom_header_read(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", 'custom_header = "# generated"\n')
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", 'custom_header = "# generated"\n')
         cfg = Config(config_path_override=cfg_file)
         assert cfg.custom_header == "# generated"
 
     def test_parallelism_read_as_int(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", "parallelism = 4\n")
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", "parallelism = 4\n")
         cfg = Config(config_path_override=cfg_file)
         assert cfg.parallelism == 4
 
     def test_dry_run_bool_true(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", "dry_run = true\n")
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", "dry_run = true\n")
         cfg = Config(config_path_override=cfg_file)
         assert cfg.dry_run is True
 
     def test_dry_run_bool_false(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", "dry_run = false\n")
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", "dry_run = false\n")
         cfg = Config(config_path_override=cfg_file)
         assert cfg.dry_run is False
 
@@ -95,20 +95,20 @@ class TestTopLevelKeys:
 class TestSectionKeys:
     def test_compile_section_input_dir(self, tmp_path):
         cfg_file = _write_toml(
-            tmp_path / ".bash2gitlab.toml",
+            tmp_path / ".bash2yaml.toml",
             '[compile]\ninput_dir = "ci-src"\n',
         )
         cfg = Config(config_path_override=cfg_file)
         assert cfg.compile_input_dir == "ci-src"
 
     def test_compile_falls_back_to_global_input_dir(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", 'input_dir = "global-src"\n')
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", 'input_dir = "global-src"\n')
         cfg = Config(config_path_override=cfg_file)
         assert cfg.compile_input_dir == "global-src"
 
     def test_lint_section_gitlab_url(self, tmp_path):
         cfg_file = _write_toml(
-            tmp_path / ".bash2gitlab.toml",
+            tmp_path / ".bash2yaml.toml",
             '[lint]\ngitlab_url = "https://gitlab.example.com"\n',
         )
         cfg = Config(config_path_override=cfg_file)
@@ -116,7 +116,7 @@ class TestSectionKeys:
 
     def test_lint_project_id_as_int(self, tmp_path):
         cfg_file = _write_toml(
-            tmp_path / ".bash2gitlab.toml",
+            tmp_path / ".bash2yaml.toml",
             "[lint]\nproject_id = 42\n",
         )
         cfg = Config(config_path_override=cfg_file)
@@ -124,7 +124,7 @@ class TestSectionKeys:
 
     def test_lint_ref(self, tmp_path):
         cfg_file = _write_toml(
-            tmp_path / ".bash2gitlab.toml",
+            tmp_path / ".bash2yaml.toml",
             '[lint]\nref = "main"\n',
         )
         cfg = Config(config_path_override=cfg_file)
@@ -132,7 +132,7 @@ class TestSectionKeys:
 
     def test_decompile_section(self, tmp_path):
         cfg_file = _write_toml(
-            tmp_path / ".bash2gitlab.toml",
+            tmp_path / ".bash2yaml.toml",
             '[decompile]\ninput_file = "ci.yml"\noutput_dir = "scripts"\n',
         )
         cfg = Config(config_path_override=cfg_file)
@@ -142,7 +142,7 @@ class TestSectionKeys:
     def test_autogit_mode_valid(self, tmp_path):
         for mode in ["off", "stage", "commit", "push"]:
             cfg_file = _write_toml(
-                tmp_path / ".bash2gitlab.toml",
+                tmp_path / ".bash2yaml.toml",
                 f'[autogit]\nmode = "{mode}"\n',
             )
             cfg = Config(config_path_override=cfg_file)
@@ -150,7 +150,7 @@ class TestSectionKeys:
 
     def test_autogit_mode_invalid_falls_back_to_off(self, tmp_path):
         cfg_file = _write_toml(
-            tmp_path / ".bash2gitlab.toml",
+            tmp_path / ".bash2yaml.toml",
             '[autogit]\nmode = "invalid_mode"\n',
         )
         cfg = Config(config_path_override=cfg_file)
@@ -164,33 +164,33 @@ class TestSectionKeys:
 
 class TestEnvVarOverride:
     def test_env_var_overrides_file(self, tmp_path, monkeypatch):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", 'input_dir = "from-file"\n')
-        monkeypatch.setenv("BASH2GITLAB_INPUT_DIR", "from-env")
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", 'input_dir = "from-file"\n')
+        monkeypatch.setenv("BASH2YAML_INPUT_DIR", "from-env")
         cfg = Config(config_path_override=cfg_file)
         assert cfg.input_dir == "from-env"
 
     def test_env_var_prefix_stripped(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_OUTPUT_DIR", "env-out")
+        monkeypatch.setenv("BASH2YAML_OUTPUT_DIR", "env-out")
         cfg = Config(config_path_override=None)
         assert cfg.output_dir == "env-out"
 
     def test_env_var_bool_string_true(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_DRY_RUN", "true")
+        monkeypatch.setenv("BASH2YAML_DRY_RUN", "true")
         cfg = Config(config_path_override=None)
         assert cfg.dry_run is True
 
     def test_env_var_bool_string_false(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_DRY_RUN", "false")
+        monkeypatch.setenv("BASH2YAML_DRY_RUN", "false")
         cfg = Config(config_path_override=None)
         assert cfg.dry_run is False
 
     def test_env_var_bool_1(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_DRY_RUN", "1")
+        monkeypatch.setenv("BASH2YAML_DRY_RUN", "1")
         cfg = Config(config_path_override=None)
         assert cfg.dry_run is True
 
     def test_unknown_env_vars_ignored(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_NONEXISTENT_SETTING", "whatever")
+        monkeypatch.setenv("BASH2YAML_NONEXISTENT_SETTING", "whatever")
         cfg = Config(config_path_override=None)
         # Should not raise; unknown keys are just loaded into env_config
         assert isinstance(cfg.env_config, dict)
@@ -203,7 +203,7 @@ class TestEnvVarOverride:
 
 class TestTypeCoercion:
     def test_parallelism_as_string_in_env(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_PARALLELISM", "8")
+        monkeypatch.setenv("BASH2YAML_PARALLELISM", "8")
         cfg = Config(config_path_override=None)
         # get_int coerces: should return 8
         result = cfg.get_int("parallelism")
@@ -220,7 +220,7 @@ class TestTypeCoercion:
         assert result is False
 
     def test_int_coerce_invalid_raises(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("BASH2GITLAB_PARALLELISM", "not-a-number")
+        monkeypatch.setenv("BASH2YAML_PARALLELISM", "not-a-number")
         cfg = Config(config_path_override=None)
         with pytest.raises((ConfigInvalid, Exception)):
             cfg.get_int("parallelism")
@@ -240,7 +240,7 @@ class TestPyprojectToml:
     def test_reads_tool_bash2gitlab_section(self, tmp_path):
         cfg_file = _write_toml(
             tmp_path / "pyproject.toml",
-            '[tool.bash2gitlab]\ninput_dir = "ci"\n',
+            '[tool.bash2yaml]\ninput_dir = "ci"\n',
         )
         cfg = Config(config_path_override=cfg_file)
         assert cfg.input_dir == "ci"
@@ -248,7 +248,7 @@ class TestPyprojectToml:
     def test_ignores_other_tool_sections(self, tmp_path):
         cfg_file = _write_toml(
             tmp_path / "pyproject.toml",
-            '[tool.pytest]\naddopts = "-v"\n[tool.bash2gitlab]\noutput_dir = "out"\n',
+            '[tool.pytest]\naddopts = "-v"\n[tool.bash2yaml]\noutput_dir = "out"\n',
         )
         cfg = Config(config_path_override=cfg_file)
         assert cfg.output_dir == "out"
@@ -289,20 +289,20 @@ class TestTargetConfigReadiness:
     """
 
     def test_get_str_returns_none_for_missing_target_key(self, tmp_path):
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", "")
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", "")
         cfg = Config(config_path_override=cfg_file)
         # The key doesn't exist yet — get_str must return None, not raise
         assert cfg.get_str("target") is None
 
     def test_get_str_reads_arbitrary_string_key(self, tmp_path):
         """Any new string key (like `target`) should be readable via get_str."""
-        cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", 'target = "gitlab"\n')
+        cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", 'target = "gitlab"\n')
         cfg = Config(config_path_override=cfg_file)
         assert cfg.get_str("target") == "gitlab"
 
     def test_env_var_provides_target_value(self, tmp_path, monkeypatch):
-        """BASH2GITLAB_TARGET env var should work once the property exists."""
-        monkeypatch.setenv("BASH2GITLAB_TARGET", "github-actions")
+        """BASH2YAML_TARGET env var should work once the property exists."""
+        monkeypatch.setenv("BASH2YAML_TARGET", "github-actions")
         cfg = Config(config_path_override=None)
         # env_config["target"] is populated by load_env_config
         assert cfg.env_config.get("target") == "github-actions"
@@ -310,7 +310,7 @@ class TestTargetConfigReadiness:
     def test_section_target_override(self, tmp_path):
         """Section-level target should override top-level target."""
         cfg_file = _write_toml(
-            tmp_path / ".bash2gitlab.toml",
+            tmp_path / ".bash2yaml.toml",
             'target = "gitlab"\n[compile]\ntarget = "github-actions"\n',
         )
         cfg = Config(config_path_override=cfg_file)
@@ -322,6 +322,6 @@ class TestTargetConfigReadiness:
     def test_target_string_values_pass_through_unmodified(self, tmp_path):
         """Platform names must not be coerced/mutated."""
         for target in ["gitlab", "github-actions", "azure-devops", "bitbucket"]:
-            cfg_file = _write_toml(tmp_path / ".bash2gitlab.toml", f'target = "{target}"\n')
+            cfg_file = _write_toml(tmp_path / ".bash2yaml.toml", f'target = "{target}"\n')
             cfg = Config(config_path_override=cfg_file)
             assert cfg.get_str("target") == target

@@ -1,5 +1,5 @@
 """
-Unit tests for bash2gitlab/interactive.py
+Unit tests for bash2yaml/interactive.py
 
 Tests demonstrate that interactive.py is fully testable by mocking Rich prompts
 and verifying that each handler method properly collects and structures parameters.
@@ -16,35 +16,35 @@ import pytest
 @pytest.fixture
 def mock_console():
     """Mock Rich Console to avoid actual terminal output."""
-    with patch("bash2gitlab.interactive.Console") as mock:
+    with patch("bash2yaml.interactive.Console") as mock:
         yield mock.return_value
 
 
 @pytest.fixture
 def mock_prompt():
     """Mock Rich Prompt.ask to simulate user input."""
-    with patch("bash2gitlab.interactive.Prompt") as mock:
+    with patch("bash2yaml.interactive.Prompt") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_confirm():
     """Mock Rich Confirm.ask to simulate yes/no questions."""
-    with patch("bash2gitlab.interactive.Confirm") as mock:
+    with patch("bash2yaml.interactive.Confirm") as mock:
         yield mock
 
 
 @pytest.fixture
 def mock_int_prompt():
     """Mock Rich IntPrompt.ask to simulate integer input."""
-    with patch("bash2gitlab.interactive.IntPrompt") as mock:
+    with patch("bash2yaml.interactive.IntPrompt") as mock:
         yield mock
 
 
 @pytest.fixture
 def interface(mock_console):
     """Create InteractiveInterface instance with mocked console."""
-    from bash2gitlab.interactive import InteractiveInterface
+    from bash2yaml.interactive import InteractiveInterface
 
     return InteractiveInterface()
 
@@ -308,7 +308,7 @@ class TestExecuteCommand:
     def test_execute_command_calls_handler(self, interface, mock_console):
         """Test that execute_command properly dispatches to handlers."""
         # Arrange: Mock the compile_handler (imported inside execute_command)
-        with patch("bash2gitlab.__main__.compile_handler") as mock_handler:
+        with patch("bash2yaml.__main__.compile_handler") as mock_handler:
             mock_handler.return_value = 0  # success exit code
 
             params = {
@@ -404,7 +404,7 @@ class TestIntegrationFlow:
 
     def test_complete_compile_flow(self, interface, mock_prompt, mock_confirm, mock_int_prompt, mock_console):
         """Test complete flow: menu -> compile -> execute."""
-        with patch("bash2gitlab.__main__.compile_handler") as mock_handler:
+        with patch("bash2yaml.__main__.compile_handler") as mock_handler:
             mock_handler.return_value = 0
 
             # Simulate menu selection

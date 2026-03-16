@@ -1,15 +1,15 @@
-import bash2gitlab.gui
-import bash2gitlab.interactive
-import bash2gitlab.tui
+import bash2yaml.gui
+import bash2yaml.interactive
+import bash2yaml.tui
 
 
 def test_imports():
-    assert dir(bash2gitlab.tui)
+    assert dir(bash2yaml.tui)
 
 
 def test_interactive():
-    assert dir(bash2gitlab.interactive)
+    assert dir(bash2yaml.interactive)
 
 
 def test_gui():
-    assert dir(bash2gitlab.gui)
+    assert dir(bash2yaml.gui)

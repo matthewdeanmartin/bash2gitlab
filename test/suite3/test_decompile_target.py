@@ -15,7 +15,7 @@ import textwrap
 
 import pytest
 
-from bash2gitlab.commands.decompile_all import (
+from bash2yaml.commands.decompile_all import (
     bashify_script_items,
     create_script_filename,
     decompile_script_block,
@@ -23,7 +23,7 @@ from bash2gitlab.commands.decompile_all import (
     run_decompile_gitlab_file,
     run_decompile_gitlab_tree,
 )
-from bash2gitlab.utils.yaml_factory import get_yaml
+from bash2yaml.utils.yaml_factory import get_yaml
 
 # ---------------------------------------------------------------------------
 # Fixtures

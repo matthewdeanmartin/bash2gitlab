@@ -18,7 +18,7 @@ import pytest
 from packaging import version as _version
 
 # Import the module under test - adjust import path as needed
-from bash2gitlab.utils.update_checker import (
+from bash2yaml.utils.update_checker import (
     NetworkError,
     PackageNotFoundError,
     VersionInfo,
@@ -226,7 +226,7 @@ class TestCacheOperations:
         cache_file.write_text("test data")
 
         # Mock cache_paths to return our test path
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(tmp_path, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(tmp_path, cache_file)):
             reset_cache("test")
 
         assert not cache_file.exists()
@@ -235,7 +235,7 @@ class TestCacheOperations:
         """Should not raise error for non-existent cache file."""
         cache_file = tmp_path / "nonexistent.json"
 
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(tmp_path, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(tmp_path, cache_file)):
             # Should not raise an exception
             reset_cache("test")
 
@@ -348,7 +348,7 @@ class TestFormatUpdateMessage:
         logger = get_logger(None)
         vi = VersionInfo("2.0.0", None, False)
 
-        with mock.patch("bash2gitlab.utils.update_checker.can_use_color", return_value=True):
+        with mock.patch("bash2yaml.utils.update_checker.can_use_color", return_value=True):
             result = format_update_message("test-pkg", "1.0.0", vi, logger)
 
         # Should contain ANSI color codes
@@ -359,7 +359,7 @@ class TestFormatUpdateMessage:
         logger = get_logger(None)
         vi = VersionInfo("2.0.0", None, False)
 
-        with mock.patch("bash2gitlab.utils.update_checker.can_use_color", return_value=False):
+        with mock.patch("bash2yaml.utils.update_checker.can_use_color", return_value=False):
             result = format_update_message("test-pkg", "1.0.0", vi, logger)
 
         # Should not contain ANSI color codes
@@ -455,7 +455,7 @@ class TestGetVersionInfoFromPypi:
         """Should extract version info correctly."""
         logger = get_logger(None)
 
-        with mock.patch("bash2gitlab.utils.update_checker.fetch_pypi_json", return_value=mock_pypi_data):
+        with mock.patch("bash2yaml.utils.update_checker.fetch_pypi_json", return_value=mock_pypi_data):
             result = get_version_info_from_pypi("test-package", "1.0.0", logger, include_prereleases=False)
 
         assert result.latest_stable == "2.0.0"  # Skips prerelease
@@ -466,7 +466,7 @@ class TestGetVersionInfoFromPypi:
         """Should include prereleases when requested."""
         logger = get_logger(None)
 
-        with mock.patch("bash2gitlab.utils.update_checker.fetch_pypi_json", return_value=mock_pypi_data):
+        with mock.patch("bash2yaml.utils.update_checker.fetch_pypi_json", return_value=mock_pypi_data):
             result = get_version_info_from_pypi("test-package", "1.0.0", logger, include_prereleases=True)
 
         assert result.latest_stable == "2.1.0a1"  # Includes prerelease
@@ -476,7 +476,7 @@ class TestGetVersionInfoFromPypi:
         """Should detect when current version is yanked."""
         logger = get_logger(None)
 
-        with mock.patch("bash2gitlab.utils.update_checker.fetch_pypi_json", return_value=mock_pypi_data):
+        with mock.patch("bash2yaml.utils.update_checker.fetch_pypi_json", return_value=mock_pypi_data):
             result = get_version_info_from_pypi("test-package", "1.1.0", logger, include_prereleases=False)
 
         assert result.current_yanked is True
@@ -486,7 +486,7 @@ class TestGetVersionInfoFromPypi:
         logger = get_logger(None)
         mock_data = {"info": {"version": "1.0.0"}, "releases": {}}
 
-        with mock.patch("bash2gitlab.utils.update_checker.fetch_pypi_json", return_value=mock_data):
+        with mock.patch("bash2yaml.utils.update_checker.fetch_pypi_json", return_value=mock_data):
             result = get_version_info_from_pypi("test-package", "1.0.0", logger, include_prereleases=False)
 
         assert result.latest_stable == "1.0.0"
@@ -507,7 +507,7 @@ class TestCheckForUpdates:
         cache_data = {"last_check": time.time(), "latest_stable": "2.0.0", "latest_dev": None, "current_yanked": False}
         cache_file.write_text(orjson.dumps(cache_data).decode())
 
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
             result = check_for_updates("test-package", "1.0.0", logger)
 
         # Should have found an update from cache without hitting PyPI
@@ -522,9 +522,9 @@ class TestCheckForUpdates:
 
         mock_version_info = VersionInfo("2.0.0", "2.1.0.dev1", False)  # Updates available
 
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
             with mock.patch(
-                "bash2gitlab.utils.update_checker.get_version_info_from_pypi", return_value=mock_version_info
+                "bash2yaml.utils.update_checker.get_version_info_from_pypi", return_value=mock_version_info
             ):
                 result = check_for_updates("test-pkg", "1.0.0", logger)
 
@@ -546,9 +546,9 @@ class TestCheckForUpdates:
 
         mock_version_info = VersionInfo("2.0.0", None, False)
 
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
             with mock.patch(
-                "bash2gitlab.utils.update_checker.get_version_info_from_pypi", return_value=mock_version_info
+                "bash2yaml.utils.update_checker.get_version_info_from_pypi", return_value=mock_version_info
             ) as mock_pypi:
                 # First call should hit PyPI
                 result1 = check_for_updates("test-pkg", "1.0.0", logger, cache_ttl_seconds=3600)
@@ -572,9 +572,9 @@ class TestCheckForUpdates:
         # Current version is yanked, but newer stable available
         mock_version_info = VersionInfo("2.0.0", None, True)
 
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
             with mock.patch(
-                "bash2gitlab.utils.update_checker.get_version_info_from_pypi", return_value=mock_version_info
+                "bash2yaml.utils.update_checker.get_version_info_from_pypi", return_value=mock_version_info
             ):
                 result = check_for_updates("test-pkg", "1.5.0", logger)  # Yanked version
 
@@ -605,7 +605,7 @@ class TestRealWorldScenarios:
 
     def test_background_check_with_mocked_network(self, monkeypatch):
         """Test background checking with mocked network (deterministic)."""
-        import bash2gitlab.utils.update_checker as update_checker
+        import bash2yaml.utils.update_checker as update_checker
 
         logger = get_logger(None)
 
@@ -729,7 +729,7 @@ class TestEdgeCases:
 #
 #         def worker():
 #             try:
-#                 with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+#                 with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
 #                     # Simulate some work
 #                     save_cache(cache_dir, cache_file, {"worker": threading.current_thread().name}, logger)
 #                     time.sleep(0.01)  # Small delay
@@ -763,7 +763,7 @@ def temp_cache_dir(tmp_path):
 @pytest.fixture(autouse=True)
 def reset_global_state():
     """Reset global state before each test."""
-    import bash2gitlab.utils.update_checker as update_checker
+    import bash2yaml.utils.update_checker as update_checker
 
     update_checker._background_check_result = None
     update_checker._background_check_registered = False
@@ -798,9 +798,9 @@ def test_check_updates_package_not_found(tmp_path):
     cache_dir = tmp_path
     cache_file = tmp_path / "nonexistent_cache.json"
 
-    with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+    with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
         with mock.patch(
-            "bash2gitlab.utils.update_checker.get_version_info_from_pypi", side_effect=PackageNotFoundError()
+            "bash2yaml.utils.update_checker.get_version_info_from_pypi", side_effect=PackageNotFoundError()
         ):
             result = check_for_updates("nonexistent-package", "1.0.0", logger)
 
@@ -817,9 +817,9 @@ def test_check_updates_network_error(tmp_path):
     cache_dir = tmp_path
     cache_file = tmp_path / "test_cache.json"
 
-    with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+    with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
         with mock.patch(
-            "bash2gitlab.utils.update_checker.get_version_info_from_pypi", side_effect=NetworkError("Connection failed")
+            "bash2yaml.utils.update_checker.get_version_info_from_pypi", side_effect=NetworkError("Connection failed")
         ):
             result = check_for_updates("test-package", "1.0.0", logger)
 
@@ -838,11 +838,11 @@ class TestBackgroundUpdates:
         logger = get_logger(None)
 
         # Reset global state
-        import bash2gitlab.utils.update_checker as update_checker
+        import bash2yaml.utils.update_checker as update_checker
 
         update_checker._background_check_result = None
 
-        with mock.patch("bash2gitlab.utils.update_checker.check_for_updates", return_value="Update available"):
+        with mock.patch("bash2yaml.utils.update_checker.check_for_updates", return_value="Update available"):
             _background_update_worker("test-pkg", "1.0.0", logger, 3600, False)
 
         assert update_checker._background_check_result == "Update available"
@@ -852,11 +852,11 @@ class TestBackgroundUpdates:
         logger = get_logger(None)
 
         # Reset global state
-        import bash2gitlab.utils.update_checker as update_checker
+        import bash2yaml.utils.update_checker as update_checker
 
         update_checker._background_check_result = None
 
-        with mock.patch("bash2gitlab.utils.update_checker.check_for_updates", side_effect=Exception("Test error")):
+        with mock.patch("bash2yaml.utils.update_checker.check_for_updates", side_effect=Exception("Test error")):
             _background_update_worker("test-pkg", "1.0.0", logger, 3600, False)
 
         # Should not crash and result should be None
@@ -864,7 +864,7 @@ class TestBackgroundUpdates:
 
     def test_exit_handler_with_result(self, capsys):
         """Exit handler should print result when available."""
-        import bash2gitlab.utils.update_checker as update_checker
+        import bash2yaml.utils.update_checker as update_checker
 
         update_checker._background_check_result = "Test update message"
 
@@ -875,7 +875,7 @@ class TestBackgroundUpdates:
 
     def test_exit_handler_no_result(self, capsys):
         """Exit handler should not print when no result available."""
-        import bash2gitlab.utils.update_checker as update_checker
+        import bash2yaml.utils.update_checker as update_checker
 
         update_checker._background_check_result = None
 
@@ -894,11 +894,11 @@ class TestBackgroundUpdates:
         cache_data = {"last_check": time.time(), "latest_stable": "2.0.0", "latest_dev": None, "current_yanked": False}
         cache_file.write_text(orjson.dumps(cache_data).decode())
 
-        import bash2gitlab.utils.update_checker as update_checker
+        import bash2yaml.utils.update_checker as update_checker
 
         update_checker._background_check_result = None
 
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
             start_background_update_check("test-pkg", "1.0.0", logger)
 
         # Should have set result from cache
@@ -931,7 +931,7 @@ class TestBackgroundUpdates:
             mock_thread_obj.start = MagicMock()
             return mock_thread_obj
 
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", return_value=(cache_dir, cache_file)):
             with mock.patch("threading.Thread", side_effect=mock_thread):
                 start_background_update_check("test-pkg", "1.0.0", logger)
 
@@ -942,7 +942,7 @@ class TestBackgroundUpdates:
         logger = get_logger(None)
 
         # Force an exception in cache path calculation
-        with mock.patch("bash2gitlab.utils.update_checker.cache_paths", side_effect=Exception("Test error")):
+        with mock.patch("bash2yaml.utils.update_checker.cache_paths", side_effect=Exception("Test error")):
             # Should not raise an exception
             start_background_update_check("test-pkg", "1.0.0", logger)
 

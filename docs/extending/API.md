@@ -1,10 +1,10 @@
-# Module bash2gitlab
+# Module bash2yaml
 
 ## Sub-modules
 
-- bash2gitlab.compile_all
-- bash2gitlab.logging_config
-- bash2gitlab.decompile_all
+- bash2yaml.compile_all
+- bash2yaml.logging_config
+- bash2yaml.decompile_all
 
 ## Functions
 
