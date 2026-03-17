@@ -149,19 +149,6 @@ members = ["./",
 ]
 
 [project.scripts]
-bash2yaml = "bash2yaml.__main__:main"
-b2y = "bash2yaml.__main__:main"
-
-bash2yaml-tui = "bash2yaml.tui:main"
-b2y-tui = "bash2yaml.tui:main"
-
-bash2yaml-gui = "bash2yaml.gui:main"
-b2y-gui = "bash2yaml.gui:main"
-
-bash2yaml-interactive = "bash2yaml.interactive:main"
-b2y-interactive = "bash2yaml.interactive:main"
-
-# legacy names
 bash2gitlab = "bash2yaml.__main__:main"
 b2gl = "bash2yaml.__main__:main"
 
