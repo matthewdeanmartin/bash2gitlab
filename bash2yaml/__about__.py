@@ -1,4 +1,4 @@
-"""Metadata for bash2yaml."""
+"""Metadata for bash2gitlab."""
 
 __all__ = [
     "__title__",
@@ -12,7 +12,7 @@ __all__ = [
     "__status__",
 ]
 
-__title__ = "bash2yaml"
+__title__ = "bash2gitlab"
 __version__ = "0.9.10"
 __description__ = "Compile bash to gitlab pipeline yaml"
 __readme__ = "README.md"

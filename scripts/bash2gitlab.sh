@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Constants
-readonly B2G_IMAGE_NAME="docker.io/matthewdeanmartin/bash2yaml"
+readonly B2G_IMAGE_NAME="docker.io/matthewdeanmartin/bash2gitlab"
 readonly B2G_VERSION="0.9.1"
 readonly B2G_IMAGE="${B2G_IMAGE_NAME}:${B2G_VERSION}"
 

@@ -1,1 +1,1 @@
-python -m scripts.condensor bash2yaml --package bash2yaml --output source_condensed.md --signatures-only
+python -m scripts.condensor bash2gitlab --package bash2gitlab --output source_condensed.md --signatures-only
