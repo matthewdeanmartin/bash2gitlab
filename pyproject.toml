@@ -45,12 +45,12 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/matthewdeanmartin/bash2yaml"
-Documentation = "https://bash2yaml.readthedocs.io/en/latest/"
-Changelog = "https://github.com/matthewdeanmartin/bash2yaml/blob/main/CHANGELOG.md"
+Repository = "https://github.com/matthewdeanmartin/bash2gitlab"
+Documentation = "https://bash2gitlab.readthedocs.io/en/latest/"
+Changelog = "https://github.com/matthewdeanmartin/bash2gitlab/blob/main/CHANGELOG.md"
 
-homepage = "https://github.com/matthewdeanmartin/bash2yaml"
-issues = "https://github.com/matthewdeanmartin/bash2yaml/issues/"
+homepage = "https://github.com/matthewdeanmartin/bash2gitlab"
+issues = "https://github.com/matthewdeanmartin/bash2gitlab/issues/"
 # support – e.g. chat or forum - TODO
 
 [project.optional-dependencies]

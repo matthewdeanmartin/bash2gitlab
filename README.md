@@ -1,9 +1,9 @@
 # bash2gitlab
 
-**NOTICE**: I am renaming this to bash2yaml. It will support multiple targets (Github Actions, Gitlab, etc) and
+**NOTICE**: I am renaming this to [bash2yaml](https://pypi.org/project/bash2yaml). It will support multiple targets (Github Actions, Gitlab, etc) and
 not have someone else trademarked name as part of the name.
 
-0.10.0 will be the last release. All bug fixes, security patches will be done on bash2yaml.
+0.10.0 will be the last release. All bug fixes, security patches will be done on [bash2yaml](https://pypi.org/project/bash2yaml).
 
 ---
 
