@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed for any bug fixes.
 - Security in case of vulnerabilities.
 
+## [0.10.1] - 2026-04-15
+
+### Fixed
+
+- Load the bundled GitLab CI schema correctly after the package rename and cache it for offline validation.
+
 ## [0.10.0] - 2025-11-29
 
 ### Changed

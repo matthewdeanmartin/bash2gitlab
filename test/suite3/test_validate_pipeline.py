@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from bash2yaml.utils.validate_pipeline import GitLabCIValidator, ValidationResult, validate_gitlab_ci_yaml
@@ -146,11 +148,11 @@ class TestSchemaCache:
 
 class TestFallbackSchema:
     def test_fallback_schema_returns_dict_or_none(self, tmp_path):
-        """_load_fallback_schema returns a dict if the package resource resolves, else None."""
+        """_load_fallback_schema should resolve the bundled schema."""
         v = _make_validator(tmp_path)
         schema = v._load_fallback_schema()
-        # May be None if package resource path doesn't resolve in dev environment
-        assert schema is None or isinstance(schema, dict)
+        assert isinstance(schema, dict)
+        assert len(schema) > 0
 
     def test_get_schema_works_via_cache_or_network_or_fallback(self, tmp_path):
         """get_schema() must return something (from any source) as long as one source works."""
@@ -158,6 +160,21 @@ class TestFallbackSchema:
         schema = v.get_schema()
         assert isinstance(schema, dict)
         assert len(schema) > 0
+
+    def test_get_schema_uses_bundled_fallback_when_network_is_unavailable(self, tmp_path, monkeypatch):
+        """Offline schema loading must succeed without cache or network access."""
+        v = _make_validator(tmp_path)
+
+        def fail_urlopen(*_args, **_kwargs):
+            raise urllib.error.URLError("offline")
+
+        monkeypatch.setattr(urllib.request, "urlopen", fail_urlopen)
+
+        schema = v.get_schema()
+
+        assert isinstance(schema, dict)
+        assert len(schema) > 0
+        assert v.cache_file.exists()
 
 
 # ---------------------------------------------------------------------------

@@ -114,10 +114,12 @@ class GitLabCIValidator:
             Schema dictionary if successful, None otherwise.
         """
         try:
+            package_root = (__package__ or __name__).split(".", maxsplit=1)[0]
+
             # Try modern importlib.resources approach (Python 3.9+) or importlib_resources backport
             if files is not None:
                 try:
-                    package_files = files(__package__ or __name__.split(".", maxsplit=1)[0])
+                    package_files = files(package_root)
                     schema_file = package_files / self.fallback_schema_path
                     if schema_file.is_file():
                         schema_data = schema_file.read_text(encoding="utf-8")
@@ -125,17 +127,20 @@ class GitLabCIValidator:
                 except (FileNotFoundError, AttributeError, TypeError):
                     pass
 
-            # Fallback: try to load from relative path
-            try:
-                current_dir = Path(__file__).parent if "__file__" in globals() else Path.cwd()
-                fallback_file = current_dir / self.fallback_schema_path
-                if fallback_file.exists():
-                    with open(fallback_file, encoding="utf-8") as f:
-                        return json.loads(f.read())
-            except (OSError, FileNotFoundError):
-                pass
+            module_dir = Path(__file__).resolve().parent if "__file__" in globals() else Path.cwd()
+            fallback_candidates = [
+                module_dir.parent / self.fallback_schema_path,
+                module_dir / self.fallback_schema_path,
+            ]
+            for fallback_file in fallback_candidates:
+                try:
+                    if fallback_file.is_file():
+                        with open(fallback_file, encoding="utf-8") as f:
+                            return json.loads(f.read())
+                except (OSError, FileNotFoundError):
+                    continue
 
-        except (json.JSONDecodeError, Exception) as e:
+        except (json.JSONDecodeError, OSError, AttributeError, TypeError) as e:
             logger.warning(f"Failed to load Gitlab JSON schema from package resource: {e}")
 
         return None
@@ -143,7 +148,7 @@ class GitLabCIValidator:
     @cache  # noqa: B019  # pylint: disable=method-cache-max-size-none
     def get_schema(self) -> dict[str, Any]:
         """
-        Get the GitLab CI schema, trying URL first, then cache, then fallback.
+        Get the GitLab CI schema, trying cache first, then URL, then fallback.
 
         Returns:
             Schema dictionary.
@@ -168,6 +173,7 @@ class GitLabCIValidator:
         schema = self._load_fallback_schema()
         if schema:
             logger.debug("Using gitlab schema from package")
+            self._save_schema_to_cache(schema)
             return schema
 
         raise RuntimeError("Could not load schema from URL, cache, or fallback resource")
