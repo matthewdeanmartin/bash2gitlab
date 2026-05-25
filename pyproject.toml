@@ -140,7 +140,6 @@ dev = [
 
 [tool.uv]
 default-groups = "all"
-universal = true
 
 [tool.uv.sources]
 bash2yaml = { workspace = true }
@@ -151,6 +150,8 @@ members = ["./",
     "plugins/bash2yaml_sample",
 ]
 
+[tool.uv.pip]
+universal = true
 [project.scripts]
 bash2gitlab = "bash2yaml.__main__:main"
 b2gl = "bash2yaml.__main__:main"
