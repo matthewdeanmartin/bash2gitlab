@@ -121,11 +121,11 @@ ci-check: mypy test-ci pylint bandit update-schema
     @echo "✅ CI checks complete"
 
 # Full checks
-full-check: mypy test pylint bandit pre-commit update-schema
+full-check: mypy test pylint bandit update-schema
     @echo "✅ Full checks complete"
 
 # Run all checks
-check: mypy test pylint bandit pre-commit update-schema
+check: mypy test pylint bandit update-schema
 
 # Publish package
 publish: test

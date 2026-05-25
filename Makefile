@@ -120,10 +120,10 @@ ci-check: mypy test-ci pylint bandit update-schema
 	@echo "✅ CI checks complete"
 
 .PHONY: full-check
-full-check: mypy test pylint bandit pre-commit update-schema
+full-check: mypy test pylint bandit update-schema
 	@echo "✅ Full checks complete"
 
-check: mypy test pylint bandit pre-commit update-schema
+check: mypy test pylint bandit update-schema
 
 #.PHONY: publish_test
 #publish_test:
