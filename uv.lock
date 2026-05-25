@@ -610,6 +610,7 @@ dev = [
     { name = "codespell", version = "2.4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "codespell", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
     { name = "detect-test-pollution" },
+    { name = "dont-be-lazy", marker = "python_full_version >= '3.10'" },
     { name = "gha-update", marker = "python_full_version >= '3.12'" },
     { name = "git2md", marker = "python_full_version >= '3.10'" },
     { name = "hatchling", version = "1.27.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
@@ -639,6 +640,7 @@ dev = [
     { name = "pre-commit", version = "4.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "pyclean", marker = "python_full_version >= '3.12'" },
     { name = "pydantic", marker = "python_full_version >= '3.14'" },
+    { name = "pydoc-fork", marker = "python_full_version >= '3.10'" },
     { name = "pydoctest" },
     { name = "pyenchant", version = "3.2.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.9'" },
     { name = "pyenchant", version = "3.3.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.9'" },
@@ -702,6 +704,7 @@ dev = [
     { name = "bandit", marker = "python_full_version >= '3.8'" },
     { name = "codespell", marker = "python_full_version >= '3.8'", specifier = ">=2.2.6" },
     { name = "detect-test-pollution" },
+    { name = "dont-be-lazy", marker = "python_full_version >= '3.10'", specifier = ">=0.1.2" },
     { name = "gha-update", marker = "python_full_version >= '3.12'" },
     { name = "git2md", marker = "python_full_version >= '3.10'" },
     { name = "hatchling", marker = "python_full_version >= '3.8'" },
@@ -721,6 +724,7 @@ dev = [
     { name = "pre-commit", marker = "python_full_version >= '3.8'" },
     { name = "pyclean", marker = "python_full_version >= '3.12'" },
     { name = "pydantic", marker = "python_full_version >= '3.14'", specifier = ">=2.12.0" },
+    { name = "pydoc-fork", marker = "python_full_version >= '3.10'", specifier = ">=3.0.0" },
     { name = "pydoctest", marker = "python_full_version >= '3.8'", specifier = "==0.2.1" },
     { name = "pyenchant", marker = "python_full_version >= '3.8'", specifier = ">=3.2.2" },
     { name = "pylint", marker = "python_full_version >= '3.8'" },
@@ -1841,6 +1845,33 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fc/f8/98eea607f65de6527f8a2e8885fc8015d3e6f5775df186e443e0964a11c3/distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed", size = 60722, upload-time = "2023-12-24T09:54:32.31Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2", size = 20277, upload-time = "2023-12-24T09:54:30.421Z" },
+]
+
+[[package]]
+name = "docopt-ng"
+version = "0.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/50/8d6806cf13138127692ae6ff79ddeb4e25eb3b0bcc3c1bd033e7e04531a9/docopt_ng-0.9.0.tar.gz", hash = "sha256:91c6da10b5bb6f2e9e25345829fb8278c78af019f6fc40887ad49b060483b1d7", size = 32264, upload-time = "2023-05-30T20:46:25.064Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/4a/c3b77fc1a24510b08918b43a473410c0168f6e657118807015f1f1edceea/docopt_ng-0.9.0-py3-none-any.whl", hash = "sha256:bfe4c8b03f9fca424c24ee0b4ffa84bf7391cb18c29ce0f6a8227a3b01b81ff9", size = 16689, upload-time = "2023-05-30T20:46:45.294Z" },
+]
+
+[[package]]
+name = "docutils"
+version = "0.20.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/1f/53/a5da4f2c5739cf66290fac1431ee52aff6851c7c8ffd8264f13affd7bcdd/docutils-0.20.1.tar.gz", hash = "sha256:f08a4e276c3a1583a86dce3e34aba3fe04d02bba2dd51ed16106244e8a923e3b", size = 2058365, upload-time = "2023-05-16T23:39:19.748Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/26/87/f238c0670b94533ac0353a4e2a1a771a0cc73277b88bff23d3ae35a256c1/docutils-0.20.1-py3-none-any.whl", hash = "sha256:96f387a2c5562db4476f09f13bbab2192e764cac08ebbf3a34a95d9b1e4a59d6", size = 572666, upload-time = "2023-05-16T23:39:15.976Z" },
+]
+
+[[package]]
+name = "dont-be-lazy"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/86/7b/5dda8c9e44562e009f5c413ae8bfffadf634f82237d49fd70b3674daf15f/dont_be_lazy-0.1.2.tar.gz", hash = "sha256:cde4c20f8b11efd6dc0142dc8464c1968412e5bb7acafc38703aa1491df7cbba", size = 70007, upload-time = "2026-05-05T00:27:02.041Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/6d/6a334fb3f71923133e3d0fc76e26eb37671dcdae3e5450bdeda5b2232ad8/dont_be_lazy-0.1.2-py3-none-any.whl", hash = "sha256:47b45d3eea83be5f7cae74bc9a9a754bece985b1e1e17184ec623501d2ea2ec3", size = 50821, upload-time = "2026-05-05T00:27:00.548Z" },
 ]
 
 [[package]]
@@ -6674,6 +6705,23 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/52/6d/fffca34caecc4a3f97bda81b2098da5e8ab7efc9a66e819074a11955d87e/pydantic_settings-2.13.1.tar.gz", hash = "sha256:b4c11847b15237fb0171e1462bf540e294affb9b86db4d9aa5c01730bdbe4025", size = 223826, upload-time = "2026-02-19T13:45:08.055Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/00/4b/ccc026168948fec4f7555b9164c724cf4125eac006e176541483d2c959be/pydantic_settings-2.13.1-py3-none-any.whl", hash = "sha256:d56fd801823dbeae7f0975e1f8c8e25c258eb75d278ea7abb5d9cebb01b56237", size = 58929, upload-time = "2026-02-19T13:45:06.034Z" },
+]
+
+[[package]]
+name = "pydoc-fork"
+version = "3.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docopt-ng", marker = "python_full_version >= '3.10'" },
+    { name = "docutils", marker = "python_full_version >= '3.10'" },
+    { name = "jinja2", marker = "python_full_version >= '3.10'" },
+    { name = "markdown", version = "3.10.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "tomli", marker = "python_full_version >= '3.10'" },
+    { name = "typing-extensions", version = "4.15.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cd/1c/20ba0e3ddb78f873f1cc60553e8a500f29d4cef891526e6e4c1cc60caf23/pydoc_fork-3.4.0.tar.gz", hash = "sha256:b9fd3035d66ac81aff1d3bb51febebb49ca821ea1b582b1bc4bf34b487731287", size = 85853, upload-time = "2026-05-24T20:32:05.124Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/22/f2/304f144279d858eb2576095b14529c50a912da806932bb1956e1c014c5eb/pydoc_fork-3.4.0-py3-none-any.whl", hash = "sha256:aebd96098a50b35c90c7d4cb626f33f79eac92533ca18d55c2a82abfa3e6d0af", size = 47981, upload-time = "2026-05-24T20:32:03.463Z" },
 ]
 
 [[package]]
