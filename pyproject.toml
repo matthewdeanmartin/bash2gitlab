@@ -140,6 +140,7 @@ dev = [
 
 [tool.uv]
 default-groups = "all"
+universal = true
 
 [tool.uv.sources]
 bash2yaml = { workspace = true }
