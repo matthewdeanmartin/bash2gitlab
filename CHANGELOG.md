@@ -2,452 +2,404 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-- Added for new features.
-- Changed for changes in existing functionality.
-- Deprecated for soon-to-be removed features.
-- Removed for now removed features.
-- Fixed for any bug fixes.
-- Security in case of vulnerabilities.
 
 ## [0.10.1] - 2026-04-15
 
 ### Fixed
-
 - Load the bundled GitLab CI schema correctly after the package rename and cache it for offline validation.
 
-## [0.10.0] - 2025-11-29
+## [0.10.0] - 2026-03-17
 
 ### Changed
+- Rename package to bash2yaml. GitLab is a trademark and subject to GitLab's trademark policies. Rather than figure out how to comply, the name is changing. This is also in preparation for supporting GitHub Actions and other bash-in-yaml build scripts. bash2gitlab will be left up on PyPI, but future releases will be published as bash2yaml only. The userbase is approximately zero, so this should not be disruptive.
 
-- bash2gitlab's name is changed to bash2yaml. Gitlab is a trademark and subject to Gitlab's trademark policies. Rather than figure
-  out how to comply, I will just change the name. This is also in preparation for supporting GitHub Actions and other
-  bash-in-yaml build scripts. bash2gitlab will be left up on pypi, but soon the library will be published as bash2yaml
-  and no further updates will be published to bash2gitlab. The userbase is approximately zero, so this shouldn't be
-  disruptive.
-
-## [0.9.10] - 2025-11-29
+## [0.9.10] - 2026-03-01
 
 ### Added
+- Python 3.14 support.
+- Pragma: inline-artifact directive for inlining zipped folders.
+- `--totalhelp` switch to list all available help text.
 
-- Python 3.14 support
-- Pragma: inline-artifact
-- `--totalhelp` switch added to list all help
+### Fixed
+- Bad CLI switches fixed.
 
 ## [0.9.9] - 2025-09-29
 
 ### Fixed
-
-- Gitlab library included
+- Include the GitLab library in the distribution.
 
 ### Added
+- `autogit` command and associated switches.
 
-- `autogit` command and switches
-
-## [0.9.8] - 2025-09-04
+## [0.9.8] - 2025-09-05
 
 ### Fixed
-
-- Wrong bash return value for `detect-uncompiled`
-- Fixed other ad hoc return values
+- Wrong bash return value for `detect-uncompiled` command.
+- Fix other ad hoc return values throughout CLI.
 
 ### Added
-
-- `check-pins` to attempt to upgrade `include:` elements to latest hash or git tag.
+- `check-pins` command to attempt to upgrade `include:` elements to the latest hash or git tag.
 
 ## [0.9.7] - 2025-09-01
 
 ### Fixed
-
-- Fix performance with lazy loading, rtoml.
-- Fix performance and caching logic for update checker.
+- Improve startup performance with lazy loading via rtoml.
+- Fix caching logic for the update checker.
 
 ## [0.9.6] - 2025-09-01
 
 ### Fixed
-
-- json schema loaded from cache, then URL, then resource. Won't start using resource until there is some staleness
-  logic.
-- Prime cache before attempting to validate on multiple threads
+- Load JSON schema from cache first, then URL, then bundled resource.
+- Prime schema cache before attempting multi-threaded validation.
 
 ## [0.9.5] - 2025-08-28
 
 ### Fixed
-
-- Backwards compatibility for 3.8, etc
+- Backwards compatibility fixes for Python 3.8 and earlier minor versions.
 
 ## [0.9.4] - 2025-08-28
 
 ### Added
-
-- New validate command to validate yaml against json schema. Previously you had to compile to validate.
+- New `validate` command to validate YAML against JSON schema without requiring a full compile.
 
 ### Changed
+- Add dependency on orjson and urllib3 for speed, and tomli for backwards compatibility.
 
-- New dependency on orjson, urllib3 for speed. Tomli for backwards compatibility.
+### Fixed
+- Performance improvements throughout.
 
 ## [0.9.3] - 2025-08-27
 
 ### Fixed
+- Fix `detect-drift` argument parsing failure. Validate with more comprehensive basic_check.sh test.
 
-- Detect drift failed on arg parse. Validated with more comprehensive basic_check.sh test.
-
-## [0.9.2] - 2025-08-23
-
-### Fixed
-
-- Bash style error handling in CLI code with sys.exit + numeric error code, python exceptions everywhere else.
-- Better error reporting when running gui/tui/interactive without installing `[all]`
-
-## [0.9.1] - 2025-08-22
+## [0.9.2] - 2025-08-24
 
 ### Fixed
+- Replace ad hoc error handling in CLI code with `sys.exit` and numeric exit codes; use Python exceptions everywhere else.
+- Improve error reporting when running gui, tui, or interactive modes without installing the `[all]` extra.
+- Add `set -eo pipefail` to best-effort runner scripts to stop execution on errors.
+- Remove unnecessary `required=True` from `--gitlab-url` lint argument.
+- Refactor bash inliner to delegate shebang stripping to `inline_bash_source` and simplify `read_bash_script`.
+- Improve internal build and CI configuration.
 
-- Core mode less likely to fail in import errors. Install help is now vertically more compact.
-- `doctor` command should be fixed now.
+## [0.9.1] - 2025-08-23
+
+### Fixed
+- Reduce likelihood of import errors in core mode. Make install help text vertically more compact.
+- Fix `doctor` command.
 
 ## [0.9.0] - 2025-08-22
 
 ### Changed
-
-- Installation is `bash2gitlab` for core in the CI/build server or `bash2gitlab[all]` for all commands on your laptop.
-  this will mitigate against supply chain risks as the core has very, very few 3rd party packages.
+- Split installation into `bash2gitlab` for core (suitable for CI/build servers) and `bash2gitlab[all]` for all commands on a local workstation. This minimizes supply chain risk by keeping the core dependency footprint very small.
 
 ### Added
+- CLI option `bash2gitlab run --in-file .gitlab-ci.yml` for best-effort local pipeline execution. This is not a real runner.
 
-- CLI option for `bash2gitlab run --in-file .gitlab-ci.yml` for best efforts to run a pipeline locally. This is not a
-  real runner!
-
-## [0.8.22] - 2025-08-21
+## [0.8.22] - 2025-08-22
 
 ### Changed
-
-- Map deploy writes to multiple folders.
-- Map commit gathers multiple folders. Does not handle conflicts yet.
+- `map-deploy` writes compiled files to multiple destination folders.
+- `map-commit` gathers changes from multiple folders; does not handle conflicts yet.
 
 ### Added
-
-- Best effort local runner will attempt to run a `.gitlab-ci.yml`, obviously without many, many feature.
+- Best-effort local runner to attempt execution of a `.gitlab-ci.yml` without a real GitLab runner.
 
 ## [0.8.21] - 2025-08-20
 
 ### Added
-
-- `# Pragma: do-not-validate-schema` for `!reference` code. Gitlab merges all templates before json validation.
+- `# Pragma: do-not-validate-schema` directive for jobs using `!reference`. GitLab merges all templates before JSON schema validation.
 
 ## [0.8.20] - 2025-08-20
 
 ### Fixed
-
-- Fixed regression where stages were turned into string blocks.
+- Fix regression where YAML `stages` blocks were turned into string blocks.
 
 ### Added
+- Validate YAML against the GitLab JSON schema during compile. Validation results are always reported.
 
-- Now validates yaml against Gitlab's Json Schema. No flag to ignore validation results.
-
-## [0.8.19] - 2025-08-19
+## [0.8.19] - 2025-08-20
 
 ### Fixed
-
-- Fixed regression where scripts were quoted lists again. Added a lot of unit tests.
+- Fix regression where scripts were serialized as quoted YAML lists. Add unit tests to cover the behavior.
 
 ### Added
-
-- Compile will skip if no changes have been made since last compile to any file in the input folder.
+- Skip compile when no changes have been made since the last compile to any file in the input folder.
 
 ## [0.8.18] - 2025-08-19
 
 ### Fixed
+- Fix variable lists being turned into string blocks and `!reference` tags being turned into plain lists.
 
-- Fix for variable lists turning into a string block/`!reference` turning into a plain list.
-
-## [0.8.17] - 2025-08-17
+## [0.8.17] - 2025-08-18
 
 ### Fixed
-
-- Graph failed to retry other renderers
-- Graph failed on utf-8 error
-- Color logging not useful in GUI/TUI Popen calls
-- Lint didn't get gitlab_url from config
-- Fix `Pragma` feature
-- Fix tkinter to change tab when command run
+- Fix `graph` command to retry alternative renderers when graphviz is unavailable.
+- Fix `graph` command to handle UTF-8 errors gracefully.
+- Fix `lint` command to read `gitlab_url` from config when not supplied on the CLI.
+- Fix `Pragma` directive feature in the inliner.
+- Fix Tkinter GUI tab-switching after running a command.
+- Suppress color logging inside GUI and TUI subprocess calls.
+- Extract second bash reader module (`bash_reader2.py`) to improve inlining reliability.
 
 ## [0.8.16] - 2025-08-17
 
 ### Changed
+- Improve documentation, docstrings, and help text.
+- Extend `init` command to cover all configuration options.
 
-- Documentation, docstrings, help text
-- Init now covers all the config option.
-
-## [0.8.15] - 2025-08-16
+## [0.8.15] - 2025-08-17
 
 ### Added
-
-- Interactive mode via bash2gitlab-interactive command
-- GUI via bash2gitlab-gui command
+- Interactive mode via `bash2gitlab-interactive` command.
+- GUI via `bash2gitlab-gui` command.
+- Pragma directives to control inlining behavior: `do-not-inline`, `do-not-inline-next-line`, `start-do-not-inline`, `end-do-not-inline`, and `allow-outside-root`.
 
 ### Changed
-
-- `shred` renamed to decompile.
-- Config updates to support storing almost all command options in config file
-- Inline supports Pragma commands to skip certain bash from being in-lined.
-    - `# Pragma: do-not-inline`: Prevents inlining on the current line.
-    - `# Pragma: do-not-inline-next-line`: Prevents inlining on the next line.
-    - `# Pragma: start-do-not-inline`: Starts a block where no inlining occurs.
-    - `# Pragma: end-do-not-inline`: Ends the block.
-    - `# Pragma: allow-outside-root`: Bypasses the directory traversal security check.
+- Rename `shred` command to `decompile`.
+- Update config file to support storing almost all command options.
 
 ## [0.8.14] - 2025-08-16
 
 ### Added
-
-- Basc textual TUI added to mirror the CLI interface
-- Generates makefile for decompile command
+- Textual TUI interface mirroring the CLI.
+- Generate a makefile when running the `decompile` command.
 
 ## [0.8.13] - 2025-08-15
 
 ### Fixed
-
-- decompile command had wrong CLI argument validation
+- Fix incorrect CLI argument validation in `decompile` command.
 
 ### Changed
+- `graph` command now attempts alternative graphing styles when graphviz is not available.
 
-- `graph` command will attempt other graphing styles if graphviz not available.
-
-## [0.8.12] - 2025-08-14
+## [0.8.12] - 2025-08-15
 
 ### Added
-
-- Graph command
-- Doctor command for diagnostics
-- Show config command to show how cascading config resolves
+- `graph` command to visualize inline relationships.
+- `doctor` command for environment diagnostics.
+- `show-config` command to display the resolved cascading configuration.
 
 ### Fixed
-
-- decompile write to a folder now.
-- decompile will take --in-file or --in-folder
-- decompile records `!reference [.job, key]` as bash comment
-- decompile now logs with relative path.
-- decompile should now use path relative to yaml not cwd
-- Leading `.` got stripped from file names. Fixed
+- `decompile` now writes output to a folder.
+- `decompile` accepts `--in-file` or `--in-folder`.
+- `decompile` records `!reference [.job, key]` as a bash comment.
+- `decompile` logs with paths relative to the YAML file, not cwd.
+- Fix leading `.` being stripped from generated filenames.
 
 ## [0.8.11] - 2025-08-14
 
 ### Added
+- `install-precommit` and `uninstall-precommit` commands to manage git pre-commit hooks that compile before commit.
+- Pluggy plugin support.
+- Extended script language inlining support for a much larger set of interpreters using `interpreter -c "..."` invocations.
 
-- Install/uninstall git precommit hooks to compile before commit (not integrated with the popular pre-commit tool).
-  Support for
-  integration with the `pre-commit` tool is on the way.
-- Pluggy support for plugins
-
-### Changed
-
-- Now support inlining a much larger list of script languages using variations on `interpreter -c "..."`
-
-## [0.8.10] - 2025-08-11
+## [0.8.10] - 2025-08-12
 
 ### Fixed
-
-- Minimize all "script as yaml lists" because they are not compatible with line continuation characters. No one should
-  use any version of bash2gitlab before 0.8.10.
+- Minimize all "script as YAML lists" representations because they are incompatible with line continuation characters.
 
 ## [0.8.9] - 2025-08-11
 
 ### Fixed
-
-- Lost all new lines.
+- Fix loss of all newlines in output scripts.
 
 ## [0.8.8] - 2025-08-11
 
 ### Added
-
-- Support for inlining other languages, python, etc. using `python -c`, etc.
+- Support for inlining non-bash languages (Python, etc.) using `python -c` and equivalent interpreter invocations.
 
 ### Fixed
-
-- Force new line at the end of any script.
-- Minimize bash written in `- code` lists because of risk of quoting problems.
-- Quote strings more aggressively
+- Force a trailing newline at the end of every inlined script.
+- Minimize bash written as `- code` YAML lists to reduce quoting problems.
+- Quote strings more aggressively to prevent YAML interpretation issues.
 
 ## [0.8.7] - 2025-08-10
 
-### Changed
+### Added
+- `clean` command to remove only unmodified files from the output folder.
+- Check for stray files in the output folder before compiling.
+- `lint` command (beta) for calling GitLab APIs to validate YAML.
 
-- File invocations followed by comment are now detected.
-- Concept of script folder and template folder gone. Input folder and output folder is enough.
+### Changed
+- Detect file invocations that are followed by a comment.
+- Remove the concept of script folder and template folder in favor of a single input folder and output folder.
 
 ### Removed
-
-- Global variable file feature is broken, will need to rethink
-
-### Added
-
-- Clean command that only removes unmodified files from output folder
-- Checks for stray files in output folder before compiling
-- Lint command, but it is in "beta" testing
+- Global variable file feature removed pending a rethink.
 
 ### Fixed
-
-- No longer rewrites files even when there are no changes
+- Avoid rewriting output files when no changes have occurred.
 
 ## [0.8.6] - 2025-08-09
 
 ### Changed
-
-- Map deploy and map commit now restricted to .sh, .ps1 and .y\[a\]ml files.
+- Restrict `map-deploy` and `map-commit` operations to `.sh`, `.ps1`, and `.y[a]ml` files.
 
 ### Added
-
-- Map commit CLI available.
-- Suggestions on incorrect cli command
+- `map-commit` CLI command.
+- Suggestions for incorrect CLI commands.
 
 ## [0.8.5] - 2025-08-08
 
-### Changed
+### Added
+- `map-deploy` feature to copy compiled files to multiple destination projects.
 
-- Discourage excessive quotes
+### Changed
+- Discourage excessive quoting in generated output.
 
 ### Fixed
-
-- Gracefully degrade if someone changes generated yaml to invalid yaml.
-
-### Added
-
-- Map deploy started.
+- Gracefully degrade when a generated YAML file has been hand-edited into invalid YAML.
 
 ## [0.8.4] - 2025-08-06
 
 ### Added
-
-- Shows command used to generate in the header
-- Added "detect-drift" command, to complement the existing drift detection that runs at compile time.
+- Embed the compile command used in the generated file header.
+- `detect-drift` command to report unexpected changes made to generated files outside of compile.
 
 ### Fixed
-
-- Bug that stringified certain complex values in yaml maps.
+- Fix bug that stringified certain complex values in YAML maps.
 
 ## [0.8.3] - 2025-08-05
 
 ### Added
-
-- Basic ps1 file support
+- Basic PowerShell (`.ps1`) file support.
 
 ### Fixed
-
-- Fixed bug with copy2local
+- Fix bug in `copy2local` command.
 
 ## [0.8.2] - 2025-08-05
 
 ### Added
-
-- Checks for updated package from pypi.
+- Check for updated package version on PyPI at startup.
 
 ### Changed
-
-- copy2local now copies the contents of src folder to destination folder, to reduce nesting.
+- `copy2local` now copies the contents of the source folder directly into the destination folder to reduce nesting.
 
 ## [0.8.1] - 2025-08-05
 
 ### Added
-
-- Improve logging
+- Improve logging output.
 
 ## [0.8.0] - 2025-08-04
 
 ### Added
-
-- Inlines bash by same logic as inlining bash into yaml. Looks for `source script.sh` and inlines it.
+- Inline bash scripts referenced via `source script.sh` using the same logic as inlining bash into YAML.
 
 ### Changed
-
-- clone2local is now copy2local using archive and copy commands to get a part of your remote repo into a dependent
-  report for testing.
+- Rename `clone2local` to `copy2local`, using archive and copy commands to get a portion of a remote repo into a dependent repo for testing.
 
 ### Fixed
-
-- Reference or multiple scripts in a script list would all be stomped by last script.
+- Fix bug where multiple script references in a script list were all overwritten by the last script.
 
 ## [0.7.0] - 2025-08-02
 
 ### Added
-
-- Started work on a clone feature to get scripts into dependent repos for testing. Not fully baked yet.
+- Initial `clone` feature for sparse-cloning scripts into dependent repos for testing. Not fully baked yet.
 
 ### Removed
-
-- A `--format` option was a bad idea because all of the major yaml formatting tools are in various states of
-  unsupportedness and cause failures unrelated to bash2gitlab's outputs. Use your favorite orchestration tool, such as
-  make or just to format with a yaml formatter that works for you.
+- Remove `--format` option. Major YAML formatting tools are in various states of unsupportedness and cause failures unrelated to bash2gitlab output.
 
 ## [0.6.0] - 2025-07-30
 
 ### Changed
-
-- Hash is now a bash64 encode of whole yaml document so reformats with more than just whitespace changes can be detected
-  correctly
+- Update hash algorithm to base64-encode the whole YAML document so that reformats with more than whitespace changes are detected correctly.
 
 ### Fixed
-
-- Loosely detect anchors (assumes all hashes with a list value and ./script.sh pattern are script anchors)
-- Detects jobs with only before_script or after_script
+- Loosely detect YAML anchors, assuming all hashes with a list value and a `./script.sh` pattern are script anchors.
+- Detect jobs that have only `before_script` or `after_script`.
 
 ## [0.5.1] - 2025-07-30
 
 ### Fixed
-
-- Preserve long lines
-- Remove leading blank lines from scripts to avoid indentation indicators (e.g. `|2-`)
+- Preserve long lines without wrapping.
+- Remove leading blank lines from scripts to avoid indentation indicators such as `|2-`.
 
 ## [0.5.0] - 2025-07-29
 
-### Fixed
-
-- Subfolders with yaml files are now processed
-
 ### Added
+- Modification detection feature that warns when compiled output has been changed outside of compile.
 
-- Started a feature to detect modification, currently warns and doesn't stop.
+### Fixed
+- Process YAML files in subfolders correctly.
 
 ## [0.4.1] - 2025-07-27
 
 ### Fixed
-
-- Command line aliases are now bash2gitlab and b2gl. Previously had some copy-paste junk.
+- Fix command line aliases to `bash2gitlab` and `b2gl`, removing earlier copy-paste errors.
 
 ## [0.4.0] - 2025-07-27
 
 ### Added
-
-- Watch mode (--watch) to recompile on file changes
-- decompile supports job-level variables
-- decompile automatically includes if-block to include job level and global variables.
-- decompile generates mock CI variables file
-- init command to generate config file
+- Watch mode (`--watch`) to recompile automatically on file changes.
+- `decompile` support for job-level variables, auto-generated if-blocks for including variables, and mock CI variable file generation.
+- `init` command to generate a configuration file.
 
 ## [0.3.0] - 2025-07-27
 
 ### Added
-
-- Option to use toml config file or envvar config instead of CLI switches
+- Support for TOML config file and environment variable configuration as alternatives to CLI switches.
 
 ### Fixed
-
-- Python 3.14 support fixed.
+- Fix Python 3.14 compatibility.
 
 ## [0.2.0] - 2025-07-27
 
 ### Added
-
-- decompile command to turn pre-existing bash-in-yaml pipeline templates into shell files and yaml
+- `decompile` command to convert pre-existing bash-in-YAML pipeline templates into separate shell files and YAML.
 
 ## [0.1.0] - 2025-07-26
 
 ### Added
+- Initial `compile` command and CLI interface.
+- Verbose and quiet logging modes.
+- Support for simple input/output project structure.
 
-- compile command exists
-- verbose and quiet logging
-- CLI interface
-- supports simple in/out project structure
-- supports corralling scripts and templates into a scripts or templates folder, which confuses path resolution 
+[0.10.1]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.10.0...v0.10.1
+[0.10.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.10...v0.10.0
+[0.9.10]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.9...v0.9.10
+[0.9.9]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.8...v0.9.9
+[0.9.8]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.7...v0.9.8
+[0.9.7]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.6...v0.9.7
+[0.9.6]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.5...v0.9.6
+[0.9.5]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.4...v0.9.5
+[0.9.4]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.3...v0.9.4
+[0.9.3]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.2...v0.9.3
+[0.9.2]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.1...v0.9.2
+[0.9.1]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.22...v0.9.0
+[0.8.22]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.21...v0.8.22
+[0.8.21]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.20...v0.8.21
+[0.8.20]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.19...v0.8.20
+[0.8.19]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.18...v0.8.19
+[0.8.18]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.17...v0.8.18
+[0.8.17]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.16...v0.8.17
+[0.8.16]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.15...v0.8.16
+[0.8.15]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.14...v0.8.15
+[0.8.14]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.13...v0.8.14
+[0.8.13]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.12...v0.8.13
+[0.8.12]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.11...v0.8.12
+[0.8.11]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.10...v0.8.11
+[0.8.10]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.9...v0.8.10
+[0.8.9]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.8...v0.8.9
+[0.8.8]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.7...v0.8.8
+[0.8.7]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.6...v0.8.7
+[0.8.6]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.5...v0.8.6
+[0.8.5]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.4...v0.8.5
+[0.8.4]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.3...v0.8.4
+[0.8.3]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.1...v0.8.2
+[0.8.1]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/matthewdeanmartin/bash2gitlab/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/matthewdeanmartin/bash2gitlab/releases/tag/v0.1.0
