@@ -257,7 +257,9 @@ def main() -> int:
         print(f"  - {inst.version:<8}  {inst.path}")
 
     if not cycles:
-        print("\nWarning: Could not fetch latest version info. Network blocked or API unavailable. Showing only local installs.")
+        print(
+            "\nWarning: Could not fetch latest version info. Network blocked or API unavailable. Showing only local installs."
+        )
         # No remote comparison possible -> treat as no actionable signal
         return 0
 
@@ -292,7 +294,9 @@ def main() -> int:
             else:
                 # Not EOL yet, but suggest newer series if available
                 if newest_cycle and newest_cycle != inst.cycle:
-                    recs.append(f"Consider moving to {newest_cycle} (latest {cycles[newest_cycle].latest}) for newest features.")
+                    recs.append(
+                        f"Consider moving to {newest_cycle} (latest {cycles[newest_cycle].latest}) for newest features."
+                    )
         elif ci and ci.eol is None:
             # Unknown EOL
             pass

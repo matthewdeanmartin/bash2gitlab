@@ -93,7 +93,13 @@ def extract_class_signatures(source_code: str) -> list[tuple[str, list[tuple[str
     return classes
 
 
-def process_python_file(file_path: Path, package_name: str = "", remove_main: bool = False, remove_comments: bool = False, signatures_only: bool = False) -> str:
+def process_python_file(
+    file_path: Path,
+    package_name: str = "",
+    remove_main: bool = False,
+    remove_comments: bool = False,
+    signatures_only: bool = False,
+) -> str:
     """Process a single Python file and format it for bot consumption."""
     try:
         with open(file_path, encoding="utf-8") as f:
@@ -169,7 +175,14 @@ def find_python_files(src_path: Path) -> list[Path]:
 class CodeCondenser:
     """Main class for condensing Python code for bot consumption."""
 
-    def __init__(self, src_path: Path, package_name: str = "", remove_main: bool = True, remove_comments: bool = False, signatures_only: bool = False):
+    def __init__(
+        self,
+        src_path: Path,
+        package_name: str = "",
+        remove_main: bool = True,
+        remove_comments: bool = False,
+        signatures_only: bool = False,
+    ):
         self.src_path = Path(src_path)
         self.package_name = package_name
         self.remove_main = remove_main
@@ -181,7 +194,9 @@ class CodeCondenser:
 
     def _process_file_wrapper(self, file_path: Path) -> str:
         """Wrapper for processing files in parallel."""
-        return process_python_file(file_path, self.package_name, self.remove_main, self.remove_comments, self.signatures_only)
+        return process_python_file(
+            file_path, self.package_name, self.remove_main, self.remove_comments, self.signatures_only
+        )
 
     def condense(self) -> str:
         """Condense all Python files in the source directory."""
@@ -206,7 +221,9 @@ class CodeCondenser:
             # Process in parallel for larger number of files
             LOGGER.info("Processing files in parallel")
             with ProcessPoolExecutor() as executor:
-                future_to_file = {executor.submit(self._process_file_wrapper, file_path): file_path for file_path in python_files}
+                future_to_file = {
+                    executor.submit(self._process_file_wrapper, file_path): file_path for file_path in python_files
+                }
 
                 for future in as_completed(future_to_file):
                     file_path = future_to_file[future]
@@ -245,7 +262,13 @@ def main():
     if args.verbose:
         logging.basicConfig(level=logging.INFO)
 
-    condenser = CodeCondenser(src_path=Path(args.src_path), package_name=args.package, remove_main=not args.keep_main, remove_comments=args.remove_comments, signatures_only=args.signatures_only)
+    condenser = CodeCondenser(
+        src_path=Path(args.src_path),
+        package_name=args.package,
+        remove_main=not args.keep_main,
+        remove_comments=args.remove_comments,
+        signatures_only=args.signatures_only,
+    )
 
     if args.output:
         condenser.save_to_file(Path(args.output))

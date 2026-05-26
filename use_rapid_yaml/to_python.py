@@ -77,7 +77,10 @@ def loads(src: str, *, cast_scalars: bool = True) -> Any:
 
     # If the tree has multiple DOC children, return a list of parsed docs.
     if tree.has_children(root) and all(tree.is_doc(ch) for ch in ryml.children(tree, root)):
-        return [_node_to_obj(tree, tree.first_child(doc), cast_scalars) if tree.has_children(doc) else None for doc in ryml.children(tree, root)]
+        return [
+            _node_to_obj(tree, tree.first_child(doc), cast_scalars) if tree.has_children(doc) else None
+            for doc in ryml.children(tree, root)
+        ]
 
     # Single-doc or bare map/seq/scalar at root:
     node = tree.first_child(root) if tree.is_doc(root) and tree.has_children(root) else root

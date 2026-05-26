@@ -35,7 +35,7 @@ import bash2yaml.utils.update_checker as uc
 
 # Primary package to test *your* flow with (cache path is per-package)
 PKG = "bash2yaml"
-CURRENT_VER = "0.0.0"   # use a very old version to likely trigger an update message
+CURRENT_VER = "0.0.0"  # use a very old version to likely trigger an update message
 
 # Additional packages to probe pypi.org behavior under concurrency
 # (Use popular packages to test cache/CDN behavior across multiple endpoints)
@@ -60,8 +60,10 @@ HTTP = urllib3.PoolManager(num_pools=10, maxsize=CONCURRENT_WORKERS, retries=Fal
 # UTILITIES
 # ============================
 
+
 def ts() -> str:
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
 
 @dataclass
 class Result:
@@ -70,8 +72,10 @@ class Result:
     total_s: float
     details: dict[str, Any]
 
+
 def log(line: str) -> None:
     print(f"[{ts()}] {line}")
+
 
 def reset_cache_for(pkg: str) -> None:
     # Use your public API, then double-check the path
@@ -87,6 +91,7 @@ def reset_cache_for(pkg: str) -> None:
 # ============================
 # DIAGNOSTICS (REAL NETWORK)
 # ============================
+
 
 def dns_resolve(host: str = "pypi.org") -> Result:
     t0 = time.perf_counter()
@@ -115,7 +120,7 @@ def pypi_direct_get(package: str) -> Result:
         parsed = json.loads(raw.decode("utf-8"))
         releases_len = len(parsed.get("releases", {}))
         t1 = time.perf_counter()
-        ok = (200 <= status < 300)
+        ok = 200 <= status < 300
         return Result(
             "pypi_direct_get",
             ok,
@@ -158,7 +163,7 @@ def run_check_for_updates_once(package: str, current_version: str) -> Result:
         msg = uc.check_for_updates(
             package_name=package,
             current_version=current_version,
-            cache_ttl_seconds=0,          # FORCE network
+            cache_ttl_seconds=0,  # FORCE network
             include_prereleases=False,
         )
         t1 = time.perf_counter()
@@ -183,7 +188,8 @@ def run_get_version_info_once(package: str, current_version: str) -> Result:
     log(f"get_version_info_from_pypi() start: package={package}")
     try:
         info = uc.get_version_info_from_pypi(
-            package, current_version,
+            package,
+            current_version,
             include_prereleases=False,
             timeout=TIMEOUT,
             retries=RETRIES,
@@ -206,22 +212,29 @@ def run_get_version_info_once(package: str, current_version: str) -> Result:
         )
     except Exception as e:
         t1 = time.perf_counter()
-        return Result("get_version_info_from_pypi", False, t1 - t0, {
-            "package": package,
-            "error": repr(e),
-            "timeout": TIMEOUT,
-            "retries": RETRIES,
-            "backoff": BACKOFF,
-        })
+        return Result(
+            "get_version_info_from_pypi",
+            False,
+            t1 - t0,
+            {
+                "package": package,
+                "error": repr(e),
+                "timeout": TIMEOUT,
+                "retries": RETRIES,
+                "backoff": BACKOFF,
+            },
+        )
 
 
 # ============================
 # RUNNERS
 # ============================
 
+
 def print_result(r: Result) -> None:
     status = "OK " if r.ok else "ERR"
     log(f"{r.label:28} | {status} | {r.total_s:7.3f}s | {r.details}")
+
 
 def sequential_rounds() -> None:
     log("=" * 84)
@@ -230,6 +243,7 @@ def sequential_rounds() -> None:
         log(f"-- round {i}/{SEQUENTIAL_ROUNDS} --")
         res = run_check_for_updates_once(PKG, CURRENT_VER)
         print_result(res)
+
 
 def concurrent_direct_gets() -> None:
     log("=" * 84)
@@ -240,11 +254,14 @@ def concurrent_direct_gets() -> None:
         for fut in as_completed(futs):
             print_result(fut.result())
 
+
 def concurrent_version_info() -> None:
     log("=" * 84)
     all_pkgs = [PKG] + EXTRA_PKGS
-    log(f"CONCURRENT get_version_info_from_pypi() (workers={CONCURRENT_WORKERS}, "
-        f"timeout={TIMEOUT}, retries={RETRIES}, backoff={BACKOFF})")
+    log(
+        f"CONCURRENT get_version_info_from_pypi() (workers={CONCURRENT_WORKERS}, "
+        f"timeout={TIMEOUT}, retries={RETRIES}, backoff={BACKOFF})"
+    )
     with ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as ex:
         futs = [ex.submit(run_get_version_info_once, pkg, CURRENT_VER) for pkg in all_pkgs]
         for fut in as_completed(futs):
@@ -254,6 +271,7 @@ def concurrent_version_info() -> None:
 # ============================
 # MAIN
 # ============================
+
 
 def main() -> None:
     log("=" * 84)

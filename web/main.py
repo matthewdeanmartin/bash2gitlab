@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from bash2yaml.commands.clean_all import clean_targets
+
 # Import your existing bash2yaml modules
 from bash2yaml.commands.compile_all import run_compile_all
 from bash2yaml.commands.decompile_all import run_decompile_gitlab_tree
@@ -34,7 +35,13 @@ logger = logging.getLogger(__name__)
 tasks: dict[str, dict[str, Any]] = {}
 configs: dict[str, dict[str, Any]] = {}
 
-app = FastAPI(title="bash2yaml API", description="Accessible API for bash2yaml operations", version="1.0.0", docs_url="/docs", redoc_url="/redoc")
+app = FastAPI(
+    title="bash2yaml API",
+    description="Accessible API for bash2yaml operations",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
 
 # Enable CORS for web interface
 app.add_middleware(
@@ -108,7 +115,18 @@ class ConfigData(BaseModel):
 def create_task(operation: str) -> str:
     """Create a new task and return its ID"""
     task_id = str(uuid.uuid4())
-    tasks[task_id] = {"id": task_id, "operation": operation, "status": "started", "progress": 0, "current_step": f"Initializing {operation}", "messages": [], "error": None, "started_at": datetime.now(), "completed_at": None, "results": {}}
+    tasks[task_id] = {
+        "id": task_id,
+        "operation": operation,
+        "status": "started",
+        "progress": 0,
+        "current_step": f"Initializing {operation}",
+        "messages": [],
+        "error": None,
+        "started_at": datetime.now(),
+        "completed_at": None,
+        "results": {},
+    }
     return task_id
 
 
@@ -174,7 +192,9 @@ async def validate_config(request: ValidationRequest):
     is_valid = len(errors) == 0
     details = f"Input: {request.inputDir}, Output: {request.outputDir}"
 
-    return ValidationResponse(valid=is_valid, errors=errors if errors else None, warnings=warnings if warnings else None, details=details)
+    return ValidationResponse(
+        valid=is_valid, errors=errors if errors else None, warnings=warnings if warnings else None, details=details
+    )
 
 
 @app.post("/api/v1/compile", response_model=TaskResponse)
@@ -182,7 +202,15 @@ async def start_compile(config: OperationConfig, background_tasks: BackgroundTas
     """Start a compile operation"""
     task_id = create_task("compile")
 
-    background_tasks.add_task(run_compile_operation, task_id, config.inputDir, config.outputDir, config.dryRun, config.force, config.parallelism or 4)
+    background_tasks.add_task(
+        run_compile_operation,
+        task_id,
+        config.inputDir,
+        config.outputDir,
+        config.dryRun,
+        config.force,
+        config.parallelism or 4,
+    )
 
     return TaskResponse(task_id=task_id, message="Compile operation started")
 
@@ -238,7 +266,13 @@ async def get_task_results(task_id: str):
         raise HTTPException(status_code=400, detail="Task not completed")
 
     results = task.get("results", {})
-    return TaskResults(task_id=task_id, summary=results.get("summary", "Operation completed"), files_processed=results.get("files_processed"), output_files=results.get("output_files"), warnings=results.get("warnings"))
+    return TaskResults(
+        task_id=task_id,
+        summary=results.get("summary", "Operation completed"),
+        files_processed=results.get("files_processed"),
+        output_files=results.get("output_files"),
+        warnings=results.get("warnings"),
+    )
 
 
 @app.post("/api/v1/cancel/{task_id}")
@@ -260,7 +294,18 @@ async def cancel_task(task_id: str):
 @app.get("/api/v1/tasks")
 async def list_tasks():
     """List all tasks"""
-    return {"tasks": [{"task_id": task_id, "operation": task["operation"], "status": task["status"], "started_at": task["started_at"].isoformat(), "progress": task["progress"]} for task_id, task in tasks.items()]}
+    return {
+        "tasks": [
+            {
+                "task_id": task_id,
+                "operation": task["operation"],
+                "status": task["status"],
+                "started_at": task["started_at"].isoformat(),
+                "progress": task["progress"],
+            }
+            for task_id, task in tasks.items()
+        ]
+    }
 
 
 # Configuration endpoints
@@ -304,7 +349,9 @@ async def load_config():
 
 
 # Background task functions
-async def run_compile_operation(task_id: str, input_dir: str, output_dir: str, dry_run: bool, force: bool, parallelism: int):
+async def run_compile_operation(
+    task_id: str, input_dir: str, output_dir: str, dry_run: bool, force: bool, parallelism: int
+):
     """Background task for compile operation"""
     try:
         update_task(task_id, status="running", progress=10, current_step="Starting compilation")
@@ -326,13 +373,22 @@ async def run_compile_operation(task_id: str, input_dir: str, output_dir: str, d
             log_task_message(task_id, f"Processing: {filename}")
 
         # Run the actual compilation
-        files_processed = await asyncio.get_event_loop().run_in_executor(None, lambda: run_compile_all_with_progress(in_path, out_path, dry_run, parallelism, force, task_id, progress_callback))
+        files_processed = await asyncio.get_event_loop().run_in_executor(
+            None,
+            lambda: run_compile_all_with_progress(
+                in_path, out_path, dry_run, parallelism, force, task_id, progress_callback
+            ),
+        )
 
         update_task(task_id, progress=95, current_step="Finalizing output")
         log_task_message(task_id, f"Compilation completed. {files_processed} files processed.")
 
         # Store results
-        results = {"summary": f"Successfully compiled {files_processed} files", "files_processed": files_processed, "output_files": list(out_path.rglob("*.yml")) + list(out_path.rglob("*.yaml"))}
+        results = {
+            "summary": f"Successfully compiled {files_processed} files",
+            "files_processed": files_processed,
+            "output_files": list(out_path.rglob("*.yml")) + list(out_path.rglob("*.yaml")),
+        }
 
         update_task(task_id, status="completed", progress=100, current_step="Complete", results=results)
 
@@ -343,7 +399,9 @@ async def run_compile_operation(task_id: str, input_dir: str, output_dir: str, d
         log_task_message(task_id, f"ERROR: {error_msg}")
 
 
-def run_compile_all_with_progress(input_path: Path, output_path: Path, dry_run: bool, parallelism: int, force: bool, task_id: str, progress_callback):
+def run_compile_all_with_progress(
+    input_path: Path, output_path: Path, dry_run: bool, parallelism: int, force: bool, task_id: str, progress_callback
+):
     """Wrapper for compile_all with progress reporting"""
     try:
         # Get list of files to process
@@ -354,7 +412,9 @@ def run_compile_all_with_progress(input_path: Path, output_path: Path, dry_run: 
             return 0
 
         # Call the actual function
-        run_compile_all(uncompiled_path=input_path, output_path=output_path, dry_run=dry_run, parallelism=parallelism, force=force)
+        run_compile_all(
+            uncompiled_path=input_path, output_path=output_path, dry_run=dry_run, parallelism=parallelism, force=force
+        )
 
         return total_files
 
@@ -431,7 +491,11 @@ async def run_lint_operation(task_id: str, output_dir: str, verbose: bool):
 
         summary = f"Linting completed: {ok_count} valid files, {fail_count} files with issues"
 
-        task_results = {"summary": summary, "files_processed": ok_count + fail_count, "warnings": [f"{fail_count} files had validation issues"] if fail_count > 0 else None}
+        task_results = {
+            "summary": summary,
+            "files_processed": ok_count + fail_count,
+            "warnings": [f"{fail_count} files had validation issues"] if fail_count > 0 else None,
+        }
 
         update_task(task_id, status="completed", progress=100, current_step="Complete", results=task_results)
 
@@ -457,13 +521,18 @@ async def run_decompile_operation(task_id: str, input_dir: str, output_dir: str,
         in_path = Path(input_dir)
         out_path = Path(output_dir)
 
-        yml_count, jobs, scripts = await asyncio.get_event_loop().run_in_executor(None, lambda: run_decompile_gitlab_tree(input_root=in_path, output_dir=out_path, dry_run=dry_run))
+        yml_count, jobs, scripts = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: run_decompile_gitlab_tree(input_root=in_path, output_dir=out_path, dry_run=dry_run)
+        )
 
         update_task(task_id, progress=90, current_step="Finalizing decompilation")
 
         log_task_message(task_id, f"Decompiled {yml_count} YAML files, {jobs} jobs, created {scripts} scripts")
 
-        results = {"summary": f"Decompiled {yml_count} YAML files, processed {jobs} jobs, created {scripts} script files", "files_processed": yml_count}
+        results = {
+            "summary": f"Decompiled {yml_count} YAML files, processed {jobs} jobs, created {scripts} script files",
+            "files_processed": yml_count,
+        }
 
         update_task(task_id, status="completed", progress=100, current_step="Complete", results=results)
 
@@ -511,4 +580,10 @@ if __name__ == "__main__":
    Web Interface should connect to: http://{args.host}:{args.port}
     """)
 
-    uvicorn.run("bash2yaml_api:app" if not args.reload else __file__ + ":app", host=args.host, port=args.port, reload=args.reload, log_level="info")
+    uvicorn.run(
+        "bash2yaml_api:app" if not args.reload else __file__ + ":app",
+        host=args.host,
+        port=args.port,
+        reload=args.reload,
+        log_level="info",
+    )

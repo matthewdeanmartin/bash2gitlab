@@ -195,7 +195,9 @@ def merge_into_yaml(data, file_vars: dict[str, str], job_vars: dict[str, dict[st
 def extract_job_names_from_yaml(data) -> tuple[str, ...]:
     names: list[str] = []
     for key, node in list(data.items()):
-        if isinstance(node, dict) and any(k in node for k in ("script", "before_script", "after_script", "pre_get_sources_script")):
+        if isinstance(node, dict) and any(
+            k in node for k in ("script", "before_script", "after_script", "pre_get_sources_script")
+        ):
             names.append(key)
     return tuple(names)
 
