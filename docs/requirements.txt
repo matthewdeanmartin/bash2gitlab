@@ -11,3 +11,4 @@ mkdocs-material-extensions
 # tools
 mkdocs-print-site-plugin
 pymdown-extensions>=10.16.1 # not directly required, pinned by Snyk to avoid a vulnerability
+idna>=3.15 # not directly required, pinned by Snyk to avoid a vulnerability
