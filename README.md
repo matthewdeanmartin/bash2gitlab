@@ -246,3 +246,11 @@ To define variables that should be inlined into the global `variables:` block of
 |-----------------|------------------------------------------------------------------------------------------------------|
 | **Open Issues** | ![GitHub issues](https://img.shields.io/github/issues/matthewdeanmartin/bash2gitlab)                 |
 | **Stars**       | ![GitHub Repo stars](https://img.shields.io/github/stars/matthewdeanmartin/bash2gitlab?style=social) |
+
+## Project Links
+
+- [GitHub](https://github.com/matthewdeanmartin/bash2gitlab)
+- [PyPI](https://pypi.org/project/bash2gitlab/)
+- [Documentation](https://bash2gitlab.readthedocs.io/en/latest/)
+- [Bug Tracker](https://github.com/matthewdeanmartin/bash2gitlab/issues)
+- [Change Log](https://github.com/matthewdeanmartin/bash2gitlab/blob/main/CHANGELOG.md)
