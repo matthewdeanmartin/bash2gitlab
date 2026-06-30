@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [{ name = "Matthew Martin", email = "matthewdeanmartin@gmail.com" }]
 keywords = ["bash", "gitlab"]
 license = "MIT"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     # Core enables compile, decompile, validate, best effort runner
     "ruamel.yaml>=0.18.14", # required to compile
@@ -136,7 +136,7 @@ dev = [
     "linkcheckmd>=1.4.0; python_version >= '3.8'",
     "codespell>=2.2.6; python_version >= '3.8'",
     "pyenchant>=3.2.2; python_version >= '3.8'",
-    "keepachangelog-manager-fork>=6.1.1,<7",
+    "keepachangelog-manager-fork[all]>=6.5.0",
 ]
 
 [tool.uv]
