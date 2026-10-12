@@ -254,3 +254,10 @@ To define variables that should be inlined into the global `variables:` block of
 - [Documentation](https://bash2gitlab.readthedocs.io/en/latest/)
 - [Bug Tracker](https://github.com/matthewdeanmartin/bash2gitlab/issues)
 - [Change Log](https://github.com/matthewdeanmartin/bash2gitlab/blob/main/CHANGELOG.md)
+
+
+## Python 3.15 verification (2026-10-04)
+
+950 tests pass / 5 skip on RC3 stable, prerelease dependencies, and 3.14.7. Full all extra also installs from wheels and passes on RC3. Existing tomllib fallback works without rtoml; published 0.10.1 still requires unavailable rtoml.
+
+Stable locks were refreshed with `uv lock --upgrade`. Dependency verification uses fresh environments and published wheels only; no source builds. Full developer tools still have wheel blockers (linkcheckmd or PyYAML); passing unit tests do not certify the full developer group. Evidence and details: `C:/github/python315_batch5_2026-10-04.md`. Human operators review and file any upstream bugs.
