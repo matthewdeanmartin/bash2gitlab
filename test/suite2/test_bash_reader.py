@@ -209,11 +209,7 @@ class TestInlineBashSourcePragmas:
         lib.write_text("echo lib\n")
         main = tmp_path / "main.sh"
         main.write_text(
-            "#!/bin/bash\n"
-            "# Pragma: start-do-not-inline\n"
-            "source lib.sh\n"
-            "# Pragma: end-do-not-inline\n"
-            "echo after\n"
+            "#!/bin/bash\n# Pragma: start-do-not-inline\nsource lib.sh\n# Pragma: end-do-not-inline\necho after\n"
         )
         result = read_bash_script(main)
         assert "echo lib" not in result
@@ -223,11 +219,7 @@ class TestInlineBashSourcePragmas:
         monkeypatch.setenv("BASH2YAML_SKIP_ROOT_CHECKS", "1")
         main = tmp_path / "main.sh"
         main.write_text(
-            "#!/bin/bash\n"
-            "# Pragma: start-do-not-inline\n"
-            "# Pragma: start-do-not-inline\n"
-            "echo x\n"
-            "# Pragma: end-do-not-inline\n"
+            "#!/bin/bash\n# Pragma: start-do-not-inline\n# Pragma: start-do-not-inline\necho x\n# Pragma: end-do-not-inline\n"
         )
         with pytest.raises((PragmaError, Exception)):
             read_bash_script(main)

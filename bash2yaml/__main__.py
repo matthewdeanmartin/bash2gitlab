@@ -502,8 +502,7 @@ def add_autogit_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--autogit",
         action="store_true",
-        help="Automatically stage, commit, and/or push changes after the command succeeds. "
-        "Behavior is configured in [tool.bash2yaml.autogit].",
+        help="Automatically stage, commit, and/or push changes after the command succeeds. Behavior is configured in [tool.bash2yaml.autogit].",
     )
 
 
@@ -820,8 +819,7 @@ def main() -> int:
         "check-pins",
         help="Analyze GitLab CI 'include' statements and suggest pinning to tags.",
         description=(
-            "Scans a .gitlab-ci.yml file for 'project' includes and checks their refs (tags, branches, commits).\n"
-            "Suggests pinning to the latest semantic version tag for stability.\n\n"
+            "Scans a .gitlab-ci.yml file for 'project' includes and checks their refs (tags, branches, commits).\nSuggests pinning to the latest semantic version tag for stability.\n\n"
             + "GitLab connection options are required via CLI or config."
         ),
         formatter_class=argparse.RawTextHelpFormatter,

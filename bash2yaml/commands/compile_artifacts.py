@@ -242,8 +242,7 @@ def maybe_inline_artifact(line: str, input_dir: Path) -> tuple[list[str], Path] 
                 format_size(max_size),
             )
             raise ArtifactInlineError(
-                f"Artifact {source_path} is too large: {format_size(compressed_size)} "
-                f"exceeds limit of {format_size(max_size)}"
+                f"Artifact {source_path} is too large: {format_size(compressed_size)} exceeds limit of {format_size(max_size)}"
             )
 
         if compressed_size > warn_size:

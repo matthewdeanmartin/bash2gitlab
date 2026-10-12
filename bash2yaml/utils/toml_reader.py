@@ -52,8 +52,7 @@ def load_from_path(path: Path) -> Mapping[str, Any]:
     """
     if LOADER is None:
         raise RuntimeError(
-            "No TOML backend available. Install 'rtoml' (preferred), "
-            "'tomli' on Python < 3.11, or use Python 3.11+ for 'tomllib'."
+            "No TOML backend available. Install 'rtoml' (preferred), 'tomli' on Python < 3.11, or use Python 3.11+ for 'tomllib'."
         )
 
     try:
@@ -75,8 +74,7 @@ def loads_from_string(s: str) -> Mapping[str, Any]:
     """
     if LOADER is None:
         raise RuntimeError(
-            "No TOML backend available. Install 'rtoml' (preferred), "
-            "'tomli' on Python < 3.11, or use Python 3.11+ for 'tomllib'."
+            "No TOML backend available. Install 'rtoml' (preferred), 'tomli' on Python < 3.11, or use Python 3.11+ for 'tomllib'."
         )
 
     try:

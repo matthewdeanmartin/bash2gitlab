@@ -259,8 +259,7 @@ def concurrent_version_info() -> None:
     log("=" * 84)
     all_pkgs = [PKG] + EXTRA_PKGS
     log(
-        f"CONCURRENT get_version_info_from_pypi() (workers={CONCURRENT_WORKERS}, "
-        f"timeout={TIMEOUT}, retries={RETRIES}, backoff={BACKOFF})"
+        f"CONCURRENT get_version_info_from_pypi() (workers={CONCURRENT_WORKERS}, timeout={TIMEOUT}, retries={RETRIES}, backoff={BACKOFF})"
     )
     with ThreadPoolExecutor(max_workers=CONCURRENT_WORKERS) as ex:
         futs = [ex.submit(run_get_version_info_once, pkg, CURRENT_VER) for pkg in all_pkgs]

@@ -71,8 +71,7 @@ class Config:
         # If toml_reader is unavailable, keep behavior close to previous implementation:
         if _toml is None or read_toml is None:
             logger.warning(
-                "TOML reader not available. Cannot load config from file. "
-                "Install 'rtoml' (preferred), or use Python 3.11+ for tomllib, or install tomli."
+                "TOML reader not available. Cannot load config from file. Install 'rtoml' (preferred), or use Python 3.11+ for tomllib, or install tomli."
             )
             return {}
 
@@ -364,8 +363,7 @@ class Config:
             return None
         if value not in ("off", "stage", "commit", "push"):
             logger.warning(
-                "Invalid value for [autogit].mode: '%s'. "
-                "Must be one of 'off', 'stage', 'commit', 'push'. Defaulting to 'off'.",
+                "Invalid value for [autogit].mode: '%s'. Must be one of 'off', 'stage', 'commit', 'push'. Defaulting to 'off'.",
                 value,
             )
             return "off"

@@ -38,8 +38,9 @@ except Exception:
         # python 3.13.
         sys.exit(99)
     raise
+from collections.abc import Callable
 from tkinter import filedialog, messagebox, scrolledtext, ttk
-from typing import Any, Callable
+from typing import Any
 
 
 class LogHandler(logging.Handler):

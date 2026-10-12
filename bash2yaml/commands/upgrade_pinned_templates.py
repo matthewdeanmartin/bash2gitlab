@@ -160,7 +160,7 @@ class GitLabClient:
         page = 1
         while True:
             r = self._get(
-                f"/api/v4/projects/{self._proj_id(project_path)}/repository/tags" f"?per_page={per_page}&page={page}",
+                f"/api/v4/projects/{self._proj_id(project_path)}/repository/tags?per_page={per_page}&page={page}",
                 _ok=(200, 404),
             )
             if r.status_code != 200:
