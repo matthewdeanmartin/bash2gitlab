@@ -347,7 +347,7 @@ class Config:
     @property
     def map_folders(self) -> dict[str, list[str] | Collection[str]]:
         """Map of source directories to target directories for deployment."""
-        return self.get_dict_of_list("map", section="map")  # type: ignore[return=value]
+        return self.get_dict_of_list("map", section="map")  # type: ignore[return-value]
 
     @property
     def map_force(self) -> bool | None:

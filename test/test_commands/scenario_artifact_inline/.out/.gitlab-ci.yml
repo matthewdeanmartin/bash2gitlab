@@ -8,14 +8,14 @@
 test-artifact-inline:
   stage: test
   before_script:
-  - |-
-    # >>> BEGIN inline-artifact: test-configs (zip, 301 bytes)
-    __B2G_ARTIFACT='UEsDBBQAAAAIALeQXFwzz/t0MgAAADsAAAANAAAALmVkaXRvcmNvbmZpZyvKzy9RsFUoKSpN5eXi5YrWiuXlysxLSc0riS8uqcxJVbBVKC5ITE5FiGZWgQRNeLkAUEsDBBQAAAAIALKQXFy4wH2DIQAAAB8AAAAJAAAALnB5bGludHJji/Z1DA5xDYrl5cpNrNDNycxL1c1JzUsvybA1NDLg5QIAUEsBAhQAFAAAAAgAt5BcXDPP+3QyAAAAOwAAAA0AAAAAAAAAAAAAALaBAAAAAC5lZGl0b3Jjb25maWdQSwECFAAUAAAACACykFxcuMB9gyEAAAAfAAAACQAAAAAAAAAAAAAAtoFdAAAALnB5bGludHJjUEsFBgAAAAACAAIAcgAAAKUAAAAAAA=='
-    mkdir -p ./configs
-    echo "$__B2G_ARTIFACT" | base64 -d | unzip -q -d ./configs -
-    unset __B2G_ARTIFACT
-    # <<< END inline-artifact
+    - |-
+      # >>> BEGIN inline-artifact: test-configs (zip, 301 bytes)
+      __B2G_ARTIFACT='UEsDBBQAAAAIALeQXFwzz/t0MgAAADsAAAANAAAALmVkaXRvcmNvbmZpZyvKzy9RsFUoKSpN5eXi5YrWiuXlysxLSc0riS8uqcxJVbBVKC5ITE5FiGZWgQRNeLkAUEsDBBQAAAAIALKQXFy4wH2DIQAAAB8AAAAJAAAALnB5bGludHJji/Z1DA5xDYrl5cpNrNDNycxL1c1JzUsvybA1NDLg5QIAUEsBAhQAFAAAAAgAt5BcXDPP+3QyAAAAOwAAAA0AAAAAAAAAAAAAALaBAAAAAC5lZGl0b3Jjb25maWdQSwECFAAUAAAACACykFxcuMB9gyEAAAAfAAAACQAAAAAAAAAAAAAAtoFdAAAALnB5bGludHJjUEsFBgAAAAACAAIAcgAAAKUAAAAAAA=='
+      mkdir -p ./configs
+      echo "$__B2G_ARTIFACT" | base64 -d | unzip -q -d ./configs -
+      unset __B2G_ARTIFACT
+      # <<< END inline-artifact
   script:
-  - |-
-    echo "Using inlined configs"
-    ls -la ./configs
+    - |-
+      echo "Using inlined configs"
+      ls -la ./configs
